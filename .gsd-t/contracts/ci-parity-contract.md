@@ -1,7 +1,7 @@
 # Contract: ci-parity
 
-Status: DRAFT (flips to STABLE at verify)
-Version: 0.1.0 (→ 1.0.0 STABLE)
+Status: STABLE
+Version: 1.0.0
 Owner: m57-d2-ci-command-parity
 Consumers: commands/gsd-t-verify.md (FAIL-blocking gate), `gsd-t ci-parity` CLI
 

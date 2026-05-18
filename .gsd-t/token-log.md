@@ -1203,3 +1203,17 @@
 <!-- missed_escalation 2026-05-18T21:34:59.257Z phase= domain= task= q="(no question provided)" -->
 | 2026-05-18 14:37 | 2026-05-18 14:37 | gsd-t-plan | Step 7 | haiku | 0s | — | plan validation iter 1 | - | - | 23.4 |
 | 2026-05-18 14:40 | 2026-05-18 14:41 | gsd-t-plan | Step 7 | haiku | 60s | — | plan validation iter 1 — PASS (76140 tok, 43s, 21 tool uses) | - | - | N/A |
+<!-- missed_escalation 2026-05-18T21:40:12.456Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:40:12.456Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:40:42.768Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:40:42.768Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:43:14.335Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:43:14.335Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:44:35.603Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:44:35.604Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:45:37.806Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:45:37.807Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:47:02.392Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:47:02.393Z phase= domain= task= q="(no question provided)" -->
+| 2026-05-18 14:39 | 2026-05-18 14:45 | gsd-t-execute | Wave 1 | sonnet | 360s | in=55010 out=0 cr=0 cc=0 — | D1 execute — 13/13 tests, contract STABLE (55010 tok, 346s, 33 tools) | m57-d1-build-coverage-check | T1-T5 | N/A |
+| 2026-05-18 14:39 | 2026-05-18 14:46 | gsd-t-execute | Wave 1 | sonnet | 420s | in=63230 out=0 cr=0 cc=0 — | D2 execute — 21 pass + 1 self-skip, contract STABLE (63230 tok, 414s, 39 tools) | m57-d2-ci-command-parity | T1-T5 | N/A |

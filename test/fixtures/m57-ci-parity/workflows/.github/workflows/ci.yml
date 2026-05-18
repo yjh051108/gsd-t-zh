@@ -1,0 +1,11 @@
+name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: node -e "process.exit(0)"
+      - name: Test
+        run: node -e "console.log('tests-ok')"

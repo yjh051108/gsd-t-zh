@@ -1,0 +1,5 @@
+steps:
+  - name: 'node:18'
+    args: ['node', '--version']
+  - name: 'node:18'
+    args: ['echo', 'typecheck-ok']

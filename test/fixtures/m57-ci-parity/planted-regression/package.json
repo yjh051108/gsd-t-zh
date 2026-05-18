@@ -1,0 +1,10 @@
+{
+  "name": "fixture-planted-regression",
+  "version": "0.1.0",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "*"
+  }
+}

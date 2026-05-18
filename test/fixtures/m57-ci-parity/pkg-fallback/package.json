@@ -1,0 +1,9 @@
+{
+  "name": "fixture-pkg-fallback",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "typecheck": "node -e \"console.log('typecheck-ok')\"",
+    "test": "node -e \"console.log('test-ok')\""
+  }
+}

@@ -1,7 +1,7 @@
 # Contract: cli-build-coverage
 
-Status: DRAFT (flips to STABLE at verify)
-Version: 0.1.0 (→ 1.0.0 STABLE)
+Status: STABLE
+Version: 1.0.0
 Owner: m57-d1-build-coverage-check
 Consumers: commands/gsd-t-verify.md (FAIL-blocking gate), `gsd-t build-coverage` CLI
 
@@ -14,12 +14,12 @@ committed, absent from Dockerfile `COPY`, shipped broken while verify passed).
 ## API
 
 ```
-checkBuildCoverage({ projectDir, baseRef, headRef }) → {
+checkBuildCoverage({ projectDir, baseRef, headRef, _newPaths }) → {
   ok: boolean,
   missing: string[],          // top-level paths not referenced by any CI artifact
   checkedAgainst: string[],   // which CI artifacts were detected & scanned
   newPaths: string[],         // all new top-level paths in baseRef..headRef
-  note?: string               // set when no CI artifacts exist (nothing to check)
+  note?: string               // set when no CI artifacts exist or diff is empty
 }
 ```
 
@@ -27,17 +27,33 @@ checkBuildCoverage({ projectDir, baseRef, headRef }) → {
 - `baseRef` / `headRef` (string, optional) — git refs bounding the milestone
   commit range. **Default when omitted**: `HEAD~1..HEAD`. (Plan phase MAY refine
   to a milestone-tag heuristic; the fallback stays `HEAD~1..HEAD`.)
+- `_newPaths` (string[], optional, **test seam**) — when provided, bypasses
+  `git diff --name-only` entirely and uses this list as the set of changed
+  file paths. Callers collapse to top-level segments via the same helper.
+  Intended for unit tests; not exposed via the CLI.
+
+**Throws `UsageError`** (not returned in envelope) when git state is unusable:
+no git repo, bad refs, or identical baseRef/headRef. The CLI catches this and
+exits 2. The `checkBuildCoverage` function itself never throws for CI-artifact
+conditions — those are expressed in the return envelope.
 
 ## Detection Rules — a new top-level path is "covered" if referenced by ANY of:
 
 1. `Dockerfile` — a `COPY` or `ADD` directive whose source path includes the
-   top-level segment (line-based scan; handles `COPY . .`, `COPY src/ ...`,
-   multi-stage `COPY --from=`).
-2. `cloudbuild.yaml` — appears in any `steps[].args` or an artifacts/copy path
-   (line/regex scan; no YAML lib).
-3. `.github/workflows/*.yml` — appears as a path in any workflow file.
+   top-level segment (line-based scan). `COPY --from=` (multi-stage image copy)
+   is excluded — those reference image layers, not workspace paths.
+2. `cloudbuild.yaml` — appears in any `steps[].args` or artifact/copy path
+   (line/regex path-segment scan; no YAML lib).
+3. `.github/workflows/*.yml` — appears as a path segment in any workflow file
+   (line/regex path-segment scan; no YAML lib).
 
-`COPY . .` (or `ADD . .`) covers everything → `missing` is empty regardless.
+`COPY . .` (or `ADD . .`) sets `coversAll:true` → `missing` is always empty
+regardless of what top-level paths appear in the diff.
+
+The parsers for cloudbuild.yaml and workflow YAML use a heuristic line scan
+(`/\b([a-zA-Z0-9_.-]+)\//g`) — any `segment/` pattern in a line is treated as
+a covered path reference. This is intentionally conservative (false positives
+are acceptable; false negatives are not).
 
 ## Exit Codes (CLI)
 
@@ -49,10 +65,11 @@ checkBuildCoverage({ projectDir, baseRef, headRef }) → {
 
 ## Defensive Behavior
 
-- No git repo / detached HEAD / identical refs → exit 2 with a clear message.
+- No git repo / detached HEAD / identical refs → `UsageError` thrown (not
+  returned in envelope); CLI catches and exits 2 with a clear message.
 - No CI artifacts at all → `ok:true`, `note:"no CI artifacts detected"`, exit 0
   (nothing to be inconsistent with — this is not a failure).
-- Empty diff → `ok:true`, `newPaths:[]`, exit 0.
+- Empty diff → `ok:true`, `newPaths:[]`, `note:"empty diff"`, exit 0.
 
 ## Success Criterion Binding
 
