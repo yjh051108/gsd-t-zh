@@ -182,27 +182,33 @@ test('no_dockerfile_skips_docker_non_failure', () => {
 });
 
 test('docker_unavailable_is_not_hard_failure', () => {
-  // Use a temp dir with a Dockerfile but simulate docker-unavailable by
-  // checking the path; we test the module logic via the return envelope shape.
-  // This test validates the contract: docker-unavailable → non-failure.
+  // Real docker-unavailable path: Dockerfile PRESENT + docker binary absent →
+  // ok:true (not a hard failure), dockerBuilt:false, dockerSkippedReason:'docker-unavailable'.
+  //
+  // Technique: temporarily override process.env.PATH to a nonexistent directory
+  // so that spawnSync('docker', ...) in dockerAvailable() throws ENOENT → returns false.
   const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'gsd-t-ci-parity-docker-'));
+  const origPath = process.env.PATH;
   try {
-    fs.writeFileSync(path.join(tmp, 'Dockerfile'), 'FROM scratch\n');
+    // A Dockerfile with no RUN lines so detectCi falls back to package-scripts.
+    // We add a passing package.json script so command execution succeeds.
+    fs.writeFileSync(path.join(tmp, 'Dockerfile'), 'FROM scratch\nCOPY . .\n');
     fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({
-      name: 'test', scripts: { build: 'node -e "process.exit(0)"' },
+      name: 'test-docker-unavail',
+      scripts: { build: 'node -e "process.exit(0)"' },
     }));
-    // We can't easily simulate docker binary missing in a unit test without
-    // PATH manipulation, so we test the no-dockerfile case and verify
-    // the envelope shape is correct for the unavailable path via module internals.
-    // The SC2 test covers docker-present behavior.
-    // Assertion: when docker IS available, dockerSkippedReason is absent;
-    // when absent (no Dockerfile), it is 'no-dockerfile'. The 'docker-unavailable'
-    // path is exercised by the SC2 self-skip guard.
-    const noDockerDir = fixtureDir('pkg-fallback');
-    const r2 = runCiParity({ projectDir: noDockerDir, timeoutMs: 10000 });
-    assert.equal(r2.dockerSkippedReason, 'no-dockerfile');
-    assert.ok(typeof r2.ok === 'boolean', 'ok must be boolean');
+
+    // Point PATH at a directory that has no binaries (docker binary unreachable)
+    process.env.PATH = '/nonexistent-gsd-t-test-path';
+
+    const r = runCiParity({ projectDir: tmp, timeoutMs: 10000 });
+
+    // Contract assertions
+    assert.equal(r.ok, true, 'docker-unavailable must NOT be a hard failure (ok must be true)');
+    assert.equal(r.dockerBuilt, false, 'dockerBuilt must be false when docker binary is absent');
+    assert.equal(r.dockerSkippedReason, 'docker-unavailable', 'dockerSkippedReason must be "docker-unavailable"');
   } finally {
+    process.env.PATH = origPath;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
@@ -334,6 +340,7 @@ test('cli_exit_0_on_ok_true', () => {
 });
 
 test('cli_json_output_has_correct_shape', () => {
+  // Uses pkg-fallback fixture: no cloudbuild, no workflows, no Dockerfile → package-scripts source.
   const r = child_process.spawnSync(
     process.execPath,
     [path.join(__dirname, '..', 'bin', 'gsd-t-ci-parity.cjs'), '--json',
@@ -341,10 +348,11 @@ test('cli_json_output_has_correct_shape', () => {
     { encoding: 'utf8' }
   );
   const out = JSON.parse(r.stdout.trim());
-  assert.ok('ok' in out);
-  assert.ok('detectedSource' in out);
-  assert.ok('commands' in out);
-  assert.ok('dockerBuilt' in out);
+  // Value-type and value assertions — must fail on {ok:null, detectedSource:'', commands:null, dockerBuilt:null}
+  assert.equal(typeof out.ok, 'boolean', 'ok must be a boolean');
+  assert.equal(out.detectedSource, 'package-scripts', 'detectedSource must be "package-scripts" for pkg-fallback fixture');
+  assert.ok(Array.isArray(out.commands), 'commands must be an array');
+  assert.equal(typeof out.dockerBuilt, 'boolean', 'dockerBuilt must be a boolean');
 });
 
 test('cli_exit_4_on_ok_false', () => {

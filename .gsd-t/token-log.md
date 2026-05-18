@@ -1217,3 +1217,28 @@
 <!-- missed_escalation 2026-05-18T21:47:02.393Z phase= domain= task= q="(no question provided)" -->
 | 2026-05-18 14:39 | 2026-05-18 14:45 | gsd-t-execute | Wave 1 | sonnet | 360s | in=55010 out=0 cr=0 cc=0 — | D1 execute — 13/13 tests, contract STABLE (55010 tok, 346s, 33 tools) | m57-d1-build-coverage-check | T1-T5 | N/A |
 | 2026-05-18 14:39 | 2026-05-18 14:46 | gsd-t-execute | Wave 1 | sonnet | 420s | in=63230 out=0 cr=0 cc=0 — | D2 execute — 21 pass + 1 self-skip, contract STABLE (63230 tok, 414s, 39 tools) | m57-d2-ci-command-parity | T1-T5 | N/A |
+<!-- missed_escalation 2026-05-18T21:48:57.580Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:48:57.580Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:49:36.738Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:49:36.738Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:50:16.116Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:50:16.117Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:50:56.048Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:50:56.049Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:51:34.367Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:51:34.368Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:56:18.931Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:56:18.931Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:57:01.407Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:57:01.407Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:57:52.349Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:57:52.350Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:58:56.551Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:58:56.551Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T21:59:38.251Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T21:59:38.252Z phase= domain= task= q="(no question provided)" -->
+<!-- missed_escalation 2026-05-18T22:00:18.802Z phase= domain= task= q="test" -->
+<!-- missed_escalation 2026-05-18T22:00:18.802Z phase= domain= task= q="(no question provided)" -->
+| 2026-05-18 14:48 | 2026-05-18 14:55 | gsd-t-execute | QA | sonnet | 420s | in=83441 out=0 cr=0 cc=0 — | QA gate iter1 FAIL — 3 shallow + 2 coverage gaps (83441 tok, 407s) | - | - | N/A |
+| 2026-05-18 14:55 | 2026-05-18 14:58 | gsd-t-execute | QA-fix | sonnet | 180s | in=84562 out=0 cr=0 cc=0 — | QA fix cycle 1 — D1+D2 test-only, parallel (40709+43853 tok) | - | - | N/A |
+| 2026-05-18 14:58 | 2026-05-18 15:01 | gsd-t-execute | QA-reverify | haiku | 180s | in=75341 out=0 cr=0 cc=0 — | QA re-verify PASS — 5/5 resolved, 2586/2587 (75341 tok, 165s) | - | - | N/A |
