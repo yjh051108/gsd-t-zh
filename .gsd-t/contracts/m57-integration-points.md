@@ -4,6 +4,15 @@ Milestone: M57 — CI-Parity Verify Gate
 Domains: m57-d1-build-coverage-check, m57-d2-ci-command-parity
 Wave plan: **1 parallel wave (D1 ∥ D2)** → integrate → verify → complete-milestone
 
+> **RE-PLANNED 2026-05-19** — first design FAILED Red Team (5 non-converging
+> cycles, 5 CRITICAL). Domain boundaries / file ownership / wave plan UNCHANGED
+> (the defect was the *internal approach* of D1/D2, not the partition). D1 now
+> parses CI files structurally (not substring); D2 adds **M57-D2-T2b**
+> (containment-safe `clearBuildCaches`, a dedicated Destructive-Action-Guard
+> task). D1 = 5 tasks, D2 = 6 tasks. Falsification corpus
+> (`test/fixtures/m57-build-coverage/bug*/`, committed 56ddded) is a frozen
+> regression input — D1-T4 binds one assertion per fixture.
+
 ## Dependency Graph
 
 ### Wave 1 — Independent (parallel): D1 ∥ D2

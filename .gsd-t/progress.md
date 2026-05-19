@@ -1,7 +1,7 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M57 RE-PLANNING (design halted by Red Team)
+## Status: ACTIVE — M57 PLANNED (re-planned with corrected design)
 ## Date: 2026-05-19
 ## Version: 3.26.11
 
@@ -62,6 +62,8 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-05-19: [re-planned] M57 RE-PLANNED with corrected design → PLANNED. D1 = 5 tasks (T1 baseline-fixtures-only [bug* corpus FROZEN] → T2 detector + **structural** CI parsers [Dockerfile COPY/ADD source-arg incl. `--from=` source; cloudbuild `args`-positional; workflow `run`-positional; comment/`name:`/folded-scalar/interior-token/`node_modules` explicitly NOT coverage; zero substring/regex-over-raw-text] → T3 CLI → T4 SC1 + one assertion per bug* fixture [the regression guarantee] → T5 contract rewrite+STABLE). D2 = 6 tasks (added **M57-D2-T2b** — containment-safe `clearBuildCaches` as a dedicated Destructive-Action-Guard task: LOCKED predicate `resolved.startsWith(root+path.sep) && resolved!==root`, REFUSE outside AND equal-to projectRoot, `refusedPaths[]` envelope; T4 binds BUG-1 traversal + BUG-8 root-outdir + prefix-collision repros UNCONDITIONALLY [no Docker] + closes BUG-2 by asserting the mandatory cache-clear on the Docker-less path). Domain boundaries / file ownership / wave plan UNCHANGED (defect was internal approach, not partition). `gsd-t parallel --dry-run`: M57-D1-T1 ∥ M57-D2-T1 → disjoint:yes deps:yes (CW 28%/32%). Test baseline 2547/2547. Level 3 — auto-advancing to execute (detached). Escalation rule carried into spawn: if Red Team again fails to converge in 2 cycles, STOP and escalate — do not churn.
 
 - 2026-05-19: [halt+re-plan] M57 first design HALTED by Red Team, re-planning approved. Detached chain (pid 37211) reached post-execute Red Team, which ran **5 cycles without converging** — protocol allows 2. Root cause = design defect, not patchable bug: **D1** answers "is new dir covered?" by substring-matching the dir name against CI-file text; every fix-cycle found a new variant where the name appears as prose not a build input (BUG-4 interior token → BUG-6 comment → BUG-9 GHA step `name:` → BUG-9b block/folded scalar). **D2** `clearBuildCaches` shipped 3 CRITICAL Destructive-Action-Guard violations: BUG-1 `fs.rmSync` recursive-force OUTSIDE projectDir via `tsconfig outDir:"../victim"`; BUG-8 (regression from BUG-1 fix) force-deletes the ENTIRE project when `outDir` resolves to root (`"."`,`"./"`,`"src/.."`). Red Team VERDICT: FAIL (16 findings: 5 CRITICAL/6 HIGH/3 MEDIUM/4 LOW). Chain terminated (Prime Rule stop #2 — design flaw fundamentally changes direction; not a 2-attempt error loop). Full suite stayed green (2606/2606) *while the gate was broken* — same failure mode M57 exists to catch. User chose: re-plan D1+D2 with corrected design. **Corrected mandate**: D1 parses CI structure (COPY/ADD args, cloudbuild `args[]`, workflow `run:` as paths); D2 containment predicate `resolved.startsWith(root+path.sep) && resolved!==root`. Falsification corpus (`test/fixtures/m57-build-coverage/bug*/`) + red-team-report.md + qa-issues.md preserved as re-plan input (commit 56ddded). Flawed `.cjs`+tests reset to execute-commit 65c2d4a. Lessons → memory: `feedback_coverage_check_structural_not_substring.md`, `feedback_destructive_path_ops_containment.md`. Next: re-run /gsd-t-plan with corrected D1/D2 design, then execute → integrate → verify → complete-milestone.
 
