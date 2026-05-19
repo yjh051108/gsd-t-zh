@@ -455,6 +455,20 @@ Use these when user asks for help on a specific command:
 - **Use when**: Final pre-merge gate. Both tracks always run; both report. `ok` is purely deterministic — LLM verdict is advisory.
 - **CLI**: `gsd-t verify-gate [--skip-track1] [--skip-track2] [--max-concurrency N] [--fail-fast] [--json]`. Exit 0/4/2/3.
 
+### build-coverage (M57)
+- **Summary**: Detects new top-level paths in a milestone commit range not referenced by a real CI build input. Coverage is decided by STRUCTURALLY parsing CI files (Dockerfile COPY/ADD source args incl. relative `--from=`; cloudbuild `args`-positional; workflow `run`-positional via a block-scalar-aware YAML walker) — never substring-matching. `node_modules` never counts. No documented false-negative residual.
+- **Auto-invoked**: Yes — by `gsd-t-verify` Step 2.6 (FAIL-blocking, never warning-only)
+- **Files**: `bin/gsd-t-build-coverage.cjs`
+- **Use when**: Final pre-merge gate. Catches the TimeTracking v1.10.12 class (new `hooks/` dir committed, absent from Dockerfile COPY, shipped broken while verify passed).
+- **CLI**: `gsd-t build-coverage [--json] [--base REF] [--head REF] [--project-dir PATH]`. Exit 0/4/2.
+
+### ci-parity (M57)
+- **Summary**: Reproduces the project's actual CI build locally instead of assuming warm-cache local tsc/test parity. Auto-detects CI config (cloudbuild → workflows → Dockerfile RUN → package.json scripts), clears build caches (containment-safe — refuses any config-derived delete resolving outside OR equal-to projectRoot), and auto-runs the real `docker build` when a Dockerfile is present (presence is the trigger, no opt-in flag).
+- **Auto-invoked**: Yes — by `gsd-t-verify` Step 2.6 (FAIL-blocking, never warning-only)
+- **Files**: `bin/gsd-t-ci-parity.cjs`
+- **Use when**: Final pre-merge gate. Catches the TimeTracking v1.10.12 class (noImplicitAny regressions passed a warm-cache local tsc but failed CI's cold build).
+- **CLI**: `gsd-t ci-parity [--project-dir PATH] [--timeout-ms MS] [--json]`. Exit 0/4/2.
+
 ## Unknown Command
 
 If user asks for help on unrecognized command:

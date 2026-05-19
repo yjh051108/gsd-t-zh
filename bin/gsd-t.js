@@ -1185,6 +1185,9 @@ const GLOBAL_BIN_TOOLS = [
   "gsd-t-verify-gate-judge.cjs",
   // M55 D2 substrate — parallel-cli engine (added v3.25.11 patch — missed in initial M55 D5 wire-in).
   "parallel-cli.cjs",
+  // M57 — CI-parity verify-gate checks (structural build-coverage + containment-safe ci-parity).
+  "gsd-t-build-coverage.cjs",
+  "gsd-t-ci-parity.cjs",
 ];
 
 function installGlobalBinTools() {
@@ -4554,6 +4557,24 @@ if (require.main === module) {
       // M55 D5 — `gsd-t verify-gate-judge` thin dispatcher to bin/gsd-t-verify-gate-judge.cjs.
       const { spawnSync } = require("child_process");
       const js = path.join(__dirname, "gsd-t-verify-gate-judge.cjs");
+      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
+        stdio: "inherit",
+      });
+      process.exit(res.status == null ? 1 : res.status);
+    }
+    case "build-coverage": {
+      // M57 D1 — `gsd-t build-coverage` thin dispatcher to bin/gsd-t-build-coverage.cjs.
+      const { spawnSync } = require("child_process");
+      const js = path.join(__dirname, "gsd-t-build-coverage.cjs");
+      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
+        stdio: "inherit",
+      });
+      process.exit(res.status == null ? 1 : res.status);
+    }
+    case "ci-parity": {
+      // M57 D2 — `gsd-t ci-parity` thin dispatcher to bin/gsd-t-ci-parity.cjs.
+      const { spawnSync } = require("child_process");
+      const js = path.join(__dirname, "gsd-t-ci-parity.cjs");
       const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
         stdio: "inherit",
       });

@@ -537,6 +537,12 @@ BEFORE EVERY COMMIT:
   │     YES → Verify test names and paths are referenced in requirements
   ├── Did I change UI, routes, or user flows?
   │     YES → Update affected E2E test specs (Playwright/Cypress)
+  ├── Did I add a new top-level dir, or change build/CI config?
+  │     This is ENFORCED MECHANICALLY by `gsd-t-verify` Step 2.6
+  │     (CI-Parity Gate: `gsd-t build-coverage` + `gsd-t ci-parity`,
+  │     FAIL-blocking). You do NOT self-attest this — verify runs the
+  │     real CI build. It exists because TimeTracking v1.10.12 shipped
+  │     VERIFIED+tagged with a new dir absent from the Dockerfile COPY.
   └── Did I run the affected tests?
         YES → Verify they pass. NO → Run them now.
 ```

@@ -119,6 +119,8 @@ gsd-t brief --kind execute --domain X --spawn-id Y      # ≤2,500-token JSON sn
 gsd-t verify-gate --json                                # Two-track gate: D1 preflight + D2 parallel CLIs
 gsd-t verify-gate --skip-track1 --json                  # Diagnostic: Track 2 only
 gsd-t verify-gate --max-concurrency 4 --json            # Override D3-map default
+gsd-t build-coverage --json                             # M57: new top-level paths must be a real CI build input (structural parse)
+gsd-t ci-parity --json                                  # M57: reproduce the project's actual CI build locally (auto docker build)
 ```
 
 `gsd-t parallel` consumes the M44 task-graph (D1) and applies three pre-spawn gates (D4 depgraph validation → D5 file-disjointness → D6 economics) followed by mode-aware headroom/split math. Extends — does not replace — the M40 orchestrator. Contract: `.gsd-t/contracts/wave-join-contract.md` v1.1.0.

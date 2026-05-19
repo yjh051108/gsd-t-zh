@@ -102,6 +102,52 @@ Defensive on missing `.gsd-t/ratelimit-map.json` — verify-gate falls back to
 
 Contract: `.gsd-t/contracts/verify-gate-contract.md` v1.0.0 STABLE.
 
+<!-- M57: CI-parity FAIL-blocking gate -->
+## Step 2.6: CI-Parity Gate (MANDATORY — FAIL-blocking, never warning-only)
+
+```bash
+node scripts/gsd-t-watch-state.js advance --agent-id "$GSD_T_AGENT_ID" --parent-id "${GSD_T_PARENT_AGENT_ID:-null}" --command gsd-t-verify --step 2 --step-label ".6: CI-Parity Gate" 2>/dev/null || true
+```
+
+Origin: TimeTracking v1.10.12 shipped VERIFIED + tagged while Cloud Build
+failed (a new top-level `hooks/` dir was committed but never added to the
+Dockerfile `COPY` directives, and `noImplicitAny` regressions passed a
+warm-cache local `tsc` but failed CI's cold build). `gsd-t-verify` must
+reproduce the project's *actual* CI build, not assume local parity.
+
+Run BOTH checks. **Either failing is a verify FAIL — it blocks
+complete-milestone. This is never a warning-only signal.**
+
+```bash
+# 1. Build-coverage — every new top-level path in the milestone range must be
+#    referenced by a real CI build input (structural parse, not substring).
+gsd-t build-coverage --json > /tmp/gsd-t-build-coverage.json
+BC_EXIT=$?
+
+# 2. CI-parity — reproduce the project's actual CI build locally with caches
+#    cleared; auto-runs `docker build` when a Dockerfile is present.
+gsd-t ci-parity --json > /tmp/gsd-t-ci-parity.json
+CP_EXIT=$?
+```
+
+- `build-coverage` exit **4** (`ok:false`, `missing[]` non-empty) → verify
+  FAIL. Report each uncovered path; the fix is to add the path to the
+  Dockerfile `COPY` / cloudbuild artifact / workflow build input.
+- `ci-parity` exit **4** (`ok:false` — a detected CI command or the real
+  `docker build` failed) → verify FAIL. Report the failing command.
+- exit **0** from both → gate passes.
+- exit **2** (usage error, e.g. not a git repo) → record as a structured
+  note; not a pass-by-default (investigate before proceeding).
+
+Both are pure-deterministic CLI checks (no LLM). They consume the same
+preflight envelope as the M55 verify-gate Track 1, so failing here at
+verify mirrors what CI would do — catching the TimeTracking class before
+the milestone is tagged.
+
+Contracts: `.gsd-t/contracts/cli-build-coverage-contract.md` v2.0.0 STABLE,
+`.gsd-t/contracts/ci-parity-contract.md` v2.0.0 STABLE.
+<!-- /M57: CI-parity FAIL-blocking gate -->
+
 ## Step 2.5: High-Risk Domain Gate (MANDATORY — Categories 2 and 7)
 
 ```bash
