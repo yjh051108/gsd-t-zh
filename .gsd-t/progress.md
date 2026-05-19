@@ -1,13 +1,13 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M57 PLANNED
-## Date: 2026-05-18
+## Status: ACTIVE — M57 RE-PLANNING (design halted by Red Team)
+## Date: 2026-05-19
 ## Version: 3.26.11
 
 ## Current Milestone
 
-M57 — CI-Parity Verify Gate. PLANNED 2026-05-18. 10 tasks (5 D1 + 5 D2), 1 parallel wave D1∥D2. 2 file-disjoint domains (m57-d1-build-coverage-check, m57-d2-ci-command-parity), 1 parallel wave D1∥D2 → integrate → verify → complete-milestone. Contracts: cli-build-coverage-contract.md (DRAFT), ci-parity-contract.md (DRAFT), m57-integration-points.md. Test baseline 2547/2547. DEFINED 2026-05-18. Goal: `gsd-t-verify` reproduces the project's actual CI build instead of assuming local tsc/test parity. Origin: TimeTracking v1.10.12 shipped VERIFIED+COMPLETE+tagged while Cloud Build failed (new `hooks/` dir not in Dockerfile COPY + noImplicitAny regressions passed stale-cache local tsc).
+M57 — CI-Parity Verify Gate. **RE-PLANNING 2026-05-19** — first design halted. Red Team ran 5 cycles without converging: D1 substring-match build-coverage is structurally false-negative-prone (BUG-4→6→9→9b — each fix spawned a syntactic variant where the dir name appears as prose, not a build input), and D2's `clearBuildCaches` had 3 CRITICAL Destructive-Action-Guard violations (rmSync outside projectDir on `outDir:"../x"`, and project-root delete on `outDir:"."`). VERDICT: FAIL. Autonomous chain halted (Prime Rule stop #2). Re-plan mandate (user-approved): **D1 parses CI files structurally** (COPY/ADD args + cloudbuild `args[]` + workflow `run:` as *paths*, never `text.includes(dir)`); **D2 cache-clear hard-refuses any path resolving outside OR equal-to projectDir** (predicate `resolved.startsWith(root+sep) && resolved!==root`). Falsification corpus preserved at `test/fixtures/m57-build-coverage/bug*/` (commit 56ddded) — the corrected structural parser MUST pass every variant. red-team-report.md + qa-issues.md (16 findings/5 CRITICAL) retained as re-plan input. Memory: `feedback_coverage_check_structural_not_substring.md`, `feedback_destructive_path_ops_containment.md`. Flawed `.cjs` reset to execute-commit 65c2d4a (clean impl slate). Goal unchanged: `gsd-t-verify` reproduces the project's actual CI build. Origin: TimeTracking v1.10.12 post-mortem.
 
 ## Milestones
 
@@ -62,6 +62,8 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-05-19: [halt+re-plan] M57 first design HALTED by Red Team, re-planning approved. Detached chain (pid 37211) reached post-execute Red Team, which ran **5 cycles without converging** — protocol allows 2. Root cause = design defect, not patchable bug: **D1** answers "is new dir covered?" by substring-matching the dir name against CI-file text; every fix-cycle found a new variant where the name appears as prose not a build input (BUG-4 interior token → BUG-6 comment → BUG-9 GHA step `name:` → BUG-9b block/folded scalar). **D2** `clearBuildCaches` shipped 3 CRITICAL Destructive-Action-Guard violations: BUG-1 `fs.rmSync` recursive-force OUTSIDE projectDir via `tsconfig outDir:"../victim"`; BUG-8 (regression from BUG-1 fix) force-deletes the ENTIRE project when `outDir` resolves to root (`"."`,`"./"`,`"src/.."`). Red Team VERDICT: FAIL (16 findings: 5 CRITICAL/6 HIGH/3 MEDIUM/4 LOW). Chain terminated (Prime Rule stop #2 — design flaw fundamentally changes direction; not a 2-attempt error loop). Full suite stayed green (2606/2606) *while the gate was broken* — same failure mode M57 exists to catch. User chose: re-plan D1+D2 with corrected design. **Corrected mandate**: D1 parses CI structure (COPY/ADD args, cloudbuild `args[]`, workflow `run:` as paths); D2 containment predicate `resolved.startsWith(root+path.sep) && resolved!==root`. Falsification corpus (`test/fixtures/m57-build-coverage/bug*/`) + red-team-report.md + qa-issues.md preserved as re-plan input (commit 56ddded). Flawed `.cjs`+tests reset to execute-commit 65c2d4a. Lessons → memory: `feedback_coverage_check_structural_not_substring.md`, `feedback_destructive_path_ops_containment.md`. Next: re-run /gsd-t-plan with corrected D1/D2 design, then execute → integrate → verify → complete-milestone.
 
 > Prior decision log entries preserved in `.gsd-t/milestones/*/progress.md` — see archive snapshots for pre-M51 history.
 
