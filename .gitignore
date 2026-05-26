@@ -62,3 +62,18 @@ bin/context-meter-state.cjs
 # GSD-T M55 D5 verify-gate raw worker output (per-run; the LLM judge
 # sees the ≤500-token summary in the envelope — never these files)
 .gsd-t/verify-gate/
+
+# GSD-T runtime noise — append-only event streams, headless-spawn logs,
+# session transcripts, supervisor state, recovery checkpoints. Future
+# files of these classes are ignored; historical entries that were
+# committed prior to this rule remain tracked (no `git rm --cached`).
+.claude/scheduled_tasks.lock
+.claude/settings.local.json.bak*
+.gsd-t/.unattended/
+.gsd-t/headless-*.log
+.gsd-t/headless-sessions/
+.gsd-t/events/
+.gsd-t/transcripts/
+.gsd-t/continue-here-*.md
+.gsd-t/dashboard.log
+.gsd-t/run.log
