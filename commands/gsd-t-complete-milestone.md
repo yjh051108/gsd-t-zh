@@ -336,7 +336,7 @@ Create `summary.md`:
 ```markdown
 # Milestone Complete: {name}
 
-**Completed**: {date}
+**Completed**: {YYYY-MM-DD HH:MM TZ}
 **Duration**: {start date} → {end date}
 **Status**: {VERIFIED | FORCED}
 
@@ -419,14 +419,18 @@ Steps to apply the trim:
 # GSD-T Progress
 
 ## Version: {new version}
+## Status: ACTIVE
+## Date: {YYYY-MM-DD HH:MM TZ — source from live `[GSD-T NOW]`}
 ## Current Milestone
 None — ready for next milestone
 
 ## Completed Milestones
 | Milestone | Version | Completed | Tag |
 |-----------|---------|-----------|-----|
-| {name} | {version} | {date} | v{version} |
-| {previous} | {version} | {date} | v{version} |
+| {name} | {version} | {YYYY-MM-DD HH:MM TZ} | v{version} |
+| {previous} | {version} | {YYYY-MM-DD HH:MM TZ — keep existing rows as-is; forward-only format} | v{version} |
+<!-- M59 (v3.29.10): "Completed" cells are written `YYYY-MM-DD HH:MM TZ` from this version forward. Pre-3.29.10 rows that read `YYYY-MM-DD` stay as-is (forward-only — never rewrite). Readers MUST accept both. -->
+
 
 ## Decision Log
 

@@ -89,24 +89,45 @@ const FRESH_STAMP_PATTERNS = [
 ];
 
 // Generic ISO date — only validated when surrounded by strong "freshly stamping now"
-// context (e.g., right after labels like "Date:", "Today:", "Stamped:", etc.).
-// Two arms: (a) date+time (validated against full ±DRIFT_MINUTES window),
+// context (e.g., right after labels like the canonical frontmatter / metadata
+// keys captured below).
+// Two arms: (a) date+time (validated against full +/-DRIFT_MINUTES window),
 //          (b) date-only (validated as same-calendar-day-as-now, time-of-day ignored).
+//
+// M59 (v3.29.10): time portion may carry an optional trailing TZ token —
+// either a short abbreviation (PDT/PST/UTC/...), a numeric offset
+// (+/-HH:MM or +/-HHMM), or Z. The TZ is matched but not used for drift
+// math — drift is computed against the local clock, which already has the
+// live offset.
 const STAMPED_ISO_PATTERN = {
   name: "stamped-iso",
-  regex: /\b(?:Date|Today|Stamped|Updated|Created|Generated|Now|Timestamp|At)\s*[:=]\s*(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/gi,
+  regex: /\b(?:Date|Today|Stamped|Updated|Created|Generated|Now|Timestamp|At)\s*[:=]\s*(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::\d{2})?(?:\s+[A-Z]{2,5}|[+\-]\d{2}:?\d{2}|Z)?)?/gi,
   extract: (m) => {
     const hasTime = m[4] !== undefined;
     return {
       stamped: new Date(
         Number(m[1]), Number(m[2]) - 1, Number(m[3]),
-        hasTime ? Number(m[4]) : 12, // Date-only → noon, neutralizes timezone-edge false positives
+        hasTime ? Number(m[4]) : 12, // Date-only -> noon, neutralizes timezone-edge false positives
         hasTime ? Number(m[5]) : 0,
         0
       ),
       dateOnly: !hasTime,
     };
   },
+};
+
+// M59 (v3.29.10): table cells in progress.md's "Completed Milestones" and
+// "Session Log" tables now carry `YYYY-MM-DD HH:MM TZ`. We validate them
+// against +/-DRIFT_MINUTES (treat as a fresh stamp). Date-only cells in
+// pre-3.29.10 rows remain valid and are NOT flagged - those are historical
+// (forward-only rule), so this regex requires the HH:MM portion to fire.
+const PROGRESS_TABLE_CELL_PATTERN = {
+  name: "progress-table-cell",
+  regex: /\|\s*(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?:\s+[A-Z]{2,5})?\s*\|/g,
+  extract: (m) => new Date(
+    Number(m[1]), Number(m[2]) - 1, Number(m[3]),
+    Number(m[4]), Number(m[5]), 0
+  ),
 };
 
 function isAllowlisted(filePath) {
@@ -119,7 +140,7 @@ function findStaleTimestamps(content, now, oldContent) {
   const findings = [];
   const oldText = typeof oldContent === "string" ? oldContent : "";
 
-  const allPatterns = [...FRESH_STAMP_PATTERNS, STAMPED_ISO_PATTERN];
+  const allPatterns = [...FRESH_STAMP_PATTERNS, STAMPED_ISO_PATTERN, PROGRESS_TABLE_CELL_PATTERN];
 
   for (const pattern of allPatterns) {
     const regex = new RegExp(pattern.regex.source, pattern.regex.flags);

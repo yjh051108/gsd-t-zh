@@ -26,6 +26,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execFileSync, execFile, spawn: cpSpawn } = require("child_process");
+const { localIsoWithOffset } = require(path.join(__dirname, "gsd-t-time-format.cjs"));
 
 // ─── ANSI Colors ────────────────────────────────────────────────────────────
 
@@ -1275,11 +1276,13 @@ ${BOLD}Phases:${RESET} ${this.wf.phases.join(" → ")}
       }
 
       // 6f. Record phase completion
+      // M59 (v3.29.10): completedAt is local-offset ISO (`YYYY-MM-DDTHH:MM:SS±HH:MM`)
+      // rather than UTC `Z` — matches the human-readable progress.md fields.
       state.phaseResults[phase] = {
         completed: true,
         builtPaths,
         reviewCycles: reviewCycle + 1,
-        completedAt: new Date().toISOString(),
+        completedAt: localIsoWithOffset(),
       };
       state.completedPhases.push(phase);
       this.clearQueue(projectDir);

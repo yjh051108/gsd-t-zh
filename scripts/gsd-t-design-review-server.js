@@ -13,6 +13,7 @@ const http = require("http");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const { localIsoWithOffset } = require(path.join(__dirname, "..", "bin", "gsd-t-time-format.cjs"));
 const url = require("url");
 
 // ── CLI args ──────────────────────────────────────────────────────────
@@ -422,7 +423,8 @@ function writeFeedback(items) {
   fs.writeFileSync(
     path.join(REVIEW_DIR, "review-complete.json"),
     JSON.stringify({
-      completedAt: new Date().toISOString(),
+      // M59 (v3.29.10): local-offset ISO (`YYYY-MM-DDTHH:MM:SS±HH:MM`) rather than UTC `Z`.
+      completedAt: localIsoWithOffset(),
       phase: readStatus().phase,
       items: items.map(i => ({ id: i.id, verdict: i.verdict })),
     }, null, 2)

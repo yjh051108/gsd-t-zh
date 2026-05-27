@@ -2,6 +2,64 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [3.29.10] - 2026-05-27 10:09 PDT
+
+### Changed — Timestamp precision in progress.md (forward-only)
+
+Origin: GSD-T-Board (and humans reading progress.md mid-workday) need
+timestamp precision finer than a day. Many GSD-T phases run multiple
+times per day; date-only entries collapse the timeline. The Decision Log
+already used `YYYY-MM-DD HH:MM:`; this release extends that precision to
+the visible "Completed" / "Date" cells and frontmatter.
+
+- **`commands/gsd-t-complete-milestone.md`** — Completed Milestones table
+  rows now write the "Completed" cell as `YYYY-MM-DD HH:MM TZ` (e.g.
+  `2026-05-27 10:09 PDT`). Milestone archive `**Completed**:` line uses
+  the same format. The progress.md `## Date:` line is bumped on
+  milestone completion.
+- **`commands/gsd-t-init.md`** — initial `## Date:` line in seed
+  progress.md uses the new format.
+- **`templates/progress.md`** — Session Log "Date" cell + `## Date:`
+  frontmatter use the new format. Inline comments document the
+  forward-only convention (readers MUST accept both old date-only and
+  new date+time+TZ rows).
+- **`bin/gsd-t-time-format.cjs`** (new) — shared helpers:
+  - `localIsoWithOffset()` → `YYYY-MM-DDTHH:MM:SS±HH:MM` (replaces
+    `new Date().toISOString()` for `archive-meta.json::completedAt`)
+  - `localTimestampForProgress()` → `YYYY-MM-DD HH:MM TZ`
+- **`bin/orchestrator.js` + `scripts/gsd-t-design-review-server.js`** —
+  `completedAt` JSON fields now emit local-offset ISO instead of UTC `Z`,
+  via `localIsoWithOffset()`.
+- **`scripts/gsd-t-date-guard.js`** (PreToolUse hook):
+  - `stamped-iso` pattern extended to accept optional TZ abbreviation,
+    numeric offset (`±HH:MM` / `±HHMM`), or `Z` after the `HH:MM`.
+  - New `progress-table-cell` pattern validates `| YYYY-MM-DD HH:MM TZ |`
+    in table cells against ±5 min live-clock drift.
+- **`templates/CLAUDE-global.md` + `~/.claude/CLAUDE.md`** — Live Clock
+  Rule documents the new format requirements.
+
+### Forward-only — NOT a migration
+
+Pre-3.29.10 rows in existing `progress.md` files (date-only `YYYY-MM-DD`)
+**stay as-is**. No rewrite. The format change applies only to entries
+written from this version forward. Readers (status, dashboard,
+GSD-T-Board) handle both formats — the change is back-compat by design.
+
+### Falsifiable verification
+
+- 9 new unit tests in `test/m59-time-format.test.js` covering the
+  helper + both date-guard regexes + writer→guard round-trip.
+- Full suite: **2658/2658 pass** (baseline 2649 + 9 new, **zero
+  regressions**).
+- Date-guard regex tests confirm: ✅ `Date: 2024-05-27 10:15 PDT`,
+  ✅ `Date: 2024-05-27T10:15:00-07:00`, ✅ `| 2024-05-27 10:15 PDT |`
+  in table cells; ✅ pre-existing `| 2024-05-27 |` date-only cells
+  remain valid (not flagged).
+
+**Versioning**: minor bump 3.28.10 → **3.29.10** (additive capability,
+no breaking reader changes — every consumer already handled the
+opaque-string case).
+
 ## [3.28.10] - 2026-05-27
 
 ### Added — M58 Test Data Cleanup Gate

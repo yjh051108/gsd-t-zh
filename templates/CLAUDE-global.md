@@ -167,10 +167,12 @@ Whenever you write a date or timestamp to any file — decision log entries in `
 2. If absent, run `node -e "console.log(new Date().toISOString())"` via Bash before writing.
 
 **Enforcement**: a PreToolUse hook (`scripts/gsd-t-date-guard.js`) blocks Write/Edit calls whose content contains timestamps drifting more than ±5 minutes from the live system clock. The guard:
-- Validates decision-log entries (`- YYYY-MM-DD HH:MM:`), filename timestamps (`continue-here-YYYY-MM-DDTHHMMSS`), banners (`Day: Mon DD, YYYY HH:MM`), and labeled stamps (`Date:`, `Updated:`, `Created:`, etc.).
+- Validates decision-log entries (`- YYYY-MM-DD HH:MM:`), filename timestamps (`continue-here-YYYY-MM-DDTHHMMSS`), banners (`Day: Mon DD, YYYY HH:MM`), labeled stamps (`Date:`, `Updated:`, `Created:`, etc., with optional TZ abbr / numeric offset / `Z`), and **progress.md table cells carrying `YYYY-MM-DD HH:MM TZ`** (M59, v3.29.10+ — Completed Milestones + Session Log).
 - For Edit, ignores timestamps that appear in BOTH `old_string` and `new_string` (pre-existing context, not new writes).
 - Allowlists machine-written paths (`.gsd-t/events/`, `.gsd-t/transcripts/`, `.gsd-t/metrics/`, `.git/`, `node_modules/`, archives, log files).
 - Fails open on internal error — broken tool calls would be worse than drift.
+
+**Timestamp precision in progress.md (M59, v3.29.10+)**: the `## Date:` frontmatter line, the "Completed" cell of the Completed Milestones table, and the "Date" cell of the Session Log table MUST be written as `YYYY-MM-DD HH:MM TZ` (e.g. `2026-05-27 10:15 PDT`). This is **forward-only** — pre-3.29.10 rows that read date-only (`YYYY-MM-DD`) stay as-is. Readers (status, dashboard, GSD-T-Board) MUST accept both. `archive-meta.json::completedAt` is local-offset ISO (`YYYY-MM-DDTHH:MM:SS±HH:MM`) — use `localIsoWithOffset()` from `bin/gsd-t-time-format.cjs`, not `new Date().toISOString()` (which produces UTC `Z`).
 
 If the guard blocks your write, do NOT bypass it. Re-read `[GSD-T NOW]`, regenerate the timestamp, retry.
 

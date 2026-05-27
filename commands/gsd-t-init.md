@@ -180,7 +180,7 @@ Create `.gsd-t/progress.md`:
 ## Project: {name from CLAUDE.md or $ARGUMENTS}
 ## Version: {detected version, or 0.1.00}
 ## Status: INITIALIZED
-## Date: {today}
+## Date: {today YYYY-MM-DD HH:MM TZ — source from the live `[GSD-T NOW]` signal; never date-only}
 
 ## Milestones
 | # | Milestone | Status | Domains |
