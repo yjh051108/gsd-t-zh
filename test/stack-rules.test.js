@@ -357,25 +357,12 @@ describe("resilience", () => {
 // ─── Command Integration ──────────────────────────────────────────────────────
 
 describe("command integration: Stack Rules Detection block", () => {
-  const REQUIRED_COMMANDS = [
-    "gsd-t-execute.md",
-    "gsd-t-quick.md",
-    "gsd-t-integrate.md",
-    "gsd-t-wave.md",
-    "gsd-t-debug.md",
-  ];
-
-  for (const cmd of REQUIRED_COMMANDS) {
-    it(`${cmd} contains 'Stack Rules Detection' block`, () => {
-      const filePath = path.join(COMMANDS_DIR, cmd);
-      assert.ok(fs.existsSync(filePath), `Command file not found: ${filePath}`);
-      const content = fs.readFileSync(filePath, "utf8");
-      assert.ok(
-        content.includes("Stack Rules Detection"),
-        `Expected ${cmd} to contain 'Stack Rules Detection' block`
-      );
-    });
-  }
+  // M61 D6-T7: command files are now thin Workflow invokers — the inline
+  // "Stack Rules Detection" block was removed from each. Stack-rule injection
+  // now happens inside the Workflow runtime at agent() spawn time, not via a
+  // command-file marker. The per-command-file assertions are retired with the
+  // convention; the QA-protocol check below stays (the protocol still carries
+  // the Stack-rules validation line).
 
   it("QA subagent prompt contains 'Stack rules' validation line", () => {
     // v2.74.12: QA prompt extracted from gsd-t-execute.md to templates/prompts/qa-subagent.md

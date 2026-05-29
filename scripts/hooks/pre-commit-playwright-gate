@@ -25,8 +25,6 @@ PASS_FILE="$ROOT/.gsd-t/.last-playwright-pass"
 # Patterns that count as "viewer/UI source" for gating purposes. Globs are
 # checked against the staged file list returned by git.
 VIEWER_SOURCE_PATTERNS=(
-  "scripts/gsd-t-transcript.html"
-  "scripts/gsd-t-dashboard-server.js"
   "e2e/viewer/"
 )
 

@@ -3,10 +3,13 @@
 const fs = require('fs');
 const path = require('path');
 
+// M61 D4 retired the specific viewer HTML + dashboard server. The detector's
+// HTML-listener scanning stays general-purpose: any `scripts/*.html` is a
+// viewer-source surface (so a future viewer is covered automatically), plus
+// the live journey specs. The retired files simply no longer exist to scan —
+// `gsd-t check-coverage` returns 0 listeners until a new HTML surface appears.
 const VIEWER_FILE_PATTERNS = [
-  /^scripts\/gsd-t-transcript\.html$/,
-  /^scripts\/gsd-t-dashboard-server\.js$/,
-  /^bin\/gsd-t-dashboard.*\.cjs$/,
+  /^scripts\/.*\.html$/,
   /^e2e\/journeys\/.*\.spec\.ts$/,
 ];
 

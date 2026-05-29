@@ -19,8 +19,6 @@ set -e
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 VIEWER_SOURCE_PATTERNS=(
-  "scripts/gsd-t-transcript.html"
-  "scripts/gsd-t-dashboard-server.js"
   "bin/gsd-t-dashboard"
   "e2e/journeys/"
   "e2e/viewer/"
