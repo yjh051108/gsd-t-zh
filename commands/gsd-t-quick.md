@@ -475,7 +475,7 @@ const { captureSpawn } = require('./bin/gsd-t-token-capture.cjs');
 2. Re-run Red Team after fixes
 3. If bugs persist, log to `.gsd-t/deferred-items.md` and present to user
 
-**If GRUDGING PASS:** Proceed to doc-ripple.
+**If GRUDGING-PASS:** Proceed to doc-ripple.
 
 ## Step 6: Doc-Ripple (Automated)
 

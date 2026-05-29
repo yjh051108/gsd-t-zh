@@ -1,4 +1,0 @@
-{"ts":"2026-04-20T03:32:22.503Z","sid":"113df5ba-cebb-433a-9a73-055dbba41607","evt":"tool","tool":"Bash","agent_id":null,"data":{"cmd":"cd test/fixtures/m40-benchmark-workload && npm test --silent 2>&1","desc":"Verify npm test works from fresh fixture"}}
-{"ts":"2026-04-20T03:32:26.349Z","sid":"113df5ba-cebb-433a-9a73-055dbba41607","evt":"tool","tool":"Bash","agent_id":null,"data":{"cmd":"cd test/fixtures/m40-benchmark-workload && npm test >/dev/null 2>&1; echo \"exit: $?\"","desc":"Check exit code"}}
-{"ts":"2026-04-20T03:32:34.029Z","sid":"113df5ba-cebb-433a-9a73-055dbba41607","evt":"tool","tool":"Bash","agent_id":null,"data":{"cmd":"(npm test); echo \"exit: $?\"","desc":"Run fixture npm test"}}
-{"ts":"2026-04-20T03:32:37.304Z","sid":"113df5ba-cebb-433a-9a73-055dbba41607","evt":"tool","tool":"Bash","agent_id":null,"data":{"cmd":"(cd test/fixtures/m40-benchmark-workload && npm test); echo \"exit: $?\"","desc":"Run in fixture subdir"}}

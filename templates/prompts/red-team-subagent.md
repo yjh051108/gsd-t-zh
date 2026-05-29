@@ -42,7 +42,7 @@ Summary:
 - SHALLOW TESTS REWRITTEN: {count}
 - CONTRACTS VERIFIED: {N}/{total}
 - ATTACK VECTORS TRIED: every category attempted, each with one-line result
-- VERDICT: `FAIL` ({N} bugs found) | `GRUDGING PASS` (exhaustive search, nothing found)
+- VERDICT: `FAIL` ({N} bugs found) | `GRUDGING-PASS` (exhaustive search, nothing found)
 
 Write findings to `.gsd-t/red-team-report.md`. If bugs found, also append to `.gsd-t/qa-issues.md`.
 
@@ -96,5 +96,5 @@ category attacks.
 - Unblock exercise: {manifest update, exit code, stderr summary}
 
 ### VERDICT
-{GRUDGING PASS — N patches written, all caught | FAIL — {M} pass-through(s)}
+{GRUDGING-PASS — N patches written, all caught | FAIL — {M} pass-through(s)}
 ```

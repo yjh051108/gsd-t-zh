@@ -52,7 +52,7 @@ These rules MUST hold at all times. A violation is a contract violation, same we
 
 1. **No collapse**: a stage's output may NEVER be re-categorized into another stage's vocabulary. A Red Team CRITICAL is not a `/code-review ultra` "important." A QA shallow-test is not a Red Team bug. The verify synthesis stage merges results but preserves category labels.
 
-2. **No substitution**: skipping any stage requires an explicit `skip*` arg with a recorded reason. Default behavior is run all three.
+2. **No substitution**: only `/code-review ultra` is skippable, and only via an explicit `skipUltra: true` arg with a recorded `skipUltraReason: string`. Red Team and QA are **non-skippable** — there is no `skipRedTeam` or `skipQa` arg, and any attempt to add one is a contract violation. Rationale: `/code-review ultra` may be rate-limited or unavailable on certain plans; Red Team and QA can always run locally. A run with `skipUltra: true` cannot achieve `VERIFIED` — the best attainable verdict is `VERIFIED-WITH-WARNINGS` with a note recording that the cooperative pass was skipped. (4.8-audit fix: prevents the substitution-by-elision pathway where omitting a stage masquerades as passing it.)
 
 3. **No transitive trust**: passing one stage does not raise confidence that another stage will pass. The stages are independent — the joint probability of all three passing on broken code is much lower than any single stage's pass rate.
 
@@ -66,9 +66,9 @@ Verify produces one of three overall verdicts:
 
 | Verdict                     | All three stages must satisfy                                                                                |
 |-----------------------------|--------------------------------------------------------------------------------------------------------------|
-| `VERIFIED`                  | Red Team = GRUDGING-PASS, QA suite = green + no shallow tests + contracts compliant, `/code-review ultra` = no "important" findings |
-| `VERIFIED-WITH-WARNINGS`    | Above except `/code-review ultra` has "important" findings OR QA shallow tests is small (≤2, none in core paths) |
-| `VERIFY-FAILED`             | Any of: Red Team verdict = FAIL, QA suite fail > 0, QA contract violations > 0, QA shallow tests > 2 or in core paths |
+| `VERIFIED`                  | Red Team = GRUDGING-PASS, QA suite = green + zero shallow tests + contracts compliant, `/code-review ultra` ran AND has no "important" findings. `skipUltra=true` is INELIGIBLE for `VERIFIED`. |
+| `VERIFIED-WITH-WARNINGS`    | Red Team = GRUDGING-PASS, QA suite green + contracts compliant, AND any of: (a) `/code-review ultra` has "important" findings, (b) `skipUltra=true` (with recorded reason), (c) QA shallow tests = 1 (single, non-core path). Two or more shallow tests = VERIFY-FAILED. |
+| `VERIFY-FAILED`             | Any of: Red Team verdict = FAIL, QA suite fail > 0, QA contract violations > 0, QA shallow tests ≥ 2 OR any in core paths, `/code-review ultra` ran AND reported "important" findings that block (case-by-case, see synthesis prompt). |
 
 `VERIFIED-WITH-WARNINGS` allows the milestone to proceed to complete-milestone but the warnings persist in `progress.md` Decision Log and the milestone archive.
 

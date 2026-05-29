@@ -329,7 +329,7 @@ const { captureSpawn } = require('./bin/gsd-t-token-capture.cjs');
 `captureSpawn` writes the row to `.gsd-t/token-log.md` under the canonical header. Tokens column renders as `in=N out=N cr=N cc=N $X.XX` or `—`, never `N/A`.
 
 **If FAIL:** fix CRITICAL/HIGH bugs (≤2 cycles) → re-run. Persistent bugs → `.gsd-t/deferred-items.md`.
-**If GRUDGING PASS:** proceed to doc-ripple.
+**If GRUDGING-PASS:** proceed to doc-ripple.
 
 ## Step 8: Doc-Ripple (Automated)
 

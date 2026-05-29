@@ -9,7 +9,26 @@
 
 const fs = require("fs");
 const path = require("path");
-const { execSync, spawnSync } = require("child_process");
+const { spawnSync } = require("child_process");
+
+// 4.8-audit fix: prefer project-local bin/<tool>.cjs when present, fall back to
+// global `gsd-t` PATH binary. Preserves M55-D5 project-local-bin invariant: a
+// detached/sandboxed Workflow worker no longer requires `gsd-t` on PATH.
+//
+// Returns { cmd, args, source: "local" | "global" }.
+function _resolveTool(projectDir, subcommand, subcommandArgs, localBinName) {
+  if (localBinName) {
+    const local = path.join(projectDir, "bin", localBinName);
+    if (fs.existsSync(local)) {
+      return {
+        cmd: process.execPath,
+        args: [local, ...subcommandArgs],
+        source: "local",
+      };
+    }
+  }
+  return { cmd: "gsd-t", args: [subcommand, ...subcommandArgs], source: "global" };
+}
 
 function readBrief(briefPath) {
   if (!briefPath || !fs.existsSync(briefPath)) {
@@ -41,17 +60,25 @@ function generateBrief({ kind, milestone, domain, task, spawnId, projectDir = ".
   if (milestone) args.push("--milestone", milestone);
   if (domain) args.push("--domain", domain);
   if (task) args.push("--task", task);
-  const r = spawnSync("gsd-t", args, { cwd: projectDir, stdio: "pipe" });
+  const t = _resolveTool(projectDir, "brief", args, "gsd-t-context-brief.cjs");
+  const r = spawnSync(t.cmd, t.args, { cwd: projectDir, stdio: "pipe" });
   if (r.status !== 0) {
-    return { ok: false, briefPath: out, stderr: r.stderr && r.stderr.toString() };
+    return {
+      ok: false,
+      briefPath: out,
+      stderr: r.stderr && r.stderr.toString(),
+      spawnError: r.error ? String(r.error.message) : null,
+      via: t.source,
+    };
   }
-  return { ok: true, briefPath: out };
+  return { ok: true, briefPath: out, via: t.source };
 }
 
 function runPreflight({ projectDir = ".", checks } = {}) {
-  const args = ["preflight", "--json"];
-  if (Array.isArray(checks) && checks.length) args.push("--checks", checks.join(","));
-  const r = spawnSync("gsd-t", args, { cwd: projectDir, stdio: "pipe" });
+  const subArgs = ["--json"];
+  if (Array.isArray(checks) && checks.length) subArgs.push("--checks", checks.join(","));
+  const t = _resolveTool(projectDir, "preflight", subArgs, "cli-preflight.cjs");
+  const r = spawnSync(t.cmd, t.args, { cwd: projectDir, stdio: "pipe" });
   const stdout = r.stdout ? r.stdout.toString() : "";
   let envelope = null;
   try {
@@ -64,29 +91,37 @@ function runPreflight({ projectDir = ".", checks } = {}) {
     exitCode: r.status,
     envelope,
     stderr: r.stderr && r.stderr.toString(),
+    spawnError: r.error ? String(r.error.message) : null,
+    via: t.source,
   };
 }
 
-function proveFileDisjointness({ projectDir = ".", taskIds } = {}) {
-  // Shells out to gsd-t parallel --dry-run to leverage the existing prover.
-  const args = ["parallel", "--dry-run"];
-  if (Array.isArray(taskIds) && taskIds.length) {
-    args.push("--tasks", taskIds.join(","));
+function proveFileDisjointness({ projectDir = ".", domains, taskIds } = {}) {
+  // Shells out to `gsd-t parallel --dry-run` (or project-local equivalent).
+  // 4.8-audit: domains array preferred over taskIds (the CLI supports --domain
+  // but not --tasks). taskIds kept for back-compat but logged as no-op.
+  const subArgs = ["--dry-run"];
+  if (Array.isArray(domains) && domains.length) {
+    for (const d of domains) subArgs.push("--domain", d);
   }
-  const r = spawnSync("gsd-t", args, { cwd: projectDir, stdio: "pipe" });
+  const t = _resolveTool(projectDir, "parallel", subArgs, "gsd-t-parallel.cjs");
+  const r = spawnSync(t.cmd, t.args, { cwd: projectDir, stdio: "pipe" });
   return {
     ok: r.status === 0,
     exitCode: r.status,
     stdout: r.stdout && r.stdout.toString(),
     stderr: r.stderr && r.stderr.toString(),
+    spawnError: r.error ? String(r.error.message) : null,
+    via: t.source,
   };
 }
 
 function runVerifyGate({ projectDir = ".", skipTrack1, skipTrack2 } = {}) {
-  const args = ["verify-gate", "--json"];
-  if (skipTrack1) args.push("--skip-track1");
-  if (skipTrack2) args.push("--skip-track2");
-  const r = spawnSync("gsd-t", args, { cwd: projectDir, stdio: "pipe" });
+  const subArgs = ["--json"];
+  if (skipTrack1) subArgs.push("--skip-track1");
+  if (skipTrack2) subArgs.push("--skip-track2");
+  const t = _resolveTool(projectDir, "verify-gate", subArgs, "gsd-t-verify-gate.cjs");
+  const r = spawnSync(t.cmd, t.args, { cwd: projectDir, stdio: "pipe" });
   let envelope = null;
   try {
     envelope = r.stdout ? JSON.parse(r.stdout.toString()) : null;
@@ -98,6 +133,8 @@ function runVerifyGate({ projectDir = ".", skipTrack1, skipTrack2 } = {}) {
     exitCode: r.status,
     envelope,
     stderr: r.stderr && r.stderr.toString(),
+    spawnError: r.error ? String(r.error.message) : null,
+    via: t.source,
   };
 }
 

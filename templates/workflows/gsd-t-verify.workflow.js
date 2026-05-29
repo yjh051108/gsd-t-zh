@@ -33,6 +33,14 @@ const lib = require("./_lib.js");
 const projectDir = (args && args.projectDir) || ".";
 const milestone  = (args && args.milestone)  || null;
 const skipUltra  = (args && args.skipUltra)  || false;
+const skipUltraReason = (args && args.skipUltraReason) || null;
+
+// 4.8-audit fix: skipUltra requires a recorded reason per
+// orthogonal-validation-contract.md Rule #2. Refuse without one.
+if (skipUltra && !skipUltraReason) {
+  log("verify: args.skipUltra=true requires args.skipUltraReason: string (per contract Rule #2)");
+  return { status: "failed", reason: "skipUltra-without-reason" };
+}
 
 // ───── Schemas ─────
 
@@ -254,10 +262,10 @@ const synthesisPrompt = [
   JSON.stringify(triadResults, null, 2),
   "```",
   ``,
-  `Compute the overall verdict:`,
-  `- VERIFIED iff: Red Team verdict=GRUDGING-PASS AND QA suiteResult.fail=0 AND QA shallowTests=[] AND QA contractCompliance.compliant=true AND code-review ultra has no "important" findings (skipUltra=${skipUltra} acceptable).`,
-  `- VERIFIED-WITH-WARNINGS if: above conditions hold EXCEPT code-review ultra has "important" findings or QA shallowTests is non-empty but small (≤2 findings, none in core paths).`,
-  `- VERIFY-FAILED otherwise.`,
+  `Compute the overall verdict per orthogonal-validation-contract.md v1.0.0:`,
+  `- VERIFIED iff: Red Team verdict=GRUDGING-PASS AND QA suiteResult.fail=0 AND QA shallowTests=[] AND QA contractCompliance.compliant=true AND code-review ultra ran AND has no "important" findings. **skipUltra=${skipUltra} → ${skipUltra ? "INELIGIBLE for VERIFIED (skipUltra=true downgrades to VERIFIED-WITH-WARNINGS at best per Rule #2)" : "eligible"}.**`,
+  `- VERIFIED-WITH-WARNINGS if: Red Team GRUDGING-PASS, QA suite green, contracts compliant, AND any of: code-review ultra has "important" findings, OR skipUltra=true (reason: ${skipUltraReason || "(none — would have failed above)"}), OR QA shallowTests.length === 1 (single non-core).`,
+  `- VERIFY-FAILED otherwise (Red Team FAIL, QA fail>0, contract violations>0, shallowTests ≥ 2 or in core paths).`,
   ``,
   `Return JSON per VERDICT_SCHEMA with blockingFindings listing concrete things that must fix.`,
 ].join("\n");

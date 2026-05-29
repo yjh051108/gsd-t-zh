@@ -90,19 +90,10 @@ if (!pre.ok) {
 }
 log(`preflight OK`);
 
-const brief = lib.generateBrief({
-  kind: "execute",
-  milestone,
-  projectDir,
-});
-if (!brief.ok) {
-  log(`brief generation failed — proceeding without (workers will re-walk repo)`);
-} else {
-  log(`brief: ${brief.briefPath}`);
-}
-
 phase("Disjointness");
-const disj = lib.proveFileDisjointness({ projectDir });
+// 4.8-audit fix: scope disjointness to the requested domain set, not the whole project.
+// Without this, an unrelated DRAFT domain elsewhere in the project could flip the result.
+const disj = lib.proveFileDisjointness({ projectDir, domains });
 if (!disj.ok) {
   log(`disjointness FAIL — exitCode=${disj.exitCode}: ${disj.stderr || disj.stdout}`);
   return { status: "failed", reason: "non-disjoint" };
@@ -112,6 +103,16 @@ log(`disjointness OK`);
 phase("Domains");
 const domainResults = await parallel(
   domains.map((domain) => async () => {
+    // 4.8-audit fix: per-domain brief (M55-D2 brief-per-spawn semantic) — each worker
+    // gets a brief scoped to its own domain so grep-the-brief is most effective.
+    const domBrief = lib.generateBrief({ kind: "execute", milestone, domain, projectDir });
+    const briefRef = domBrief.ok
+      ? domBrief.briefPath
+      : "(brief generation failed — re-walk repo)";
+
+    // 4.8-audit fix: do NOT truncate scope/tasks. The worker is being told to "execute
+    // every task" — silently dropping tail content is a correctness regression. Briefs
+    // are the compression layer; raw scope/tasks must pass whole.
     const scope = lib.readScope({ projectDir, domain }) || "(scope.md missing)";
     const tasks = lib.readDomainTasks({ projectDir, domain }) || "(tasks.md missing)";
     const prompt = [
@@ -119,21 +120,22 @@ const domainResults = await parallel(
       ``,
       `Your job: execute every task listed under "## Tasks" in this domain's tasks.md, respecting the file ownership in scope.md.`,
       ``,
-      `**Brief (REQUIRED READ):** ${brief.briefPath || "(not generated — re-walk repo)"} — if present, grep this JSON first instead of re-reading CLAUDE.md and contracts.`,
+      `**Brief (REQUIRED READ):** ${briefRef} — if present, grep this JSON first instead of re-reading CLAUDE.md and contracts.`,
       ``,
       `**Scope (your owned files):**`,
       "```",
-      scope.slice(0, 2000),
+      scope,
       "```",
       ``,
       `**Tasks:**`,
       "```",
-      tasks.slice(0, 6000),
+      tasks,
       "```",
       ``,
       `Constraints:`,
       `- Touch only files in your scope's "Owned Files" list.`,
-      `- Make commits as you complete tasks (one commit per logical task or task group).`,
+      `- Make commits via bash/git tools FIRST as you complete each task or task group, THEN emit the final StructuredOutput JSON describing what you did. Do not skip commits to satisfy the schema faster.`,
+      `- Update affected docs (progress.md Decision Log, architecture.md, contracts/, requirements.md, README.md) per the Document Ripple Completion Gate in CLAUDE.md — in the SAME commits as the code changes.`,
       `- If a task is blocked (dependency not met), record it in tasksBlocked and continue with the next.`,
       `- Return a JSON object matching the StructuredOutput schema. The "status" field is the OVERALL domain status: "complete" if all tasks done, "partial" if some done and some blocked, "blocked" if you couldn't start, "failed" on error.`,
     ].join("\n");
@@ -142,6 +144,7 @@ const domainResults = await parallel(
       return await agent(prompt, {
         label: `worker:${domain}`,
         phase: "Domains",
+        model: "sonnet",  // 4.8-audit fix: explicit per Model Display contract
         schema: DOMAIN_RESULT_SCHEMA,
       });
     } catch (e) {
