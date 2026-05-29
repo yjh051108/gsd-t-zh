@@ -1,0 +1,26 @@
+M61 D1 Zero-Reference Verification (Wave 3 prep)
+Generated: 2026-05-29 13:33 PDT
+
+Check: any live require() of context-meter/runway machinery, EXCLUDING files about to be deleted.
+
+test/m43-dialog-channel-meter.test.js:21:const { estimateDialogGrowth } = require('../bin/runway-estimator.cjs');
+test/token-budget.test.js:24:} = require("../bin/token-budget.cjs");
+test/token-budget.test.js:26:const { SAFE_DEFAULT_WINDOW } = require("../bin/model-windows.cjs");
+test/token-budget.test.js:348:    const mod = require("../bin/token-budget.cjs");
+bin/gsd-t.js:860:    const loader = require(path.join(PKG_ROOT, "bin", "context-meter-config.cjs"));
+bin/gsd-t.js:2923:    const { loadConfig } = require("./context-meter-config.cjs");
+bin/context-budget-audit.cjs:18:const { windowForModel, SAFE_DEFAULT_WINDOW } = require('./model-windows.cjs');
+bin/gsd-t-token-capture.cjs:144:    const tb = require('./token-budget.cjs');
+bin/context-meter-config.test.cjs:7:const { loadConfig, DEFAULTS } = require("./context-meter-config.cjs");
+bin/gsd-t-economics.cjs:21:const { SAFE_DEFAULT_WINDOW } = require("./model-windows.cjs");
+bin/token-budget.cjs:29:const { SAFE_DEFAULT_WINDOW } = require("./model-windows.cjs");
+bin/runway-estimator.cjs:29:const { SAFE_DEFAULT_WINDOW } = require('./model-windows.cjs');
+bin/model-windows.test.cjs:19:} = require("./model-windows.cjs");
+bin/gsd-t-parallel.cjs:49:    _tokenBudget = require(path.join(__dirname, "token-budget.cjs"));
+scripts/gsd-t-context-meter.js:36:const { loadConfig: realLoadConfig } = require("../bin/context-meter-config.cjs");
+scripts/gsd-t-context-meter.js:37:const { parseTranscript: realParseTranscript } = require("./context-meter/transcript-parser");
+scripts/gsd-t-context-meter.js:38:const { estimateTokens: realEstimateTokens } = require("./context-meter/estimate-tokens");
+scripts/gsd-t-context-meter.js:39:const { computePct, bandFor, buildAdditionalContext } = require("./context-meter/threshold");
+scripts/gsd-t-context-meter.js:40:const { windowForModel } = require("../bin/model-windows.cjs");
+scripts/gsd-t-calibration-hook.js:42:const { SAFE_DEFAULT_WINDOW } = require("../bin/model-windows.cjs");
+---end live refs---

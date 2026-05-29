@@ -39,7 +39,9 @@
 const fs = require("fs");
 const path = require("path");
 
-const { SAFE_DEFAULT_WINDOW } = require("../bin/model-windows.cjs");
+// M61 D1: model-windows retired. SAFE_DEFAULT_WINDOW was 1M (the Opus 4.7/4.8
+// native window). Native /context replaces the meter that consumed this.
+const SAFE_DEFAULT_WINDOW = 1_000_000;
 
 const MAX_STDIN = 1024 * 1024; // 1 MiB
 const SCHEMA_VERSION = 1;
