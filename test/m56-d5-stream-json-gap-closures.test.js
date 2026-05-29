@@ -63,12 +63,6 @@ test("gap-closure: bin/gsd-t-parallel.cjs cache-warm probe carries skip marker o
   assert.ok(r.hasMarker, '_runCacheWarmProbe should carry GSD-T-LINT: skip stream-json marker');
 });
 
-test("gap-closure: bin/gsd-t-ratelimit-probe-worker.cjs runOneProbe carries skip marker or stream-json flags", () => {
-  // Anchor on the spawn(claudeBin, args) call site, not the function declaration (~line 71)
-  const r = checkSiteHasMarker('bin/gsd-t-ratelimit-probe-worker.cjs', 'spawn(claudeBin, args');
-  assert.ok(r.hasMarker, 'runOneProbe spawn site should carry GSD-T-LINT: skip stream-json marker');
-});
-
 test("gap-closure: lint passes against the live tree (all 3 sites + every other production spawn)", () => {
   // Run the stream-json lint in 'all' mode against the live project — should
   // exit 0 because the 3 known sites carry skip markers and every other

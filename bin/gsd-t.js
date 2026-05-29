@@ -4283,7 +4283,6 @@ function showHelp() {
   log(`  ${CYAN}graph${RESET}          Code graph operations (index, status, query)`);
   log(`  ${CYAN}headless${RESET}       Non-interactive execution via claude -p + fast state queries`);
   log(`  ${CYAN}orchestrate${RESET}    External task orchestrator — one claude -p spawn per task (M40)`);
-  log(`  ${CYAN}benchmark-orchestrator${RESET} M40 speed gate — compares orchestrator vs in-session wall-clock`);
   log(`  ${CYAN}stream-feed${RESET}    Localhost stream-json watcher (start|status|stop) — M40 D4`);
   log(`  ${CYAN}design-build${RESET}   Deterministic design→code pipeline (elements → widgets → pages)`);
   log(`  ${CYAN}tool-cost${RESET}      Per-tool token/cost attribution (M43 D2) — group-by tool|command|domain`);
@@ -4517,14 +4516,6 @@ if (require.main === module) {
       const { runCli: runParallelCli } = require(path.join(__dirname, "gsd-t-parallel.cjs"));
       const code = runParallelCli(args.slice(1), process.env);
       process.exit(code);
-    }
-    case "benchmark-orchestrator": {
-      const { spawnSync } = require("child_process");
-      const js = path.join(__dirname, "gsd-t-benchmark-orchestrator.js");
-      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
-        stdio: "inherit",
-      });
-      process.exit(res.status == null ? 1 : res.status);
     }
     case "preflight": {
       // M55 D5 — `gsd-t preflight` thin dispatcher to bin/cli-preflight.cjs.

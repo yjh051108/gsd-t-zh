@@ -1,9 +1,0 @@
-# Orchestrator-internal byproducts written during a run.
-# These are not part of the workload and must not count toward
-# uncommitted_owned_changes in the completion check.
-.gsd-t/events/
-.gsd-t/orchestrator/
-.gsd-t/.context-meter-state.json
-.gsd-t/context-meter.log
-.gsd-t/heartbeat-*.jsonl
-node_modules/
