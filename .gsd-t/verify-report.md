@@ -1,53 +1,48 @@
-# Verification Report — 2026-05-27
+# Verification Report — 2026-05-29
 
-## Milestone: M58 — Test Data Cleanup Gate
+## Milestone: M65 — Orchestration-Shell Retirement (M61 D6 port-then-delete completion)
 
 ## Summary
-- Functional: PASS — 7/7 SCs met
-- Contracts: PASS — 2/2 contracts STABLE (test-data-ledger v1.0.0, test-data-tagging v1.0.0)
-- Code Quality: PASS — zero-dep invariant honored; defense-in-depth at adapter layer
-- Unit Tests: PASS — 2649/2649 (3 skip — sqlite adapter self-skip when better-sqlite3 absent)
-- E2E Tests: N/A — no Playwright UI under test for the framework project itself; synthetic suite exercises fixture+ledger end-to-end at unit level
-- Test Data Cleanup: PASS — purged=0 skipped=0 errors=0 (the milestone introduced the gate; M58 itself inserts no test data via the new path)
-- Security: PASS — SQL identifier whitelist (sqlite), atomic write+rename (file-json-array), tagged-prefix guard at every adapter, ledger refuses untagged ids at insert
-- Integration: PASS — `gsd-t test-data` CLI dispatched via `bin/gsd-t.js`; `gsd-t-verify` Step 4.5 wired; doc-ripple complete
+- Functional: PASS — pure deletion; both entry modules (`gsd-t.js`, `gsd-t-parallel.cjs`) load, `gsd-t orchestrate` → clean Unknown-command, `gsd-t parallel --dry-run` exit 0
+- Contracts: PASS — wave-join gating math constants (85/60/4) + 5-code headless exit contract preserved verbatim in the two inlines
+- Code Quality: PASS — Red Team byte-faithful-inline audit (25-case adversarial corpus → 100% parity); 3 LOW doc-debt findings only
+- Unit Tests: WARN — 1361–1362 pass / 22–23 fail / 3 skip / 1387 total. **All failures pre-existing M61 D1–D8 carryover** (proven against parent commit `5a5c6c0^` = 1427 pass / 22 fail). Zero M65-caused. The 6 deleted test files (−66 cases) account for the count drop.
+- E2E Tests: WARN — Playwright suite fails to COLLECT (`e2e/viewer/title.spec.ts:10` imports `scripts/gsd-t-dashboard-server.js`, deleted in M61 D4). **M61-D4 carryover** — M65 touched zero E2E files. ~18 orphaned viewer/journey specs import retired viewer infra.
+- Test Data Cleanup: N/A — M65 ran no E2E suite (no UI), no `withTestData()` inserts
+- Security: PASS — no auth/input/secret surface; pure CLI deletion
+- Integration: PASS — KEEP-invariant holds (verify-gate.cjs:31→parallel-cli, _lib.js:107→gsd-t-parallel both resolve)
 
-## Overall: PASS
+## Gate Results
 
-## SC Scoreboard
+| Gate | Result | M65-caused? |
+|------|--------|-------------|
+| M55 verify-gate Track 1 (preflight) | PASS | — |
+| M55 verify-gate Track 2 (CLI fan-out) | **ok:false** — `tests` exit 1 + `playwright` exit 1 | **NO** — both inherited M61 carryover |
+| M57 build-coverage | PASS (ok:true, exit 0, missing=[]) | — (M65 added zero new top-level paths) |
+| M57 ci-parity | **ok:false** exit 4 — only failing cmd is `npm run test` | **NO** — same 23 carryover unit fails |
+| M58 test-data purge | N/A — no E2E run | — |
+| Orthogonal — `/code-review ultra` | SKIPPED (`skipUltraReason`: pure mechanical deletion + 2 verbatim inlines, exhaustively covered by Red Team + QA; no cooperative-review surface) | — |
+| Orthogonal — Red Team (opus) | **GRUDGING PASS** — 0 CRITICAL/HIGH, 6 attack vectors + regression baseline exhausted | — |
+| Orthogonal — QA (sonnet) | **PASS** — 0 M65-caused failures, delete-with-subject clean, contract compliance pass | — |
 
-| SC | Description | Result |
-|----|-------------|--------|
-| SC1 | Ledger records 5 inserts from a synthetic Playwright fixture (5 rows w/ matching runId) | ✅ PASS — `m58-d2-fixture-helper.test.js::SC1` |
-| SC2 | `purgeRunInserts({runId})` removes those 5 records from the store and reports `purged.length === 5` | ✅ PASS — `m58-d1-test-data-ledger.test.js::SC2` and `m58-d2-fixture-helper.test.js::SC4` (data.json shrinks from 7 → 2 rows) |
-| SC3 | Verify FAILs (blocks complete-milestone) when ledger entries cannot be purged (simulated store-write error) | ✅ PASS — `m58-d1-test-data-ledger.test.js::SC3` (`errors.length === 1`) and `m58-d2-fixture-helper.test.js::SC3` (verify decision: FAIL) |
-| SC4 | Successful E2E purges cleanly and verify report shows `purged=5 skipped=0 errors=0` | ✅ PASS — synthetic suite confirms `Test data: purged=5 skipped=0 errors=0` |
-| SC5 | Zero regressions on `npm test` (baseline 2587/2587) | ✅ PASS — **2649/2649** (zero failures across full suite) |
-| SC6 | Red Team GRUDGING PASS — ≥5 broken patches caught | ✅ PASS — **6/6 attacks defended** (untagged id rejected, tag-prefix tamper rejected, unknown adapter → structured error, SQL injection rejected, no stray file writes, malicious adapter return value caught) |
-| SC7 | Doc-ripple complete | ✅ PASS — `commands/gsd-t-verify.md` Step 4.5 + verify report template; `templates/CLAUDE-global.md` Test Data Cleanup subsection; `~/.claude/CLAUDE.md` mirror; `commands/gsd-t-help.md` entry; `README.md` CLI list; `CHANGELOG.md` [3.28.10]; `.gitignore` ledger entry; 2 contracts STABLE; `.gsd-t/progress.md` Decision Log |
+## Overall: VERIFIED-WITH-WARNINGS
+
+M65's own work is clean and complete — Red Team GRUDGING PASS + QA PASS, both inlines byte-faithful, all KEEP files intact, zero new regressions (proven against the parent commit). The deterministic verify-gate / ci-parity reds are **100% inherited M61 D1–D8 carryover** that M65 neither caused nor was scoped to fix. Per measure-don't-claim, M65 is NOT marked clean-VERIFIED over the red baseline gates — the carryover is surfaced as blocking warnings owned by M61, not M65.
 
 ## Findings
 
 ### Critical (must fix before milestone complete)
-*(none)*
+_None for M65._
 
-### Warnings (should fix, not blocking)
-*(none)*
+### Warnings (M61-carryover — not M65's to fix, but blocking a clean-green baseline)
+1. **23 unit-test failures** — command-format tests (M56-D3/D4 marker blocks, Stack Rules blocks, preflight/verify-gate wire-in blocks), command-count tests (expect 55/49 vs actual 51/45), `test/m56-d5-stream-json-gap-closures.test.js` (requires deleted `gsd-t-capture-lint.cjs`). Origin: M61 D2/D8 removed command files + conventions but never updated these tests.
+2. **~18 orphaned Playwright E2E specs** under `e2e/viewer/` + `e2e/journeys/` import `scripts/gsd-t-dashboard-server.js` (deleted M61 D4) — the whole suite fails to collect. Origin: M61 D4 retired the viewer/dashboard but left its E2E specs.
+3. **`verifyPlaywrightHealth` / "npx playwright --version succeeds"** — intermittent (pass 20/0 in isolation; 5s timeout only under full-suite parallel subprocess contention). Pre-existing flake, not M65.
 
-### Notes (informational)
-- Adapters use `taggedPrefix` as a defense-in-depth guard: even if a ledger row is tampered to point at a non-tagged production id, the adapter refuses to delete. This converts a ledger-integrity bug into a verify FAIL instead of a data-loss incident.
-- `localStorage-key-prefix` returns `'absent'` rather than throwing when no live Playwright page is provided — appropriate for the verify-final-step path where the browser has already torn down (the data is gone with the page).
-- `sqlite-table-where` self-skips its tests when `better-sqlite3` is not installed; this is correct (the project ships zero-dep and dynamically requires only at adapter-use time).
-- The ledger is append-only — purging does not rewrite the JSONL. The history is the audit trail. `.gsd-t/test-data-ledger.jsonl` is gitignored.
+### Notes (LOW doc-debt, from Red Team)
+1. `commands/gsd-t-help.md` `parallel` entry prose still says "wraps the M40 orchestrator" — historically inaccurate now (the gating math was inlined; feature works). Cosmetic.
+2. `commands/gsd-t-resume.md` step-numbering gap 0.2→0.5 after removing dead Step 0.3 (0.4 was already absent pre-M65). LLM-read labels, no flow-control anchor references them.
+3. `docs/requirements.md` historical REQ-M44-D2/D8 entries cite now-deleted files — completed-requirement records, not live pointers.
 
-## Test Data Cleanup Gate (dogfood)
-- **Result**: PASS
-- **purged**: 0
-- **skipped**: 0
-- **errors**: 0
-- **Notes**: M58 itself does not insert test data through the new path; the gate dogfood is exercised by `m58-d2-fixture-helper.test.js::SC4` which validates the full append→purge cycle end-to-end with 5 inserts → 5 purged → 0 errors.
-
-## Verify-Gate (M55 two-track) result
-- `track1` (preflight): **ok**
-- `track2` (parallel CLIs incl. native unit + playwright + journey-coverage): **ok**
-- top-level: **PASS**
+## Remediation Tasks
+_None for M65._ The two blocking warnings are M61-carryover — flagged for a separate M61-carryover-cleanup milestone (delete orphaned viewer E2E specs + fix command-format/count tests). Not bundled into this orchestration-shell retirement (out of scope, different blast radius).
