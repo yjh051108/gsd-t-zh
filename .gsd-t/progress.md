@@ -1,15 +1,15 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M60 fix shipped (v3.29.11); M61 DEFINED (awaiting partition)
-## Date: 2026-05-29 09:58 PDT
+## Status: ACTIVE — M61 PLANNING (in flight)
+## Date: 2026-05-29 12:37 PDT
 ## Version: 3.29.11
 
 ## Current Milestone
 
-### M61 — Platform Reconciliation (Native-First GSD-T) — **DEFINED** (2026-05-29)
+### M61 — Platform Reconciliation (Native-First GSD-T) — **PARTITIONED** (2026-05-29 11:46 PDT)
 
-**Status: DEFINED — awaiting `/gsd-t-partition`. NOT auto-executing (large/risky: retires ~15–18K LOC; trips Destructive Action Guard territory — requires explicit partition/plan review).**
+**Status: PARTITIONED — 8 domains scoped under `.gsd-t/domains/m61-d{1-8}-*/`; `m61-integration-points.md` written; Wave 0 (v3.x-legacy branch) already DONE. Awaiting `/gsd-t-plan`. Baseline locked: bin/ = 37,785 LOC / 109 files at v3.29.11 (SC1 target ≤12,000 LOC).**
 
 **Origin**: Opus 4.8 + current Claude Code (native 1M context, native background **Workflows** with deterministic pipeline/parallel/barriers/schema-validation/budget, native parallel agents, `/context`, `/usage`, Skills, comprehensive hooks, `/code-review ultra`) have absorbed the entire infrastructure layer GSD-T built across M34–M54 to compensate for a 200K window + a runtime that couldn't spawn/background/relay. A maximal-native Workflow bake-off (2026-05-29) re-ran M58 as **one Workflow script** and reproduced every deterministic gate + both domains exactly — AND its adversarial Red Team caught a live CRITICAL (→ M60) that M58's in-context review missed. **Conclusion: the orchestration migration is both safe and strictly more reliable.**
 
@@ -106,6 +106,12 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-05-29 11:46 PDT: [partitioned][M61] 8 domains scoped under `.gsd-t/domains/m61-d{1-8}-*/` (scope.md + constraints.md each); `m61-integration-points.md` written with explicit Wave 0→4 sequencing, C1-C4 checkpoint gates, and cross-domain file-contention matrix. Domains: D1 retire-context-runway (~1,580 LOC + hook), D2 retire-unattended-relay (~8,800 LOC — largest), D3 retire-token-telemetry (~4,100 LOC), D4 retire-viewer-dashboard (~2,000 LOC + dashboard server), D5 retire-proof-scratch (~1,900 LOC — zero-ref orphans), D6 migrate-orchestration-to-workflow (~6,500 LOC removed + ~500 added — net -6,000), D7 keep-and-reframe-validation (KEEP list explicit; Wave 2 de-wires 13 command files), D8 doc-ripple-and-cockpit (both CLAUDE.md heavy revision + SC7 walkthrough). Baseline locked at v3.29.11: **bin/ = 37,785 LOC / 109 files**. SC1 target ≤12,000 LOC. Scan freshness: 43 days stale, but retire targets are explicit (not scan-derived) — staleness doesn't affect partition decisions; noted in `m61-integration-points.md` Risk Notes. Build-hold in force. Status → PARTITIONED. Next: `/gsd-t-plan` to write per-domain tasks.md with file-disjointness validation.
+
+- 2026-05-29 11:31 PDT: [pivoted][M61] Q1 demolition order revised from Option A → Hybrid (Option C). Pre-partition reference scan invalidated Option A: `gsd-t-token-capture.cjs` called by 13 live command files (execute, wave, integrate, verify, debug, quick, plan, prd, etc.), `headless-auto-spawn.cjs` by 8, `gsd-t-unattended.cjs` by 4. Retiring them in Wave 1 would crash command files until migration landed. User-build-hold neutralizes external risk but not internal-dependency risk (Wave 1 needed Wave 2). Pivoted to: Wave 0 ✅ snapshot → Wave 1 D6 migrate + D5 retire-zero-ref → Wave 2 D7 reframe + command-file de-wire → Wave 3 4-way parallel retire (D1∥D2∥D3∥D4) → Wave 4 D8 doc + SC7. CONTEXT.md updated. Wave 0 v3.x-legacy branch already cut at v3.29.11 and pushed.
+
+- 2026-05-29 11:28 PDT: [discussed] M61 — 4 design questions settled (CONTEXT.md). **Q1 demolition order = Option A retire-first-disjoint + Wave 0 snapshot** (cut `v3.x-legacy` branch at v3.29.11 before any deletion — preserves source for D6 migration verification + serves as 4.0.0 safety net). User directive: build-hold during M61 (no other work runs) neutralizes external-dependency-breakage risk that originally made hybrid order safer. **Q2 validation = port Red Team/QA/Design-Verify to Workflow stages with existing protocols; add `/code-review ultra` to verify; declare three as orthogonal objective functions** (correctness vs adversarial vs test-mechanics). **Q3 SC7 = scripted walkthrough of a small post-M61 backlog item from the desktop, zero terminal keystrokes, fired prompts must be real decisions or counted as allowlist gaps; artifact-identical to CLI path. **Q4 versioning = v4.0.10 major bump** (M61 redefines substrate; breaking changes enumerated in CHANGELOG; `v3.x-legacy` branch doubles as safety net; npm `3.x` stays available). Deferred: deeper UI-heavy SC7 walkthrough, second bake-off on M52, cross-project propagation. Status → DISCUSSED. Next: `/gsd-t-partition` for M61.
 
 - 2026-05-29 09:58 PDT: [defined] M61 — Platform Reconciliation (Native-First GSD-T). Origin: evaluating GSD-T vs native Claude Code 4.8; the bake-off (M58 re-run as one Workflow script) proved native orchestration reproduces every gate AND is strictly more reliable (caught the M60 CRITICAL). Goal: collapse ~38K → ≤12K LOC bin/ by retiring context-meter/runway (D1), unattended relay (D2), token telemetry (D3), custom viewer (D4), proof scratch (D5); migrating orchestration core to native Workflows (D6); keeping+reframing validation gates as Workflow stages (D7); doc-ripple + desktop-as-cockpit (D8). 8 SCs incl. SC7 desktop-as-cockpit (no routine action requires hand-typing in a terminal). DEFINED only — NOT auto-executing: large/risky, Destructive Action Guard applies, needs partition/plan review + discussion. User directive: initiate M61 from the terminal CLI (last big CLI-dependent job), then switch to desktop cockpit. Version bump deferred to complete-milestone (likely major rework → consider 4.0.x given it redefines the framework's substrate).
 
