@@ -3,7 +3,16 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const { assertCompletion } = require('./gsd-t-completion-check.cjs');
-const transcriptTee = require('./gsd-t-transcript-tee.cjs');
+// M61 D4: gsd-t-transcript-tee retired. Was the viewer/dashboard's
+// transcript capture surface. Native /workflows view replaces it.
+// Stub with no-op methods for any worker that calls into it.
+const transcriptTee = {
+  openTranscript: () => ({}),
+  appendFrame: () => {},
+  closeTranscript: () => {},
+  allocateSpawnId: () => `stub-spawn-${Date.now()}`,
+  attachTee: () => ({ close: () => {} }),
+};
 
 const DEFAULT_CLAUDE_BIN = 'claude';
 

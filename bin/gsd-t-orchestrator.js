@@ -8,8 +8,16 @@ const { loadConfig } = require('./gsd-t-orchestrator-config.cjs');
 const { readAllTasks, groupByWave, validateNoForwardDeps } = require('./gsd-t-orchestrator-queue.cjs');
 const { runWorker } = require('./gsd-t-orchestrator-worker.cjs');
 const { buildTaskBrief } = require('./gsd-t-task-brief.js');
-const { createStreamFeedClient } = require('./gsd-t-stream-feed-client.cjs');
-const { recoverRunState, writeRecoveredState, archiveState } = require('./gsd-t-orchestrator-recover.cjs');
+// M61 D4: gsd-t-stream-feed-client retired. createStreamFeedClient connected
+// the orchestrator to the dashboard's SSE stream. Native /workflows view
+// replaces the dashboard surface. Stub to a no-op client.
+const createStreamFeedClient = () => ({ publish: () => {}, close: () => {} });
+// M61 D2: gsd-t-orchestrator-recover retired. Stubs return safe defaults
+// per recoverRunState's signature so the orchestrator initializes cleanly
+// even when no in-flight state exists.
+const recoverRunState = () => ({ inFlight: false, tasks: [], milestone: null });
+const writeRecoveredState = () => {};
+const archiveState = () => {};
 
 const STATE_DIR = '.gsd-t/orchestrator';
 const STATE_FILE = 'state.json';
