@@ -2,6 +2,41 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.0.11] - 2026-05-29 (M65 Orchestration-Shell Retirement — patch)
+
+Completes the M61 D6 deferral: deletes the M40/M44 orchestration shell that the native Workflow scripts replaced. Scope was corrected from the raw brief after a live reference scan proved `parallel-cli*` and `gsd-t-parallel.cjs` are KEEP-list substrate (verify-gate Track-2 + the `_lib` file-disjointness prover), not retireable shell — they were retained.
+
+### Removed (bin/, −1,780 LOC: 22,051 → 20,271)
+
+| File(s) | Native replacement |
+|---------|--------------------|
+| `bin/gsd-t-orchestrator.js` + `-worker.cjs` + `-queue.cjs` + `-config.cjs` | `templates/workflows/gsd-t-execute.workflow.js` |
+| `bin/spawn-plan-{writer,status-updater,derive}.cjs` + `scripts/spawn-plan-fmt-tokens.cjs` | Native `/workflows` progress + Agent View |
+| `bin/headless-exit-codes.cjs` | `mapHeadlessExitCode` inlined into `bin/gsd-t.js` (5-code contract + M45 boundary-anchored regexes verbatim) |
+| `scripts/gsd-t-post-commit-spawn-plan.sh` + `templates/hooks/post-commit-spawn-plan.sh` | — (spawn-plan panel retired with the M61-D4 viewer) |
+
+### Removed CLI subcommands
+- `gsd-t orchestrate` — superseded by `gsd-t-execute.workflow.js`.
+
+### Removed tests (delete-with-subject)
+- `test/m40-orchestrator-{config,queue,worker}.test.js`, `test/m44-d8-{spawn-plan-writer,spawn-plan-status-updater,post-commit-hook}.test.js` (each tested only a co-deleted module).
+
+### Changed
+- `bin/gsd-t-parallel.cjs` — inlined `computeInSessionHeadroom`/`computeUnattendedGate`/`DEFAULT_SUMMARY_SIZE_PCT` (wave-join-contract §Mode-Aware Gating Math, constants 85/60/4) off the deleted orchestrator-config; refreshed stale header.
+- `bin/gsd-t.js` — purged 10 stale `PROJECT_BIN_TOOLS` entries pointing at M61-deleted files (would have broken `update-all`).
+- `commands/gsd-t-help.md` — removed spawn-plan/parallelism panel bullets (referenced deleted hook + retired dashboard).
+- `commands/gsd-t-resume.md` — removed dead Step 0.3 "Orchestrator Run Recovery" section.
+
+### Deferred (NOT in M65)
+- `bin/orchestrator.js` + `bin/design-orchestrator.js` — the design-build pipeline orchestrator; `gsd-t design-build` is documented but has no live dispatch case (unwired). Wire-back-or-retire is a separate decision.
+
+### Verification
+- Red Team (opus): GRUDGING PASS — 0 CRITICAL/HIGH, both inlines byte-faithful (25-case adversarial corpus → 100% parity vs parent sources).
+- QA (sonnet): PASS — zero M65-caused failures; −66 test-count drop fully accounted by the 6 deleted files.
+- `/code-review ultra`: skipped (pure deletion + verbatim inlines, covered by RT+QA).
+- `gsd-t doctor` clean; `gsd-t build-coverage` PASS; `gsd-t parallel --dry-run` exit 0 (KEEP-canary).
+- Verdict **VERIFIED-WITH-WARNINGS**: the verify-gate/ci-parity reds are 100% inherited M61 D1–D8 carryover (23 broken unit tests + ~18 orphaned viewer E2E specs importing the M61-D4-deleted `gsd-t-dashboard-server.js`), proven against parent commit `5a5c6c0^` (1427 pass / 22 fail). M65 introduced zero regressions. Carryover flagged for a dedicated M61-cleanup milestone.
+
 ## [4.0.10] - 2026-05-29 (M61 Platform Reconciliation — major)
 
 ### BREAKING CHANGES
