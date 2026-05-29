@@ -1760,17 +1760,11 @@ async function doInit(projectName) {
   initGsdtDir(projectDir, projectName, today);
   copyBinToolsToProject(projectDir, projectName);
 
-  // Context Meter: copy script + deps + config template, append .gitignore,
-  // register the global PostToolUse hook.
-  if (installContextMeter(projectDir)) {
-    success("Context meter installed (scripts/, config template, .gitignore)");
-  }
-  const cmHook = configureContextMeterHooks(SETTINGS_JSON);
-  if (cmHook.installed) {
-    if (cmHook.action === "added") success("Context meter PostToolUse hook added");
-    else if (cmHook.action === "updated") success("Context meter hook command refreshed");
-    else info("Context meter hook already configured");
-  }
+  // M61 D1: Context Meter retired (token-budget.cjs + scripts/gsd-t-context-meter.js
+  // deleted). Native /context replaces it. No longer provisioned at install —
+  // installContextMeter / configureContextMeterHooks would register a PostToolUse
+  // hook pointing at a deleted script. Both functions remain defined but unused
+  // (cleaned in M65 follow-up).
 
   if (registerProject(projectDir)) success("Registered in ~/.claude/.gsd-t-projects");
 
@@ -3147,7 +3141,11 @@ async function doDoctor(opts) {
   issues += checkDoctorInstallation();
   issues += await checkDoctorProject(opts);
   issues += checkDoctorCgc();
-  issues += await checkDoctorContextMeter(process.cwd());
+  // M61 D1: Context Meter retired (token-budget.cjs + context-meter hook deleted).
+  // checkDoctorContextMeter would emit phantom errors for the deleted subsystem
+  // and tell the user to reinstall it. Native /context replaces the meter.
+  // M61 D4: dashboard orphan check left for the deleted dashboard-server is also
+  // dead, but harmless (ps string-match, no require) — deferred.
   issues += checkDoctorDashboardOrphans(opts);
   // M50 D2: opt-in install of the playwright-gate pre-commit hook.
   if (opts && opts.installHooks) {

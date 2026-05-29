@@ -201,14 +201,14 @@ If any are missing:
 Playwright readiness is enforced by executable code, not prose. Three layers:
 
 1. **Bootstrap library** — `bin/playwright-bootstrap.cjs` exports `hasPlaywright`, `detectPackageManager`, `installPlaywright`, `verifyPlaywrightHealth`. `bin/ui-detection.cjs` exports `hasUI`, `detectUIFlavor`. See `.gsd-t/contracts/playwright-bootstrap-contract.md`.
-2. **Spawn-time gate** — `bin/headless-auto-spawn.cjs::autoSpawnHeadless()` auto-installs Playwright before the spawn proceeds, when the command being run is in the testing/UI whitelist (`gsd-t-execute`, `gsd-t-test-sync`, `gsd-t-verify`, `gsd-t-quick`, `gsd-t-wave`, `gsd-t-milestone`, `gsd-t-complete-milestone`, `gsd-t-debug`, `gsd-t-integrate`) AND `hasUI(projectDir)` AND `!hasPlaywright(projectDir)`. On install failure, the gate writes `mode: 'blocked-needs-human'` to the headless session-state file and exits 4.
+2. **Workflow-stage gate** — the verify/execute Workflow scripts call `playwright-bootstrap.cjs::installPlaywright()` before any E2E stage when `hasUI(projectDir)` AND `!hasPlaywright(projectDir)`. On install failure the stage halts with a structured `blocked-needs-human` result. (M61: replaced the retired `headless-auto-spawn.cjs` spawn-time gate — the Workflow runtime owns spawning now.)
 3. **Commit-time gate** — `scripts/hooks/pre-commit-playwright-gate` (opt-in via `gsd-t doctor --install-hooks`) blocks commits that touch viewer/UI source files when Playwright tests have not passed since the most recent change. Reads `.gsd-t/.last-playwright-pass`; fails open on missing/corrupt timestamps.
 
 Operator overrides:
 - Manual install: `gsd-t setup-playwright [path]` (or `gsd-t doctor --install-playwright`).
 - Health check: `gsd-t doctor` reports `playwright missing` for any UI project without `playwright.config.*`.
 
-You no longer need to run a check yourself before testing commands — the gate runs every spawn.
+You no longer need to run a check yourself before testing commands — the Workflow stage runs the readiness gate before E2E.
 
 ### Playwright Cleanup
 

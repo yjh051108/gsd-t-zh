@@ -23,7 +23,7 @@ Contract-driven development methodology for Claude Code. npm package providing s
 
 ```
 bin/                     — CLI entry (gsd-t.js) + orchestrators (orchestrator.js, design-orchestrator.js)
-                           + support modules (headless-auto-spawn.cjs, token-budget.cjs, model-selector.js, …)
+                           + support modules (gsd-t-context-brief.cjs, cli-preflight.cjs, gsd-t-verify-gate.cjs, model-selector.js, …)
 commands/                — slash commands for Claude Code (GSD-T workflow + utility)
 templates/               — document + prompt + stack templates
   CLAUDE-{global,project}.md, requirements.md, architecture.md, workflows.md,

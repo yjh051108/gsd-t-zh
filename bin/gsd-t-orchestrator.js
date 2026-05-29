@@ -12,12 +12,23 @@ const { buildTaskBrief } = require('./gsd-t-task-brief.js');
 // the orchestrator to the dashboard's SSE stream. Native /workflows view
 // replaces the dashboard surface. Stub to a no-op client.
 const createStreamFeedClient = () => ({ publish: () => {}, close: () => {} });
-// M61 D2: gsd-t-orchestrator-recover retired. Stubs return safe defaults
-// per recoverRunState's signature so the orchestrator initializes cleanly
-// even when no in-flight state exists.
-const recoverRunState = () => ({ inFlight: false, tasks: [], milestone: null });
+// M61 D2: gsd-t-orchestrator-recover retired. The recover module reconciled
+// in-flight orchestrator state for `--resume`. Native Workflow resume
+// (resumeFromRunId) replaces it. The stub MUST match the call-site contract
+// (gsd-t-orchestrator.js:327-356 reads .mode/.notes/.state/.tasks/.currentWave):
+// return mode:'fresh' so `--resume` correctly raises NO_RESUME_STATE instead
+// of silently re-running the whole milestone. (M61 post-audit HIGH fix —
+// the prior {inFlight,tasks,milestone} shape had no .mode key, so every
+// resume branch fell through and the orchestrator restarted from scratch.)
+const recoverRunState = () => ({
+  mode: 'fresh',
+  notes: ['orchestrator-recover retired in M61 — use native Workflow resumeFromRunId for resume'],
+  state: {},
+  tasks: {},
+  currentWave: null,
+});
 const writeRecoveredState = () => {};
-const archiveState = () => {};
+const archiveState = () => ({ archived: false, archivePath: null });
 
 const STATE_DIR = '.gsd-t/orchestrator';
 const STATE_FILE = 'state.json';
