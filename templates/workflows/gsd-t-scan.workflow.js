@@ -421,9 +421,13 @@ const synthesisPrompt = [
   `by slice order. De-duplicate findings that multiple slices surfaced (e.g. a`,
   `cross-cutting tenant-scoping gap) into one item that lists all locations.`,
   ``,
-  `ALSO write these analysis files so the HTML report renders real data (the renderer`,
-  `at bin/scan-data-collector.js reads them):`,
-  `- \`.gsd-t/scan/architecture.md\` — stack + structure + a "Files analyzed: N" / "Lines of code: N" line from the probe totals (${JSON.stringify(probe.totals)}) + a Components/Domains list.`,
+  `ALSO write these analysis files so the HTML report renders real data. The`,
+  `renderer (bin/scan-data-collector.js) parses a SPECIFIC format — match it exactly:`,
+  `- \`.gsd-t/scan/architecture.md\` — stack + structure + a Components/Domains list.`,
+  `  CRITICAL: include a line giving the file + LOC totals in EXACTLY this form so`,
+  `  the parser reads it: \`<N> files (~<LOC> LOC)\` — e.g. \`1809 files (~250000 LOC)\`.`,
+  `  Use the probe totals: ${JSON.stringify(probe.totals)}. Do NOT write "Files`,
+  `  analyzed: N" — that form is NOT parsed.`,
   `- \`.gsd-t/scan/security.md\` — the security-dimension findings, Critical/High/Medium/Low sections.`,
   `- \`.gsd-t/scan/quality.md\` — the quality/architecture/test-gap findings.`,
   ``,
@@ -485,11 +489,15 @@ else console.error('report-failed:', r.error);
   render = _runNode("bin/scan-report.js", renderExpr, [projectDir]);
 }
 let reportInfo = null;
+let reportHollow = null;
 if (render.ok) {
   try { reportInfo = JSON.parse((render.stdout || "").trim()); } catch (_) {}
-  if (reportInfo && reportInfo.filesScanned === 0 && reportInfo.findings === 0) {
-    // Report rendered but reads as hollow — surface it, don't pass it off as success.
-    log(`⚠ HTML report rendered but reads HOLLOW (filesScanned=0, findings=0) — the analysis files may be missing. Report at ${reportInfo.outputPath}; the techdebt.md register is the authoritative artifact.`);
+  // A real scan ALWAYS has files. filesScanned===0 alone is a hollow signal —
+  // do NOT require findings===0 too (that &&-guard was defeated by any non-empty
+  // scan, where the security/quality findings parse but the file count does not).
+  reportHollow = !!(reportInfo && reportInfo.filesScanned === 0);
+  if (reportHollow) {
+    log(`⚠ HTML report rendered but reads HOLLOW (filesScanned=0) — the architecture.md file/LOC line is missing or in an unparsed format. Report at ${reportInfo && reportInfo.outputPath}; the techdebt.md register is the authoritative artifact.`);
   } else {
     log(`HTML report: ${render.stdout && render.stdout.trim()}`);
   }
@@ -506,6 +514,6 @@ return {
   registerPath,
   archivePath: priorArchivePath,
   htmlReport: reportInfo ? reportInfo.outputPath : null,
-  reportHollow: reportInfo ? (reportInfo.filesScanned === 0 && reportInfo.findings === 0) : null,
+  reportHollow,
   probeTotals: probe.totals,
 };
