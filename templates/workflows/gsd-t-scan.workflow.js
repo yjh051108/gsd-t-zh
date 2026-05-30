@@ -181,13 +181,53 @@ if (!pre.ok) {
 }
 log("preflight OK");
 
-// Load prior register (for dedup + TD-numbering continuation) — read-only here;
-// the synthesis stage performs the archive + rewrite.
+// Load prior register (for dedup + TD-numbering continuation).
+// Red-team fix (CRITICAL-1/CRITICAL-2/MEDIUM-1): the archive + TD-numbering must be
+// DETERMINISTIC JS, not LLM prose — an agent told to "archive then rewrite" can
+// clobber the register without archiving, and an agent told to "continue numbering"
+// with no data hallucinates a start number → colliding TD IDs. So we do the rename
+// here (collision-safe), parse the max TD number, and PASS the prior content into
+// synthesis. This mirrors verify.workflow.js, where every destructive gate is
+// deterministic code, not an agent instruction.
 let priorRegister = null;
+let priorArchivePath = null;
+let tdStart = 1;
 const registerPath = path.join(projectDir, ".gsd-t", "techdebt.md");
+
+function _parseMaxTd(text) {
+  // Match TD-1, TD-01, TD-001, TD-117 in any "### TD-NNN" or "TD-NNN" form.
+  const nums = [];
+  const re = /TD-0*(\d+)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) nums.push(parseInt(m[1], 10));
+  return nums.length ? Math.max(...nums) : 0;
+}
+function _archiveDateFrom(text, fallbackDate) {
+  // Prefer an explicit YYYY-MM-DD in the header; else use the fallback (mtime-derived).
+  const m = text.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  return (m && m[1]) || fallbackDate;
+}
+
 if (fs.existsSync(registerPath)) {
   priorRegister = fs.readFileSync(registerPath, "utf8");
-  log(`prior register found (${priorRegister.length} bytes) — will dedup + continue TD numbering`);
+  tdStart = _parseMaxTd(priorRegister) + 1;
+  // Derive archive date deterministically: header date, else file mtime (NOT Date.now —
+  // unavailable in this runtime). Collision-safe suffixing.
+  const mtime = fs.statSync(registerPath).mtime;
+  const fallbackDate = mtime.toISOString().slice(0, 10);
+  const archiveDate = _archiveDateFrom(priorRegister, fallbackDate);
+  const scanDir = path.join(projectDir, ".gsd-t");
+  let candidate = path.join(scanDir, `techdebt_${archiveDate}.md`);
+  let counter = 2;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(scanDir, `techdebt_${archiveDate}_${counter}.md`);
+    counter += 1;
+  }
+  fs.renameSync(registerPath, candidate);
+  priorArchivePath = candidate;
+  log(`prior register archived → ${path.basename(candidate)} (${priorRegister.length} bytes); TD numbering continues at TD-${tdStart}`);
+} else {
+  log(`no prior register — TD numbering starts at TD-01`);
 }
 
 // ─── Volume probe — derive the slice list (this is the fix for the 5-teammate cap) ───
@@ -222,11 +262,15 @@ const probePrompt = [
   `Return JSON per the schema: totals (headline counts) + slices (the fan-out list).`,
 ].join("\n");
 
+// Red-team fix: probe runs on SONNET, not haiku. The probe's whole job is to
+// measure volume and resist under-slicing; a haiku probe that under-counts a large
+// repo (truncated tooling output → guesses) would re-introduce the exact under-scaling
+// M66 fixes. Sonnet is the right tier for this measurement+judgment task.
 const probe = await agent(probePrompt, {
   label: "volume-probe",
   phase: "Probe",
   schema: PROBE_SCHEMA,
-  model: "haiku",
+  model: "sonnet",
 });
 
 const slices = (probe && Array.isArray(probe.slices) && probe.slices) || [];
@@ -236,7 +280,19 @@ if (!slices.length) {
 }
 log(`probe derived ${slices.length} slice(s) from totals=${JSON.stringify(probe.totals)}`);
 
+// Red-team fix (HIGH-2): deterministic silent-truncation detection. If the probe hit
+// the soft cap, the operator MUST be told whether coverage was merged away. CLAUDE.md
+// forbids silent caps — so we surface a coverage-risk warning in code, not just prose.
+if (slices.length >= maxSlicesHint) {
+  if (probe.notes && /merg/i.test(probe.notes)) {
+    log(`⚠ COVERAGE NOTE: probe hit the ${maxSlicesHint}-slice cap and merged areas — see probe.notes: ${probe.notes}`);
+  } else {
+    log(`⚠ COVERAGE RISK: probe returned ${slices.length} slices (≥ cap ${maxSlicesHint}) with NO documented merges. Some areas may be under-covered. Re-run with a higher maxSlicesHint to confirm full coverage.`);
+  }
+}
+
 // budget-aware depth hint: with a larger turn target, finders are told to dig deeper.
+// "thorough" and "MAXIMUM" are defined inline in the finder prompt so the hint is actionable.
 const deep = budget && budget.total && budget.total > 300000 ? "MAXIMUM" : "thorough";
 
 // ─── Deep scan — pipeline: per-slice deep finder → single verify (no barrier) ───
@@ -254,16 +310,21 @@ const sliceResults = await pipeline(
       ``,
       `MANDATE: ENUMERATE, do NOT sample. Walk EVERY file under your owned paths.`,
       `The legacy scan failed because one agent sampled the top ~5 issues across the`,
-      `whole repo and stopped. You own only this slice, so go to the bottom of it —`,
-      `${deep} depth. Surface every real defect: bugs, security holes, missing`,
-      `validation, broken invariants, race conditions, dead/duplicated code, N+1s,`,
-      `untested critical paths, contract drift, and domain-specific correctness flaws`,
-      `(e.g. money math, state-machine gaps, timezone bugs, idempotency holes).`,
+      `whole repo and stopped. You own only this slice, so go to the bottom of it.`,
+      ``,
+      `Depth = ${deep}. "thorough" = walk every file in your paths and report every`,
+      `non-trivial real defect, high and medium confidence. "MAXIMUM" = additionally`,
+      `include lower-confidence and speculative issues worth a human's review.`,
+      `Surface every real defect: bugs, security holes, missing validation, broken`,
+      `invariants, race conditions, dead/duplicated code, N+1s, untested critical`,
+      `paths, contract drift, and domain-specific correctness flaws (e.g. money math,`,
+      `state-machine gaps, timezone bugs, idempotency holes).`,
       ``,
       `For each finding give: title, severity (CRITICAL/HIGH/MEDIUM/LOW), a human area`,
       `label, concrete file:line refs, the detail, the impact, and a remediation.`,
-      `Set confidence honestly. Prefer specificity over volume — but do not stop`,
-      `early. If the slice is genuinely clean, return an empty findings array.`,
+      `Set confidence honestly. If this slice is a substantial area (many files), a`,
+      `result of only 1-2 findings is suspicious — re-check before concluding it is`,
+      `clean. If the slice is genuinely clean, return an empty findings array.`,
       ``,
       `Return JSON per the schema.`,
     ].filter(Boolean).join("\n"),
@@ -271,12 +332,18 @@ const sliceResults = await pipeline(
   ),
   // Stage 2 — single verify pass (per user decision: single, not 3-vote).
   // Confirms each finding against the ACTUAL code; drops false positives.
-  async (finderResult, slice) => {
+  // Red-team fix (HIGH-3): pipeline() stage-2 contract is (prevResult, originalItem, index).
+  // Defend against an unexpected runtime signature so a missing `slice` arg can never
+  // throw `slice.key` and silently drop a whole slice's findings (which would resolve
+  // to null at the pipeline level). Recover the key from the finder result if needed.
+  async (finderResult, originalItem, _index) => {
+    const slice = originalItem || {};
+    const sliceKey = slice.key || (finderResult && finderResult.slice) || "unknown-slice";
     if (!finderResult || !Array.isArray(finderResult.findings)) {
-      return { slice: slice.key, findings: [] };
+      return { slice: sliceKey, findings: [] };
     }
     if (verifyMode === "none" || finderResult.findings.length === 0) {
-      return { slice: slice.key, findings: finderResult.findings || [] };
+      return { slice: sliceKey, findings: finderResult.findings || [] };
     }
     const verified = await parallel(
       finderResult.findings.map((f) => async () => {
@@ -293,7 +360,7 @@ const sliceResults = await pipeline(
               `severity is wrong, set correctedSeverity. If real but underspecified,`,
               `verdict="needs-detail" (still kept). Return JSON per the schema.`,
             ].join("\n"),
-            { label: `verify:${slice.key}`, phase: "Deep Scan", schema: VERIFY_SCHEMA, model: "sonnet" }
+            { label: `verify:${sliceKey}`, phase: "Deep Scan", schema: VERIFY_SCHEMA, model: "sonnet" }
           );
           if (!v || v.verdict === "false-positive" || v.confirmed === false) return null;
           return { ...f, severity: v.correctedSeverity || f.severity, _verify: v.verdict };
@@ -303,7 +370,7 @@ const sliceResults = await pipeline(
         }
       })
     );
-    return { slice: slice.key, findings: verified.filter(Boolean), notes: finderResult.notes };
+    return { slice: sliceKey, findings: verified.filter(Boolean), notes: finderResult.notes };
   }
 );
 
@@ -314,20 +381,32 @@ log(`deep scan complete: ${allFindings.length} verified findings across ${sliceR
 
 // ─── Synthesis — archive prior register, dedup/merge/re-rank, write fresh register ───
 phase("Synthesis");
+// Red-team fix (CRITICAL-1/CRITICAL-2): the archive already happened in JS above.
+// Synthesis no longer touches the archive — it gets the prior register CONTENT and the
+// deterministically-computed starting TD number, so dedup + numbering can't hallucinate.
+// Red-team fix (HIGH-1): synthesis ALSO writes the .gsd-t/scan/*.md dimension files the
+// deterministic renderer (bin/scan-data-collector.js) reads, so the HTML report reflects
+// real data instead of silently rendering a hollow shell. scanNumber (formerly dead) is
+// threaded into the register header here.
 const synthesisPrompt = [
   `You are the SYNTHESIS agent for a GSD-T deep scan of \`${projectDir}\`.`,
   `${slices.length} slices ran; ${allFindings.length} verified findings came back.`,
+  scanNumber ? `This is scan #${scanNumber} — put it in the register header.` : ``,
   ``,
   priorRegister
     ? [
-        `A prior register exists at \`.gsd-t/techdebt.md\`. FIRST archive it:`,
-        `determine its scan date from the header (fallback: today), rename to`,
-        `\`.gsd-t/techdebt_YYYY-MM-DD.md\` (append _2, _3 on same-day collision),`,
-        `then find the highest existing TD-NNN and CONTINUE numbering from there.`,
-        `DEDUPLICATE: do not re-add a finding already represented in the prior register;`,
-        `cross-reference instead.`,
+        `The prior register was ALREADY archived (in code) to \`${priorArchivePath ? path.basename(priorArchivePath) : "an archive"}\`.`,
+        `Start TD numbering at TD-${tdStart} (computed deterministically from the highest`,
+        `prior TD number — do NOT renumber existing items or restart at 1).`,
+        `DEDUPLICATE against the prior register below: do not re-add a finding already`,
+        `represented there; cross-reference the prior TD id instead.`,
+        ``,
+        `Prior register content (for dedup + numbering reference):`,
+        "```markdown",
+        priorRegister.slice(0, 20000),
+        "```",
       ].join("\n")
-    : `No prior register — start TD numbering at TD-01.`,
+    : `No prior register — start TD numbering at TD-${String(tdStart).padStart(2, "0")}.`,
   ``,
   `Verified findings:`,
   "```json",
@@ -342,10 +421,18 @@ const synthesisPrompt = [
   `by slice order. De-duplicate findings that multiple slices surfaced (e.g. a`,
   `cross-cutting tenant-scoping gap) into one item that lists all locations.`,
   ``,
+  `ALSO write these analysis files so the HTML report renders real data (the renderer`,
+  `at bin/scan-data-collector.js reads them):`,
+  `- \`.gsd-t/scan/architecture.md\` — stack + structure + a "Files analyzed: N" / "Lines of code: N" line from the probe totals (${JSON.stringify(probe.totals)}) + a Components/Domains list.`,
+  `- \`.gsd-t/scan/security.md\` — the security-dimension findings, Critical/High/Medium/Low sections.`,
+  `- \`.gsd-t/scan/quality.md\` — the quality/architecture/test-gap findings.`,
+  ``,
   `Do NOT express effort in human-hours/days/sprints — GSD-T units only (domain/`,
   `wave/spawn/token-spend) per the effort-estimates rule. Then commit the new`,
-  `register + any archive via git. Return JSON per the schema with the final counts.`,
-].join("\n");
+  `register + analysis files via git (you are on a feature branch; do not push).`,
+  `Return JSON per the schema with the final counts and the archivePath`,
+  `\`${priorArchivePath || ""}\`.`,
+].filter(Boolean).join("\n");
 
 const synthesis = await agent(synthesisPrompt, {
   label: "synthesis",
@@ -356,14 +443,33 @@ const synthesis = await agent(synthesisPrompt, {
 
 if (!synthesis || synthesis.status !== "written") {
   log("synthesis did not write the register — halting before render");
-  return { status: "failed", reason: "synthesis-failed", synthesis, findingCount: allFindings.length };
+  return { status: "failed", reason: "synthesis-failed", synthesis, findingCount: allFindings.length, archivePath: priorArchivePath };
+}
+// Deterministic confirmation the register actually landed (don't trust the agent's status alone).
+if (!fs.existsSync(registerPath)) {
+  log("synthesis reported written but .gsd-t/techdebt.md is absent — halting");
+  return { status: "failed", reason: "register-missing", synthesis, archivePath: priorArchivePath };
 }
 log(`register written: ${JSON.stringify(synthesis.counts)}`);
 
 // ─── Render — deterministic schema extraction + diagrams + HTML report ───
 // These bin/scan-*.js renderers are KEPT verbatim (M66 does not touch them).
+// Red-team fix (HIGH-1): guard ALL FOUR required bin files (the eval requires four,
+// not just scan-report.js), and detect a hollow report instead of claiming success.
 phase("Render");
-const renderExpr = `
+const requiredBins = [
+  "bin/scan-data-collector.js",
+  "bin/scan-schema.js",
+  "bin/scan-diagrams.js",
+  "bin/scan-report.js",
+];
+const missingBin = requiredBins.find((b) => !fs.existsSync(path.join(projectDir, b)));
+let render;
+if (missingBin) {
+  render = { ok: false, exitCode: 127, stderr: `missing renderer ${missingBin}` };
+  log(`render skipped — ${missingBin} not found (register is the primary artifact; report is optional)`);
+} else {
+  const renderExpr = `
 const {collectScanData}=require('./bin/scan-data-collector.js');
 const {extractSchema}=require('./bin/scan-schema.js');
 const {generateDiagrams}=require('./bin/scan-diagrams.js');
@@ -373,12 +479,20 @@ const analysisData=collectScanData(root);
 const schemaData=extractSchema(root);
 const diagrams=generateDiagrams(analysisData, schemaData, {projectRoot:root});
 const r=generateReport(analysisData, schemaData, diagrams, {projectRoot:root});
-if (r.outputPath) console.log(JSON.stringify({outputPath:r.outputPath, diagramsRendered:r.diagramsRendered}));
+if (r.outputPath) console.log(JSON.stringify({outputPath:r.outputPath, diagramsRendered:r.diagramsRendered, filesScanned:analysisData.filesScanned||0, findings:(analysisData.findings||[]).length}));
 else console.error('report-failed:', r.error);
 `;
-const render = _runNode("bin/scan-report.js", renderExpr, [projectDir]);
+  render = _runNode("bin/scan-report.js", renderExpr, [projectDir]);
+}
+let reportInfo = null;
 if (render.ok) {
-  log(`HTML report: ${render.stdout && render.stdout.trim()}`);
+  try { reportInfo = JSON.parse((render.stdout || "").trim()); } catch (_) {}
+  if (reportInfo && reportInfo.filesScanned === 0 && reportInfo.findings === 0) {
+    // Report rendered but reads as hollow — surface it, don't pass it off as success.
+    log(`⚠ HTML report rendered but reads HOLLOW (filesScanned=0, findings=0) — the analysis files may be missing. Report at ${reportInfo.outputPath}; the techdebt.md register is the authoritative artifact.`);
+  } else {
+    log(`HTML report: ${render.stdout && render.stdout.trim()}`);
+  }
 } else {
   // Non-fatal — the register is the primary artifact; the report is a nicety.
   log(`render stage non-fatal failure (exitCode=${render.exitCode}): ${render.stderr || render.stdout}`);
@@ -389,8 +503,9 @@ return {
   slices: slices.length,
   findings: allFindings.length,
   counts: synthesis.counts,
-  registerPath: synthesis.registerPath || registerPath,
-  archivePath: synthesis.archivePath || null,
-  htmlReport: render.ok ? (render.stdout || "").trim() : null,
+  registerPath,
+  archivePath: priorArchivePath,
+  htmlReport: reportInfo ? reportInfo.outputPath : null,
+  reportHollow: reportInfo ? (reportInfo.filesScanned === 0 && reportInfo.findings === 0) : null,
   probeTotals: probe.totals,
 };

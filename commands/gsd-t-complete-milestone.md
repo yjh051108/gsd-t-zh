@@ -463,19 +463,13 @@ node scripts/gsd-t-watch-state.js advance --agent-id "$GSD_T_AGENT_ID" --parent-
 
 Before tagging, ensure scan docs reflect the final state of the codebase after all milestone work. This is the full-refresh counterpart to the micro-updates done during execute/quick/debug.
 
-If `.gsd-t/scan/` exists (a prior scan has been run):
-1. Check `.gsd-t/scan/.cache.json` for staleness — count commits since last scan
-2. If **any dimension is stale** (>0 commits since scan):
-   - Log: "Running milestone scan checkpoint — refreshing all stale scan dimensions..."
-   - Re-run all stale dimensions using scan teammates (same team structure as `gsd-t-scan` Step 2):
-     - Stale `architecture.md` → architecture teammate (model: haiku)
-     - Stale `quality.md` → quality teammate (model: sonnet)
-     - Stale `security.md` → security teammate (model: sonnet)
-     - Stale `business-rules.md` → business-rules teammate (model: haiku)
-     - Stale `contract-drift.md` → contracts teammate (model: haiku)
-   - Update `.gsd-t/scan/.cache.json` after refresh
+If `.gsd-t/techdebt.md` exists (a prior scan has been run):
+1. Check staleness — count commits since the register was last written (use `.gsd-t/scan/.cache.json` if present, else the register's git mtime).
+2. If **stale** (>0 commits since scan):
+   - Log: "Running milestone scan checkpoint — refreshing the tech-debt register..."
+   - Re-run the scan by invoking the volume-scaled scan Workflow (`templates/workflows/gsd-t-scan.workflow.js`, same as `/gsd-t-scan`) — the probe re-slices the codebase and the finders refresh the register. This replaces the retired fixed-5-teammate dimension refresh.
    - Update `.gsd-t/techdebt.md` — mark any items resolved during this milestone as `[RESOLVED]`
-3. If all dimensions are fresh → skip with log: "Scan docs are fresh — no checkpoint refresh needed"
+3. If fresh → skip with log: "Scan register is fresh — no checkpoint refresh needed"
 
 If `.gsd-t/scan/` doesn't exist → skip (no scan data to maintain).
 

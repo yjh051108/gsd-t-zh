@@ -101,16 +101,16 @@ If the project has source code, graph indexing (`.gsd-t/graph/`) will run as par
 
 ## Step 4: Deep Codebase Scan (gsd-t-scan)
 
-Execute the full scan workflow (same as `/gsd-t-scan`):
+Execute the full scan by invoking the volume-scaled scan Workflow (same as `/gsd-t-scan` — `templates/workflows/gsd-t-scan.workflow.js`):
 
-1. Scan across all dimensions: architecture, business rules, security, quality, contracts
-2. Build `.gsd-t/techdebt.md` register
-3. Cross-populate findings into living documents (docs/architecture.md, docs/workflows.md, docs/infrastructure.md, docs/requirements.md)
-4. Update README.md with discovered tech stack and setup info
+1. The volume-probe slices the codebase by area (scaling with volume, not a fixed dimension set); per-slice deep finders enumerate; a single verify pass drops false positives.
+2. Synthesis builds the `.gsd-t/techdebt.md` register and the `.gsd-t/scan/*.md` analysis files.
+3. Cross-populate findings into living documents (docs/architecture.md, docs/workflows.md, docs/infrastructure.md, docs/requirements.md) from the register + analysis files.
+4. Update README.md with discovered tech stack and setup info.
 
-Always use team mode for the scan unless the codebase is trivially small (< 5 files) or teams are explicitly disabled.
+The Workflow's fan-out scales with codebase volume automatically — no team-mode toggle.
 
-**If `.gsd-t/techdebt.md` already exists**: Append new findings, don't overwrite.
+**If `.gsd-t/techdebt.md` already exists**: the Workflow archives it to `.gsd-t/techdebt_YYYY-MM-DD.md` and continues TD numbering.
 
 ## Step 5: Generate Project CLAUDE.md (gsd-t-setup)
 
