@@ -1,11 +1,19 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M66 COMPLETED (scan-depth regression fix, v4.0.13, VERIFIED — Red Team GRUDGING-PASS after 2 fix cycles); M65 COMPLETED (orchestration-shell retirement, v4.0.11)
-## Date: 2026-05-29 18:50 PDT
-## Version: 4.0.13
+## Status: ACTIVE — M67 COMPLETED (scan deep-document phase, v4.0.14, VERIFIED — Red Team GRUDGING-PASS after 1 fix cycle); M66 COMPLETED (scan-depth regression fix, v4.0.13)
+## Date: 2026-05-29 22:06 PDT
+## Version: 4.0.14
 
 ## Current Milestone
+
+### M67 — Scan Deep Document Phase — **COMPLETED at v4.0.14 (2026-05-29 22:06 PDT)**
+
+**Status: COMPLETED — VERIFIED. Single domain `m67-d1-scan-document-stage`. Origin: user asked "does scan now do a more thorough document job on ALL the documents it produces?" — answer was NO. M66 made the tech-debt register deep but left living-document cross-population as a non-deterministic "lead agent follow-on" (effectively dropped) — a regression vs the old prose scan's Step 5. M67 adds a deterministic `Document` phase between Synthesis and Render: one agent PER DOCUMENT fans out (parallel) from the same slices + verified findings, producing the full living-doc set (`docs/architecture.md`, `docs/workflows.md`, `docs/infrastructure.md`, `docs/requirements.md`, `README.md` — merge-not-overwrite) + the five `.gsd-t/scan/*.md` dimension files (architecture/security/quality/business-rules/contract-drift) in the renderer's parsed formats. Covers everything old Step 5 did and goes deeper (component map + a user journey per feature-domain slice). Synthesis no longer writes the dimension files (moved to the doc stage). Red Team FAILed (2 HIGH + 1 LOW); 1 fix cycle → GRUDGING-PASS. Zero regressions (1267/0/4 throughout). Patch bump 4.0.13 → 4.0.14. Commits 82a2f9c (build) → bec1556 (fix HIGH-1 doc-snapshot data-loss backstop + HIGH-2 grand-total-as-table-row double-count fix + LOW drop -f) → gitignore .doc-backup.**
+
+**Verify findings & fixes (Red Team):** HIGH-1 — living-doc agents "merge not overwrite" was prose-only and a dirty tree doesn't halt scan → uncommitted user edits could be clobbered unrecoverably (Destructive Action Guard). Fix: deterministic snapshot of all 5 living docs to `.gsd-t/scan/.doc-backup/` BEFORE the fan-out (mirrors the register's deterministic archive); merge note mandates Edit-not-Write on existing files. HIGH-2 — arch prompt mandated a bare `N files (~N LOC)` grand-total line + a per-dir Structure section → collector's additive regex double-counts filesScanned. Fix: grand total is now a `| Grand Total | N files | LOC |` table row that the parser short-circuits on (empirically verified: table row + per-dir lines → filesScanned=1809 not 1919). LOW — dropped `-f` from git add (force-added .DS_Store) + `:!.doc-backup` exclusion + gitignore entry. Re-verify GRUDGING-PASS, all empirically confirmed.
+
+---
 
 ### M66 — Scan Volume-Scaled Workflow Migration (scan-depth regression fix) — **COMPLETED at v4.0.13 (2026-05-29 18:50 PDT)**
 
@@ -200,6 +208,8 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-05-29 22:06 PDT: [m67][complete] M67 — Scan Deep Document Phase VERIFIED + COMPLETED at v4.0.14. Origin: user asked whether scan now does a thorough job on ALL the documents it produces — it did NOT (M66 deepened only the tech-debt register; living-doc cross-population was a dropped "lead-agent follow-on"). Added a deterministic `Document` phase: per-document parallel fan-out from the same slices+findings → docs/{architecture,workflows,infrastructure,requirements}.md + README.md (merge, Edit-not-Write on existing) + .gsd-t/scan/{architecture,security,quality,business-rules,contract-drift}.md (renderer-parsed formats). Runs before Render so the HTML report reads the deep architecture.md. Red Team FAIL (2 HIGH + 1 LOW) → GRUDGING-PASS after 1 cycle: HIGH-1 doc data-loss → deterministic .doc-backup snapshot before fan-out; HIGH-2 render double-count → grand-total as `| Grand Total | N files | LOC |` table row (parser short-circuits, verified 1809 not 1919); LOW → dropped `-f`, pathspec-excluded + gitignored .doc-backup. Zero regressions (1267/0/4). Commits 82a2f9c → bec1556 → merge. Patch bump 4.0.13 → 4.0.14.
 
 - 2026-05-29 18:50 PDT: [m66][verify][complete] M66 VERIFIED + COMPLETED at v4.0.13. Orthogonal triad ran as fresh-context Workflow agents (code-review ultra [opus] ∥ Red Team [opus] ∥ QA+depth-validation [sonnet]). **Red Team FAIL → GRUDGING-PASS over 2 fix cycles.** Cycle 1 (faeeeb7) fixed: CRITICAL-1+CRITICAL-2+MEDIUM-1 (prose-driven archive/TD-numbering → deterministic JS `fs.renameSync` collision-safe + `_parseMaxTd` + prior register content threaded into synthesis; post-write existsSync guard), HIGH-1 (render read .gsd-t/scan/*.md never written → synthesis now writes them + hollow-report guard), HIGH-2 (deterministic silent-truncation coverage log), HIGH-3 (pipeline stage-2 defensive `(finderResult, originalItem, _index)` + sliceKey fallback), nits (probe haiku→sonnet, scanNumber threaded, depth defined). Cycle 2 (4d9cca1) — Red Team RE-verify caught the HIGH-1 fix INCOMPLETE: synthesis prompt said "Files analyzed: N" but parser `bin/scan-data-collector.js::parseFilesAndLoc` only reads "N files (~N LOC)"; hollow-guard `&&` defeated by any non-empty scan → fixed prompt to prescribe the parsed format + hollow-guard now `filesScanned===0` alone (empirically verified parses to 1809). Final hardening (6e09d8c): prescribe SEC-/DC-/TCG-/TD- ID prefixes for the optional HTML security/quality sections. **Lesson confirmed (matches feedback_native_workflow_redteam_catches_more): fresh-context Workflow Red Team caught what an in-context pass would miss — cycle-2 caught the cycle-1 fix was incomplete.** QA: zero regressions (1267 pass / 0 fail / 4 skip throughout); depth-validation confirms the design reproduces the Hilo 117-item reference depth (probe pushes against fixed-5 bias toward feature-domain slicing 1-3 tiny → 15-40 large; finder mandates enumerate-not-sample). Doc-ripple: removed retired fixed-5-teammate scan-dimension refs from gsd-t-{complete-milestone,gap-analysis,feature,init-scan-setup}.md. Patch bump 4.0.12 → 4.0.13.
 
