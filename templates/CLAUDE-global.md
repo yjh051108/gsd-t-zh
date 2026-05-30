@@ -329,6 +329,7 @@ Canonical scripts:
 - `gsd-t-debug.workflow.js` — 2-cycle diagnose/fix/verify (CLAUDE.md Prime Rule)
 - `gsd-t-quick.workflow.js` — preflight + brief + single-task + verify-gate (M56-D4)
 - `gsd-t-phase.workflow.js` — generic upper-stage runner (partition / plan / discuss / impact / milestone / prd / design-decompose / doc-ripple)
+- `gsd-t-scan.workflow.js` — preflight → volume-probe → pipeline(per-slice deep finder → single verify) → synthesis → render (M66: fans out by codebase VOLUME, not a fixed 5-teammate dimension count)
 
 Shared helpers: `templates/workflows/_lib.js` — `runPreflight`, `generateBrief`, `proveFileDisjointness`, `runVerifyGate`, `loadProtocol`, `readDomainTasks`, `readScope`. Each prefers project-local `bin/<tool>.cjs` and falls back to global `gsd-t` PATH binary (preserves M55-D5 project-local-bin invariant).
 

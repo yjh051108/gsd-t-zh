@@ -14,12 +14,8 @@ If `.gsd-t/scan/.cache.json` exists:
 1. Read the cache and check `scannedAt` for each dimension
 2. Count commits since the scan: `git rev-list --count --after="{scannedAt}" HEAD`
 3. If **>10 commits since scan** OR **scan is older than 14 days**:
-   - Log: "Auto-refreshing scan docs (stale by {N} commits / {N} days)..."
-   - Re-run only the stale dimensions by spawning the relevant scan teammates:
-     - If `quality.md` stale → spawn quality teammate (model: sonnet)
-     - If `architecture.md` stale → spawn architecture teammate (model: haiku)
-     - If `security.md` stale → spawn security teammate (model: sonnet)
-   - Update `.gsd-t/scan/.cache.json` after refresh
+   - Log: "Auto-refreshing the tech-debt register (stale by {N} commits / {N} days)..."
+   - Re-run the scan by invoking the volume-scaled scan Workflow (`templates/workflows/gsd-t-scan.workflow.js`, same as `/gsd-t-scan`) — the probe re-slices the codebase and the finders refresh the register. This replaces the retired fixed-dimension teammate refresh.
 4. If fresh → proceed silently
 
 If `.gsd-t/scan/` doesn't exist at all → skip (no scan data to refresh).
