@@ -471,6 +471,35 @@ log(`register written: ${JSON.stringify(synthesis.counts)}`);
 // the deep .gsd-t/scan/architecture.md (with the parseable file/LOC line) instead of
 // a stub. Per-doc failures are non-fatal (the register is authoritative) but logged.
 phase("Document");
+
+// Red-team fix (HIGH-1): the living-doc agents "merge not overwrite" via prose, and a
+// dirty working tree does NOT halt the scan (working-tree-state is a warn, not error).
+// So a doc agent could clobber a user's UNCOMMITTED edits to docs/ or README.md —
+// unrecoverable via git. Deterministic backstop: snapshot every existing living doc to
+// .gsd-t/scan/.doc-backup/ BEFORE the fan-out, mirroring the deterministic archive the
+// register gets. Recovery is then a plain file copy, regardless of git state.
+const LIVING_DOCS = [
+  "docs/architecture.md",
+  "docs/workflows.md",
+  "docs/infrastructure.md",
+  "docs/requirements.md",
+  "README.md",
+];
+const docBackupDir = path.join(projectDir, ".gsd-t", "scan", ".doc-backup");
+const backedUp = [];
+fs.mkdirSync(docBackupDir, { recursive: true });
+for (const rel of LIVING_DOCS) {
+  const src = path.join(projectDir, rel);
+  if (fs.existsSync(src)) {
+    const dest = path.join(docBackupDir, rel.replace(/[\/]/g, "__"));
+    fs.copyFileSync(src, dest);
+    backedUp.push(rel);
+  }
+}
+if (backedUp.length) {
+  log(`backed up ${backedUp.length} existing living doc(s) to .gsd-t/scan/.doc-backup/ before the document phase (recover by copying back if a merge clobbers content): ${backedUp.join(", ")}`);
+}
+
 const sliceSummary = slices.map((s) => `- ${s.key} (${s.dimension}): ${JSON.stringify(s.paths)}`).join("\n");
 const findingsByArea = {};
 for (const f of allFindings) {
@@ -481,11 +510,15 @@ const findingsJson = JSON.stringify(allFindings, null, 2).slice(0, 40000);
 
 // Each entry: { id, label, prompt }. mergeNote is appended to every living-doc prompt.
 const mergeNote =
-  `If the file already exists with real content, MERGE — preserve the user's structure ` +
-  `and custom content, update/add sections. If it's only placeholder/template tokens, ` +
-  `replace. If absent, create. Replace {Project Name}/{Date} tokens with real values ` +
-  `(date from the system clock). Do NOT invent facts — derive everything from the slices, ` +
-  `findings, and the actual code you read.`;
+  `If the file already exists with real content: MERGE, and do it with the Edit tool ` +
+  `(targeted section edits/appends) — do NOT call Write on a pre-existing file, because ` +
+  `Write is a full overwrite that would destroy the user's structure and any content you ` +
+  `did not reproduce. Preserve the user's structure and custom content; update/add sections. ` +
+  `If the file is only placeholder/template tokens, you may replace it. If absent, create it ` +
+  `with Write. Replace {Project Name}/{Date} tokens with real values (date from the system ` +
+  `clock). Do NOT invent facts — derive everything from the slices, findings, and the actual ` +
+  `code you read. (A pre-edit backup exists at .gsd-t/scan/.doc-backup/ as a safety net, but ` +
+  `do not rely on it — edit carefully.)`;
 
 const baseCtx = [
   `Project: \`${projectDir}\`. Probe totals: ${JSON.stringify(probe.totals)}.`,
@@ -503,7 +536,10 @@ const docTargets = [
   {
     id: "scan-architecture", label: "scan:architecture",
     prompt: `Write \`.gsd-t/scan/architecture.md\` — the architecture dimension analysis. Include stack, structure, patterns, a Components/Domains list (one per feature-domain slice), and data flow. ` +
-      `CRITICAL for the HTML renderer: include the file+LOC totals in EXACTLY this form: \`<N> files (~<LOC> LOC)\` (e.g. \`1809 files (~250000 LOC)\`) from the probe totals. Do NOT write "Files analyzed: N".`,
+      `CRITICAL for the HTML renderer: give the file+LOC GRAND TOTAL as a markdown TABLE ROW in EXACTLY this form (the renderer reads this exact shape and stops, so it is NOT double-counted):\n` +
+      `\`| Grand Total | <N> files | <LOC> |\`  — e.g. \`| Grand Total | 1809 files | 250000 |\`, from the probe totals.\n` +
+      `Do NOT also write a bare \`<N> files (~<LOC> LOC)\` GRAND-TOTAL line and do NOT write "Files analyzed: N". ` +
+      `Per-directory \`<n> files (~<loc> LOC)\` lines inside a Structure section are fine (they describe individual dirs), but the authoritative TOTAL must be the single table row above.`,
   },
   {
     id: "scan-security", label: "scan:security",
@@ -638,9 +674,13 @@ if (render.ok) {
 // Commit the docs + dimension files + HTML report deterministically (doc agents were
 // told NOT to commit, to avoid interleaved concurrent git operations). Best-effort:
 // a commit failure is non-fatal (artifacts are on disk).
+// Red-team fix (LOW): drop `-f` — none of these targets are gitignored, and `-f` would
+// force-add gitignored junk under the pathspecs (e.g. docs/.DS_Store). The .doc-backup
+// dir lives under .gsd-t/scan/ which IS committed; exclude it explicitly so backups
+// aren't versioned.
 const commit = spawnSync(
   "git",
-  ["add", "-A", ".gsd-t/scan", "docs", "README.md", "-f"],
+  ["add", "-A", ".gsd-t/scan", "docs", "README.md", ":!.gsd-t/scan/.doc-backup"],
   { cwd: projectDir, stdio: "pipe" }
 );
 if (commit.status === 0) {
