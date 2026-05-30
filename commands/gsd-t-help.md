@@ -198,7 +198,7 @@ Use these when user asks for help on a specific command:
 ### scan
 - **Summary**: Deep codebase analysis producing techdebt.md — volume-scaled native Workflow (`templates/workflows/gsd-t-scan.workflow.js`): a probe carves the codebase into per-area slices, one deep finder per slice (enumerate-don't-sample), a single verify pass drops false positives, synthesis dedups/re-ranks into the register. Finder count scales with codebase volume (1-3 slices tiny → 15-40 large), not a fixed 5.
 - **Auto-invoked**: No
-- **Creates**: `.gsd-t/techdebt.md` (prior archived to `.gsd-t/techdebt_YYYY-MM-DD.md`), HTML scan report
+- **Creates**: `.gsd-t/techdebt.md` (prior archived to `.gsd-t/techdebt_YYYY-MM-DD.md`), the `.gsd-t/scan/*.md` dimension files, the full living-doc set (`docs/architecture.md`, `docs/workflows.md`, `docs/infrastructure.md`, `docs/requirements.md`, `README.md` — merged not overwritten, via the M67 document phase), and the HTML scan report
 - **Use when**: Understanding an existing codebase or auditing technical debt
 
 ### gap-analysis

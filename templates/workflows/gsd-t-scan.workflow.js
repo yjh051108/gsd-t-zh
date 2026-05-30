@@ -37,12 +37,13 @@
 export const meta = {
   name: "gsd-t-scan",
   description:
-    "GSD-T scan phase: preflight → volume-probe → pipeline(deep-finder per slice → single verify) → archive → synthesis → deterministic schema/diagram/HTML stages. Fans out by codebase volume, not a fixed 5-teammate dimension count.",
+    "GSD-T scan phase: preflight → volume-probe → pipeline(deep-finder per slice → single verify) → archive → synthesis → deep document cross-population (living docs + dimension files) → deterministic schema/diagram/HTML render. Fans out by codebase volume, not a fixed 5-teammate dimension count.",
   phases: [
     { title: "Preflight",   detail: "preflight + load prior register" },
     { title: "Probe",       detail: "volume probe → derive per-area slice list", model: "haiku" },
     { title: "Deep Scan",   detail: "pipeline: per-slice deep finder → single verify" },
     { title: "Synthesis",   detail: "dedup / merge / re-rank into techdebt.md", model: "opus" },
+    { title: "Document",    detail: "deep living-doc + dimension-file cross-population (per-doc fan-out)" },
     { title: "Render",      detail: "schema extraction + diagrams + HTML report" },
   ],
 };
@@ -130,6 +131,19 @@ const VERIFY_SCHEMA = {
     verdict:   { type: "string", enum: ["confirmed", "false-positive", "needs-detail"] },
     note:      { type: "string" },
     correctedSeverity: { type: "string", enum: ["CRITICAL", "HIGH", "MEDIUM", "LOW"] },
+  },
+};
+
+const DOC_RESULT_SCHEMA = {
+  type: "object",
+  required: ["doc", "status", "path"],
+  additionalProperties: false,
+  properties: {
+    doc:    { type: "string", description: "logical doc id, e.g. 'docs/architecture.md'" },
+    status: { type: "string", enum: ["written", "merged", "skipped", "failed"] },
+    path:   { type: "string" },
+    bytes:  { type: "integer" },
+    notes:  { type: "string" },
   },
 };
 
@@ -421,24 +435,12 @@ const synthesisPrompt = [
   `by slice order. De-duplicate findings that multiple slices surfaced (e.g. a`,
   `cross-cutting tenant-scoping gap) into one item that lists all locations.`,
   ``,
-  `ALSO write these analysis files so the HTML report renders real data. The`,
-  `renderer (bin/scan-data-collector.js) parses a SPECIFIC format — match it exactly:`,
-  `- \`.gsd-t/scan/architecture.md\` — stack + structure + a Components/Domains list.`,
-  `  CRITICAL: include a line giving the file + LOC totals in EXACTLY this form so`,
-  `  the parser reads it: \`<N> files (~<LOC> LOC)\` — e.g. \`1809 files (~250000 LOC)\`.`,
-  `  Use the probe totals: ${JSON.stringify(probe.totals)}. Do NOT write "Files`,
-  `  analyzed: N" — that form is NOT parsed.`,
-  `- \`.gsd-t/scan/security.md\` — the security-dimension findings. The renderer parses`,
-  `  per-finding sections headed \`### SEC-H<n>: <title>\` (HIGH) or \`### SEC-M<n>: <title>\``,
-  `  (MEDIUM), each with \`- **Details**: …\` and \`- **Fix**: …\` bullets. Use that exact form.`,
-  `- \`.gsd-t/scan/quality.md\` — the quality/architecture/test-gap findings. The renderer`,
-  `  parses sections headed \`### DC-<n>: <title>\` (dead code), \`### TCG-<n>: <title>\` (test`,
-  `  gap), or \`### TD-<n>: <title>\`, each with a \`\\\`file:line\\\`\` location line and`,
-  `  \`- **Impact**: …\` / \`- **Suggestion**: …\` bullets. Use that exact form.`,
+  `Write ONLY the register here. The .gsd-t/scan/*.md analysis files and the living`,
+  `docs are produced by the Document phase that runs next (M67) — do not write them.`,
   ``,
   `Do NOT express effort in human-hours/days/sprints — GSD-T units only (domain/`,
   `wave/spawn/token-spend) per the effort-estimates rule. Then commit the new`,
-  `register + analysis files via git (you are on a feature branch; do not push).`,
+  `register via git (you are on a feature branch; do not push).`,
   `Return JSON per the schema with the final counts and the archivePath`,
   `\`${priorArchivePath || ""}\`.`,
 ].filter(Boolean).join("\n");
@@ -460,6 +462,164 @@ if (!fs.existsSync(registerPath)) {
   return { status: "failed", reason: "register-missing", synthesis, archivePath: priorArchivePath };
 }
 log(`register written: ${JSON.stringify(synthesis.counts)}`);
+
+// ─── Document — deep living-doc + dimension-file cross-population (M67) ───
+// M66 made the register deep but left doc cross-population as a non-deterministic
+// "lead agent follow-on" — effectively dropped. M67 fans out one agent PER DOCUMENT,
+// each drawing on the SAME slices + verified findings the finders produced, so the
+// docs are as thorough as the register. Runs BEFORE Render so the HTML report reads
+// the deep .gsd-t/scan/architecture.md (with the parseable file/LOC line) instead of
+// a stub. Per-doc failures are non-fatal (the register is authoritative) but logged.
+phase("Document");
+
+// Red-team fix (HIGH-1): the living-doc agents "merge not overwrite" via prose, and a
+// dirty working tree does NOT halt the scan (working-tree-state is a warn, not error).
+// So a doc agent could clobber a user's UNCOMMITTED edits to docs/ or README.md —
+// unrecoverable via git. Deterministic backstop: snapshot every existing living doc to
+// .gsd-t/scan/.doc-backup/ BEFORE the fan-out, mirroring the deterministic archive the
+// register gets. Recovery is then a plain file copy, regardless of git state.
+const LIVING_DOCS = [
+  "docs/architecture.md",
+  "docs/workflows.md",
+  "docs/infrastructure.md",
+  "docs/requirements.md",
+  "README.md",
+];
+const docBackupDir = path.join(projectDir, ".gsd-t", "scan", ".doc-backup");
+const backedUp = [];
+fs.mkdirSync(docBackupDir, { recursive: true });
+for (const rel of LIVING_DOCS) {
+  const src = path.join(projectDir, rel);
+  if (fs.existsSync(src)) {
+    const dest = path.join(docBackupDir, rel.replace(/[\/]/g, "__"));
+    fs.copyFileSync(src, dest);
+    backedUp.push(rel);
+  }
+}
+if (backedUp.length) {
+  log(`backed up ${backedUp.length} existing living doc(s) to .gsd-t/scan/.doc-backup/ before the document phase (recover by copying back if a merge clobbers content): ${backedUp.join(", ")}`);
+}
+
+const sliceSummary = slices.map((s) => `- ${s.key} (${s.dimension}): ${JSON.stringify(s.paths)}`).join("\n");
+const findingsByArea = {};
+for (const f of allFindings) {
+  const k = (f.area || "general").toLowerCase();
+  (findingsByArea[k] = findingsByArea[k] || []).push(f);
+}
+const findingsJson = JSON.stringify(allFindings, null, 2).slice(0, 40000);
+
+// Each entry: { id, label, prompt }. mergeNote is appended to every living-doc prompt.
+const mergeNote =
+  `If the file already exists with real content: MERGE, and do it with the Edit tool ` +
+  `(targeted section edits/appends) — do NOT call Write on a pre-existing file, because ` +
+  `Write is a full overwrite that would destroy the user's structure and any content you ` +
+  `did not reproduce. Preserve the user's structure and custom content; update/add sections. ` +
+  `If the file is only placeholder/template tokens, you may replace it. If absent, create it ` +
+  `with Write. Replace {Project Name}/{Date} tokens with real values (date from the system ` +
+  `clock). Do NOT invent facts — derive everything from the slices, findings, and the actual ` +
+  `code you read. (A pre-edit backup exists at .gsd-t/scan/.doc-backup/ as a safety net, but ` +
+  `do not rely on it — edit carefully.)`;
+
+const baseCtx = [
+  `Project: \`${projectDir}\`. Probe totals: ${JSON.stringify(probe.totals)}.`,
+  ``,
+  `Slices the scan covered (your raw material — each names the paths it owns):`,
+  sliceSummary,
+  ``,
+  `Verified findings (truncated):`,
+  "```json",
+  findingsJson,
+  "```",
+].join("\n");
+
+const docTargets = [
+  {
+    id: "scan-architecture", label: "scan:architecture",
+    prompt: `Write \`.gsd-t/scan/architecture.md\` — the architecture dimension analysis. Include stack, structure, patterns, a Components/Domains list (one per feature-domain slice), and data flow. ` +
+      `CRITICAL for the HTML renderer: give the file+LOC GRAND TOTAL as a markdown TABLE ROW in EXACTLY this form (the renderer reads this exact shape and stops, so it is NOT double-counted):\n` +
+      `\`| Grand Total | <N> files | <LOC> |\`  — e.g. \`| Grand Total | 1809 files | 250000 |\`, from the probe totals.\n` +
+      `Do NOT also write a bare \`<N> files (~<LOC> LOC)\` GRAND-TOTAL line and do NOT write "Files analyzed: N". ` +
+      `Per-directory \`<n> files (~<loc> LOC)\` lines inside a Structure section are fine (they describe individual dirs), but the authoritative TOTAL must be the single table row above.`,
+  },
+  {
+    id: "scan-security", label: "scan:security",
+    prompt: `Write \`.gsd-t/scan/security.md\` — the security findings. The renderer parses sections headed \`### SEC-H<n>: <title>\` (HIGH) / \`### SEC-M<n>: <title>\` (MEDIUM), each with \`- **Details**: …\` and \`- **Fix**: …\` bullets. Use that exact form for every security-area finding.`,
+  },
+  {
+    id: "scan-quality", label: "scan:quality",
+    prompt: `Write \`.gsd-t/scan/quality.md\` — quality / dead-code / duplication / test-gap findings. The renderer parses sections headed \`### DC-<n>: <title>\` (dead code), \`### TCG-<n>: <title>\` (test gap), or \`### TD-<n>: <title>\`, each with a \`\\\`file:line\\\`\` location line and \`- **Impact**: …\` / \`- **Suggestion**: …\` bullets. Use that exact form.`,
+  },
+  {
+    id: "scan-business-rules", label: "scan:business-rules",
+    prompt: `Write \`.gsd-t/scan/business-rules.md\` — embedded business logic discovered across the slices: validation rules, authorization rules, workflow/state-machine rules, calculation rules (pricing/scoring/quotas), integration rules (retry/fallback/timeout). For each: where implemented (file:line) and an assessment. Add an "Undocumented Rules" section for logic with no comments/docs.`,
+  },
+  {
+    id: "scan-contract-drift", label: "scan:contract-drift",
+    prompt: `Write \`.gsd-t/scan/contract-drift.md\` — compare \`.gsd-t/contracts/\` (if it exists) to the actual implementation: API endpoints vs api-contract, schema vs schema-contract, undocumented endpoints/tables/components, drift. If no contracts dir exists, write a short note saying so and list the de-facto interfaces worth documenting.`,
+  },
+  {
+    id: "docs-architecture", label: "docs/architecture.md", merge: true,
+    prompt: `Update or create \`docs/architecture.md\`: system overview (stack, structure, patterns); component descriptions with locations + dependencies (one section per feature-domain slice); data flow (request → handler → service → data layer → response); data models from schema/ORM; API structure from routes; external integrations; design decisions found in code/configs. Go deep — this should be a real architecture reference, not a stub.`,
+  },
+  {
+    id: "docs-workflows", label: "docs/workflows.md", merge: true,
+    prompt: `Update or create \`docs/workflows.md\`: trace USER JOURNEYS per feature-domain slice (each major business area gets its own end-to-end journey from entry point through handlers to data); technical workflows from cron jobs / queue workers / scheduled tasks; API workflows for multi-step operations; integration workflows for external syncing; state machines and approval flows discovered in code. One journey per feature-domain slice minimum.`,
+  },
+  {
+    id: "docs-infrastructure", label: "docs/infrastructure.md", merge: true,
+    prompt: `Update or create \`docs/infrastructure.md\` (the most commonly-lost knowledge): Quick Reference commands (package.json scripts, Makefile, CI/CD); local dev setup (README, docker-compose, .env.example); database commands (migrations, seeds, ORM, backups); cloud provisioning (Terraform/CFN/Pulumi/deploy scripts); credentials/secrets (NAMES ONLY from .env.example, never values); deployment (CI/CD, Dockerfiles, platform configs); logging/monitoring.`,
+  },
+  {
+    id: "docs-requirements", label: "docs/requirements.md", merge: true,
+    prompt: `Update or create \`docs/requirements.md\`: functional requirements discovered from routes/handlers/UI components; technical requirements from configs/package.json/runtime; non-functional requirements from performance configs, rate limits, caching. Derive from what the code actually does.`,
+  },
+  {
+    id: "readme", label: "README.md", merge: true,
+    prompt: `Update or create \`README.md\`: project name + description; tech stack + versions discovered; getting-started/setup (from infrastructure findings); brief architecture overview; link to \`docs/\` for detail. If it exists, MERGE — update tech-stack + setup sections but preserve the user's existing structure and custom content.`,
+  },
+];
+
+const docResults = await parallel(
+  docTargets.map((d) => async () => {
+    const isLiving = !!d.merge;
+    const prompt = [
+      `You are the documentation agent for ONE document in a GSD-T deep scan.`,
+      ``,
+      baseCtx,
+      ``,
+      d.prompt,
+      ``,
+      isLiving ? mergeNote : `Write the file fresh from the scan data in the format described.`,
+      ``,
+      `Read the actual code under the relevant slice paths to get specifics right —`,
+      `do not summarize only from the findings. Use the Write/Edit tools to write the`,
+      `file, then return JSON per the schema (status: "written" new, "merged" if you`,
+      `merged into existing content, "skipped" if genuinely nothing to write, "failed"`,
+      `on error). Do NOT commit — the workflow handles git.`,
+    ].join("\n");
+    try {
+      return await agent(prompt, {
+        label: d.label,
+        phase: "Document",
+        schema: DOC_RESULT_SCHEMA,
+        model: "sonnet",
+      });
+    } catch (e) {
+      return { doc: d.id, status: "failed", path: "", notes: `agent error: ${e && e.message}` };
+    }
+  })
+);
+
+const docsOk = docResults.filter(Boolean).filter((r) => r.status === "written" || r.status === "merged");
+const docsFailed = docResults.filter(Boolean).filter((r) => r.status === "failed");
+log(`document phase: ${docsOk.length}/${docTargets.length} docs written/merged${docsFailed.length ? `, ${docsFailed.length} failed (non-fatal — register is authoritative): ${docsFailed.map((d) => d.doc).join(", ")}` : ""}`);
+
+// Deterministic check the renderer's required dimension file actually landed with the
+// parseable file-count line (the render hollow-guard depends on it).
+const archDimPath = path.join(projectDir, ".gsd-t", "scan", "architecture.md");
+if (!fs.existsSync(archDimPath)) {
+  log(`⚠ .gsd-t/scan/architecture.md was not written — the HTML report will render hollow. The techdebt.md register and docs/ are unaffected.`);
+}
 
 // ─── Render — deterministic schema extraction + diagrams + HTML report ───
 // These bin/scan-*.js renderers are KEPT verbatim (M66 does not touch them).
@@ -511,6 +671,30 @@ if (render.ok) {
   log(`render stage non-fatal failure (exitCode=${render.exitCode}): ${render.stderr || render.stdout}`);
 }
 
+// Commit the docs + dimension files + HTML report deterministically (doc agents were
+// told NOT to commit, to avoid interleaved concurrent git operations). Best-effort:
+// a commit failure is non-fatal (artifacts are on disk).
+// Red-team fix (LOW): drop `-f` — none of these targets are gitignored, and `-f` would
+// force-add gitignored junk under the pathspecs (e.g. docs/.DS_Store). The .doc-backup
+// dir lives under .gsd-t/scan/ which IS committed; exclude it explicitly so backups
+// aren't versioned.
+const commit = spawnSync(
+  "git",
+  ["add", "-A", ".gsd-t/scan", "docs", "README.md", ":!.gsd-t/scan/.doc-backup"],
+  { cwd: projectDir, stdio: "pipe" }
+);
+if (commit.status === 0) {
+  const ci = spawnSync(
+    "git",
+    ["commit", "-q", "-m", `scan: deep document cross-population (${docsOk.length} docs) + HTML report`],
+    { cwd: projectDir, stdio: "pipe" }
+  );
+  if (ci.status === 0) log("docs + report committed");
+  else log(`docs staged but commit skipped (likely nothing to commit or hook): ${ci.stderr && ci.stderr.toString().slice(0, 200)}`);
+} else {
+  log(`doc git add non-fatal failure: ${commit.stderr && commit.stderr.toString().slice(0, 200)}`);
+}
+
 return {
   status: "complete",
   slices: slices.length,
@@ -518,6 +702,9 @@ return {
   counts: synthesis.counts,
   registerPath,
   archivePath: priorArchivePath,
+  docs: docResults,
+  docsWritten: docsOk.length,
+  docsFailed: docsFailed.map((d) => d.doc),
   htmlReport: reportInfo ? reportInfo.outputPath : null,
   reportHollow,
   probeTotals: probe.totals,

@@ -59,6 +59,9 @@ bin/context-meter-state.cjs
 # bin/gsd-t-context-brief.cjs — never committed)
 .gsd-t/briefs/
 
+# GSD-T M67 scan document-phase pre-edit backups (safety net only, not versioned)
+.gsd-t/scan/.doc-backup/
+
 # GSD-T M55 D5 verify-gate raw worker output (per-run; the LLM judge
 # sees the ≤500-token summary in the envelope — never these files)
 .gsd-t/verify-gate/

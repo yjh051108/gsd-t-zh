@@ -7,10 +7,12 @@ You are the lead agent. Run a deep codebase scan by invoking the canonical Workf
 Replaces the legacy 5-teammate prose scan with a single deterministic, **volume-scaled** Workflow:
 
 ```
-preflight → volume-probe → pipeline(per-slice deep finder → single verify) → synthesis → render
+preflight → volume-probe → pipeline(per-slice deep finder → single verify) → synthesis → document → render
 ```
 
-**Why volume-scaled (M66):** the legacy scan hard-coded exactly 5 teammates (one per dimension) with zero volume scaling — a 5-file repo and a 1,809-file repo both got 5 agents, so a single `quality` agent sampled the top ~5 issues across the whole codebase and stopped. The volume-probe stage now measures the codebase (files, routes, ORM tables, components, top-level dirs) and carves it into **narrow slices** — one deep-finder agent per area, scaling from 1-3 slices on a tiny repo to 15-40 on a large one. Each finder OWNS its slice and is mandated to *enumerate, not sample*. A single verify pass confirms each finding against the real code and drops false positives. Synthesis dedups/merges/re-ranks into `techdebt.md` and continues TD numbering from the archived prior register. The deterministic `bin/scan-*.js` renderers (schema extraction, diagrams, HTML report) run as the final stage, unchanged.
+**Why volume-scaled (M66):** the legacy scan hard-coded exactly 5 teammates (one per dimension) with zero volume scaling — a 5-file repo and a 1,809-file repo both got 5 agents, so a single `quality` agent sampled the top ~5 issues across the whole codebase and stopped. The volume-probe stage now measures the codebase (files, routes, ORM tables, components, top-level dirs) and carves it into **narrow slices** — one deep-finder agent per area, scaling from 1-3 slices on a tiny repo to 15-40 on a large one. Each finder OWNS its slice and is mandated to *enumerate, not sample*. A single verify pass confirms each finding against the real code and drops false positives. Synthesis dedups/merges/re-ranks into `techdebt.md` and continues TD numbering from the archived prior register.
+
+**Deep document stage (M67):** after the register lands, a `document` phase fans out **one agent per document**, each drawing on the same slices + verified findings, to deterministically produce the full living-document set — `docs/architecture.md` (component map per feature-domain slice), `docs/workflows.md` (a user journey per slice), `docs/infrastructure.md`, `docs/requirements.md`, `README.md` (all merge-not-overwrite) — plus the five `.gsd-t/scan/*.md` dimension files (`architecture`, `security`, `quality`, `business-rules`, `contract-drift`) in the renderer's parsed formats. This replaces M66's non-deterministic "lead-agent follow-on" so the documents are as thorough as the register. The deterministic `bin/scan-*.js` renderers (schema extraction, diagrams, HTML report) run last, reading the deep `.gsd-t/scan/architecture.md`.
 
 Each stage is a schema-validated `agent()` call (or deterministic CLI). Finders and verifiers run concurrently up to the Workflow runtime's concurrency cap. Slice DEPTH scales with `budget.total` when a per-turn token target is set.
 
@@ -60,12 +62,14 @@ Present a summary: headline volume totals, findings by severity, the top critica
 
 ## Document Ripple
 
-The scan Workflow updates these (synthesis stage commits the register + archive):
+The scan Workflow updates ALL of these deterministically (no manual follow-on):
 
-- `.gsd-t/techdebt.md` — fresh register (prior one archived to `.gsd-t/techdebt_YYYY-MM-DD.md`)
-- `.gsd-t/progress.md` — Decision Log entry with scan summary stats
+- `.gsd-t/techdebt.md` — fresh register (synthesis; prior one archived to `.gsd-t/techdebt_YYYY-MM-DD.md`)
+- `.gsd-t/scan/{architecture,security,quality,business-rules,contract-drift}.md` — dimension analysis files (document phase)
+- `docs/architecture.md`, `docs/workflows.md`, `docs/infrastructure.md`, `docs/requirements.md`, `README.md` — living docs, **merged not overwritten** (document phase)
+- HTML scan report via `bin/scan-report.js` (render phase)
 
-The deterministic render stage produces the HTML scan report via `bin/scan-report.js`. Living-document cross-population (`docs/architecture.md`, `docs/workflows.md`, `docs/infrastructure.md`, `docs/requirements.md`, `README.md`) is a follow-on the lead agent performs from the register + `.gsd-t/scan/` outputs when present.
+The document phase + render commit these via git on the feature branch (no push). The lead agent should still add a `.gsd-t/progress.md` Decision Log entry with the scan summary stats.
 
 ## Next Up
 
