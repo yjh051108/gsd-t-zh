@@ -1,9 +1,9 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M67 COMPLETED (scan deep-document phase, v4.0.14, VERIFIED — Red Team GRUDGING-PASS after 1 fix cycle); M66 COMPLETED (scan-depth regression fix, v4.0.13)
-## Date: 2026-05-29 22:06 PDT
-## Version: 4.0.14
+## Status: ACTIVE — M68 COMPLETED (update-all retired-tool prune, v4.0.15, VERIFIED — Red Team GRUDGING-PASS after 2 fix cycles); M67 COMPLETED (scan deep-document phase, v4.0.14)
+## Date: 2026-06-01 16:02 PDT
+## Version: 4.0.15
 
 ## Current Milestone
 
@@ -208,6 +208,8 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-06-01 16:02 PDT: [m68][fix][release] M68 — update-all retired-tool prune, v4.0.15. Origin: user observed HiloAviation not updating during CPUA; investigation found update-all propagated the current 7 bin tools but never PRUNED tools retired in M61/M65 — `DEPRECATED_BIN_STRAYS` only listed `gsd-t.js`. Result: 22/24 projects carried 11-17 dead `.cjs` (token-telemetry/unattended/headless/context-meter clusters); "already current" summary masked it. **Phase 1 (clean now):** proved no live requirers (only retirement-breadcrumb comments referenced them), pruned 273 retired `.cjs` across 21 projects. **Phase 2 (fix root cause):** added the 17 retired tools to `DEPRECATED_BIN_STRAY_SIGNATURES` (`bin/gsd-t.js`) — a per-tool map of VERBATIM shipped-header sentinels (recovered from git history); `_matchedStraySignature` sweeps only on exact-header match + logs each deleted path, so a user's same-named file is never silently deleted. Red Team FAIL→FAIL→GRUDGING-PASS over 2 fix cycles: cycle-1 caught loose `/gsd-t/` substring → switched to verbatim headers + per-file deletion logging; cycle-2 caught 4 entries still carrying a bare "GSD-T" OR-sentinel (would delete user files merely mentioning GSD-T) → tightened to verbatim multiword phrases; final pass caught `headless-exit-codes` case-mismatch (under-deletion, safe direction) → fixed. +5 regression tests. Suite 1267→1272 pass / 0 fail / 4 skip. Patch bump 4.0.14 → 4.0.15.
 
 - 2026-05-29 22:06 PDT: [m67][complete] M67 — Scan Deep Document Phase VERIFIED + COMPLETED at v4.0.14. Origin: user asked whether scan now does a thorough job on ALL the documents it produces — it did NOT (M66 deepened only the tech-debt register; living-doc cross-population was a dropped "lead-agent follow-on"). Added a deterministic `Document` phase: per-document parallel fan-out from the same slices+findings → docs/{architecture,workflows,infrastructure,requirements}.md + README.md (merge, Edit-not-Write on existing) + .gsd-t/scan/{architecture,security,quality,business-rules,contract-drift}.md (renderer-parsed formats). Runs before Render so the HTML report reads the deep architecture.md. Red Team FAIL (2 HIGH + 1 LOW) → GRUDGING-PASS after 1 cycle: HIGH-1 doc data-loss → deterministic .doc-backup snapshot before fan-out; HIGH-2 render double-count → grand-total as `| Grand Total | N files | LOC |` table row (parser short-circuits, verified 1809 not 1919); LOW → dropped `-f`, pathspec-excluded + gitignored .doc-backup. Zero regressions (1267/0/4). Commits 82a2f9c → bec1556 → merge. Patch bump 4.0.13 → 4.0.14.
 

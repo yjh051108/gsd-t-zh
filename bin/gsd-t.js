@@ -2473,11 +2473,60 @@ const PROJECT_BIN_TOOLS = [
 
 // Files that older versions of this installer copied into project bin/ but
 // are no longer part of PROJECT_BIN_TOOLS. On each update-all pass, sweep the
-// project's bin/ and remove any stray file that still byte-matches the source
-// copy in this package — that proves it's an old installer artifact, not a
-// user's own file sharing the same name. User-owned files (byte-divergent)
-// are left alone.
-const DEPRECATED_BIN_STRAYS = ["gsd-t.js"];
+// project's bin/ and remove any stray that carries GSD-T provenance — that
+// proves it's an old installer artifact, not a user's own file sharing the
+// name. User-owned files (no GSD-T provenance marker) are left alone.
+//
+// M68: the M61/M65 retirement removed the token-telemetry + unattended +
+// headless-spawn + context-meter clusters from the package and from
+// PROJECT_BIN_TOOLS, but never added them here — so update-all kept the current
+// 7 tools fresh while leaving 11-17 dead .cjs lingering in every project's bin/.
+// Adding them closes that gap so future retirements prune cleanly.
+// Each retired tool maps to one or more VERBATIM header sentinels it actually
+// shipped with (recovered from git history at the commit before each was deleted).
+// A stray is swept only when its content contains the exact product header — proof
+// it was SHIPPED by this installer, not merely that it mentions "gsd-t". This is the
+// M68 red-team fix: the prior loose substring (`/gsd-t/` over 1200 chars) would have
+// deleted a user's own same-named helper that happened to reference a `.gsd-t/` path.
+// A user file can match only by reproducing a verbatim product header — implausible.
+const DEPRECATED_BIN_STRAY_SIGNATURES = {
+  "gsd-t.js": ["GSD-T CLI Installer"], // bespoke installer header
+  // M61 D3 — token telemetry / context-runway cluster
+  "gsd-t-token-capture.cjs": ["GSD-T Token Capture", "gsd-t-token-capture"],
+  "token-telemetry.cjs": ["GSD-T Token Telemetry"],
+  "token-budget.cjs": ["GSD-T Token Budget"],
+  "token-optimizer.cjs": ["GSD-T Token Optimizer"],
+  "runway-estimator.cjs": ["GSD-T Runway", "runway-estimator"],
+  // Verbatim shipped comment header (no bare "GSD-T" — red-team HIGH-1: a bare token
+  // would delete a user's same-named file that merely mentions GSD-T).
+  "context-budget-audit.cjs": ["Context Budget Audit — measures the static context cost"],
+  "context-meter-config.cjs": ["Context Meter config loader (M34)"],
+  "context-meter-config.test.cjs": ["context-meter-config"],
+  // M61 D2 — unattended relay + headless spawn cluster
+  "gsd-t-unattended.cjs": ["GSD-T Unattended", "gsd-t-unattended"],
+  "gsd-t-unattended-platform.cjs": ["GSD-T Unattended", "gsd-t-unattended"],
+  "gsd-t-unattended-safety.cjs": ["GSD-T Unattended", "gsd-t-unattended"],
+  "headless-auto-spawn.cjs": ["GSD-T Headless Auto-Spawn"],
+  "headless-exit-codes.cjs": ["GSD-T headless exit-code contract"],
+  "handoff-lock.cjs": ["GSD-T Handoff Lock — Fail-safe sentinel"],
+  "unattended-watch-format.cjs": ["bin/unattended-watch-format.cjs", "unattended watch-tick activity block"],
+  // M61 D1/D4 — misc retired
+  "log-tail.cjs": ["Log Tail — print the last N lines"], // verbatim shipped comment
+  "event-stream.cjs": ["bin/event-stream.cjs", "unattended supervisor watch-tick"],
+};
+const DEPRECATED_BIN_STRAYS = Object.keys(DEPRECATED_BIN_STRAY_SIGNATURES);
+
+// A stray is swept only if its first 1200 chars contain one of the VERBATIM header
+// sentinels the tool actually shipped with. "Mentions gsd-t" is NOT enough — that
+// would risk deleting a user's same-named file (red-team HIGH-1). Returns the matched
+// sentinel (for logging) or null.
+function _matchedStraySignature(name, content) {
+  const sigs = DEPRECATED_BIN_STRAY_SIGNATURES[name];
+  if (!sigs) return null;
+  const head = content.slice(0, 1200);
+  for (const s of sigs) if (head.includes(s)) return s;
+  return null;
+}
 
 function copyBinToolsToProject(projectDir, projectName) {
   const projectBinDir = path.join(projectDir, "bin");
@@ -2537,19 +2586,15 @@ function copyBinToolsToProject(projectDir, projectName) {
       if (!fs.existsSync(strayPath)) continue;
       try {
         const strayContent = fs.readFileSync(strayPath, "utf8");
-        const head = strayContent.slice(0, 400);
-        // Signature-match any version this installer ever shipped. The marker
-        // is unique enough to rule out user-owned files: node shebang + the
-        // verbatim JSDoc header "GSD-T CLI Installer". Matches every historical
-        // version of bin/gsd-t.js, not just the current one, so older strays
-        // (e.g. v3.13.11 left behind on v3.13.12+) are still swept.
-        const isOurs =
-          head.startsWith("#!/usr/bin/env node") &&
-          head.includes("GSD-T CLI Installer");
-        if (isOurs) {
+        const matched = _matchedStraySignature(stray, strayContent);
+        if (matched) {
           fs.unlinkSync(strayPath);
           cleaned++;
+          // Red-team fix (HIGH-2): name every deleted file so a destructive sweep
+          // across many projects is reconstructable from scrollback, not a bare count.
+          info(`${projectName} — removed retired bin/${stray} (matched shipped header "${matched.slice(0, 40)}")`);
         }
+        // No signature match → leave it alone (user's own same-named file).
       } catch {
         // leave the file alone on any read error
       }

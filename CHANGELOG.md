@@ -2,6 +2,18 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.0.15] - 2026-06-01 (M68 update-all Retired-Tool Prune — patch)
+
+### Fixed — update-all now prunes bin tools retired in M61/M65
+
+`update-all` kept the propagated 7-tool subset fresh but never deleted tools GSD-T retired — the `DEPRECATED_BIN_STRAYS` sweep list only carried `gsd-t.js`. Result: 22 of 24 registered projects carried 11-17 dead `.cjs` files (the M61/M65 token-telemetry, unattended-relay, headless-spawn, and context-meter clusters), and the "already current" summary masked it. Surfaced when a project appeared not to update.
+
+- `bin/gsd-t.js`: added the 17 M61/M65-retired tools to `DEPRECATED_BIN_STRAYS`; generalized the stray sweep so retired `.cjs` are pruned only when they carry a GSD-T provenance marker (`_hasGsdtProvenance`) — a user's same-named file without the marker is left untouched. `gsd-t.js` keeps its bespoke "GSD-T CLI Installer" header match.
+- `test/bin-gsd-t-resilience.test.js`: +2 regression tests (retired-provenance `.cjs` swept; user-authored same-named `.cjs` survives).
+- One-off: pruned 273 retired `.cjs` across the 21 affected projects (proved no live requirers first — the only references were retirement-breadcrumb comments).
+
+Suite: 1269 pass / 0 fail / 4 skip — zero regressions.
+
 ## [4.0.14] - 2026-05-29 (M67 Scan Deep Document Phase — patch)
 
 ### Added — deterministic deep document cross-population in the scan Workflow
