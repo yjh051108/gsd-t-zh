@@ -1,9 +1,9 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M68 COMPLETED (update-all retired-tool prune, v4.0.15, VERIFIED — Red Team GRUDGING-PASS after 2 fix cycles); M67 COMPLETED (scan deep-document phase, v4.0.14)
-## Date: 2026-06-01 16:02 PDT
-## Version: 4.0.15
+## Status: ACTIVE — M69 EXECUTING (workflow scriptPath resolution fix, v4.0.16; verifying); M68 COMPLETED (update-all retired-tool prune, v4.0.15)
+## Date: 2026-06-02 11:37 PDT
+## Version: 4.0.16
 
 ## Current Milestone
 
@@ -208,6 +208,8 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-06-02 11:37 PDT: [m69][fix] M69 — workflow scriptPath resolution, v4.0.16. Origin: user found a deep scan in HiloAviation produced the register + living docs but NOT the 5 `.gsd-t/scan/*.md` dimension files; investigation showed the M67 workflow never ran — every workflow-backed command hard-codes a RELATIVE `scriptPath: "templates/workflows/..."` that only resolves when CWD is the GSD-T source repo. From any consumer project the script (which ships inside the installed pkg, not the project) is unreachable → `Workflow({scriptPath})` silently fails → agent hand-drives a partial scan. Confirmed `require.resolve('@tekyzinc/gsd-t/...')` ALSO fails from consumers (global install, not a local node_modules dep). Fix: new `gsd-t workflow-path <name>` CLI subcommand resolves the absolute path from the CLI's own PKG_ROOT (works from any CWD / global / npx); all 13 command files now instruct resolving via it before the Workflow call. +6 tests (CWD-independence, aliases, all-8 workflows, exit 4/64). Suite 1272→1278 pass / 0 fail / 4 skip. Proven CWD-independent from Hilo's dir. **Also (same release):** added an 11th scan document output `.gsd-t/techdebt_in_plain_english.md` (user request) — non-technical companion restating every TD item in layman's terms + why-it-matters + a real-world analogy + plain-urgency severity, for non-engineer stakeholders. New `docTargets` entry in the Document phase + committed in the doc-phase git add. Patch bump 4.0.15 → 4.0.16.
 
 - 2026-06-01 16:02 PDT: [m68][fix][release] M68 — update-all retired-tool prune, v4.0.15. Origin: user observed HiloAviation not updating during CPUA; investigation found update-all propagated the current 7 bin tools but never PRUNED tools retired in M61/M65 — `DEPRECATED_BIN_STRAYS` only listed `gsd-t.js`. Result: 22/24 projects carried 11-17 dead `.cjs` (token-telemetry/unattended/headless/context-meter clusters); "already current" summary masked it. **Phase 1 (clean now):** proved no live requirers (only retirement-breadcrumb comments referenced them), pruned 273 retired `.cjs` across 21 projects. **Phase 2 (fix root cause):** added the 17 retired tools to `DEPRECATED_BIN_STRAY_SIGNATURES` (`bin/gsd-t.js`) — a per-tool map of VERBATIM shipped-header sentinels (recovered from git history); `_matchedStraySignature` sweeps only on exact-header match + logs each deleted path, so a user's same-named file is never silently deleted. Red Team FAIL→FAIL→GRUDGING-PASS over 2 fix cycles: cycle-1 caught loose `/gsd-t/` substring → switched to verbatim headers + per-file deletion logging; cycle-2 caught 4 entries still carrying a bare "GSD-T" OR-sentinel (would delete user files merely mentioning GSD-T) → tightened to verbatim multiword phrases; final pass caught `headless-exit-codes` case-mismatch (under-deletion, safe direction) → fixed. +5 regression tests. Suite 1267→1272 pass / 0 fail / 4 skip. Patch bump 4.0.14 → 4.0.15.
 

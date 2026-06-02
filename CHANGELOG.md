@@ -2,6 +2,28 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.0.16] - 2026-06-02 (M69 Workflow scriptPath Resolution — patch)
+
+### Fixed — workflow commands now run from any project, not just the GSD-T source repo
+
+Every workflow-backed command (`gsd-t-scan`, `-execute`, `-verify`, `-wave`, `-integrate`, `-debug`, and the 6 `-phase`-runner commands) hard-coded a relative `scriptPath: "templates/workflows/..."`. That path only resolves when CWD is the GSD-T source repo; from any consumer project the workflow script (which ships inside the installed package, not the project) is unreachable, so `Workflow({scriptPath})` silently fails and the agent falls back to a hand-driven run. This is why a deep scan in a consumer project produced the register but not the 5 `.gsd-t/scan/*.md` dimension files — the M67 Document phase never executed.
+
+- `bin/gsd-t.js`: new `gsd-t workflow-path <name>` subcommand — prints the ABSOLUTE path to `gsd-t-<name>.workflow.js` resolved from the CLI's own `PKG_ROOT`. Accepts name aliases (with/without `gsd-t-` prefix or `.workflow.js` suffix). Exit 0 + path; exit 4 + available list on unknown name; exit 64 on missing arg. Resolves from any CWD (works for global/local/npx installs since it follows the invoked binary).
+- `commands/gsd-t-{scan,execute,verify,wave,integrate,debug,partition,plan,impact,milestone,prd,doc-ripple,design-decompose}.md` (13 files): replaced the relative `scriptPath` with an instruction to resolve the absolute path first via `gsd-t workflow-path <name>`.
+- `templates/CLAUDE-global.md`, `commands/gsd-t-help.md`: documented the resolution requirement + the new subcommand.
+- `test/m69-workflow-path.test.js`: +6 tests (resolves known/aliased/all-8 workflows, CWD-independence, exit 4 unknown, exit 64 usage).
+
+Effect: `/gsd-t-scan` (and all workflow commands) now run correctly from any registered project with no special prompt or absolute-path workaround.
+
+### Added — `.gsd-t/techdebt_in_plain_english.md` scan output
+
+The scan Document phase now also writes a non-technical companion to the tech-debt register: every TD item restated in layman's terms, why it matters in business/user consequences, and a concrete real-world analogy, with severity translated into plain urgency. For founders/PMs/stakeholders who need the findings without the jargon.
+
+- `templates/workflows/gsd-t-scan.workflow.js`: +1 `docTargets` entry (`techdebt-plain-english`); included in the document-phase git commit.
+- `commands/gsd-t-scan.md`: Document Ripple lists the new output.
+
+Suite: 1278 pass / 0 fail / 4 skip — zero regressions.
+
 ## [4.0.15] - 2026-06-01 (M68 update-all Retired-Tool Prune — patch)
 
 ### Fixed — update-all now prunes bin tools retired in M61/M65

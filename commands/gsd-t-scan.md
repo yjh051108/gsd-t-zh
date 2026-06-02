@@ -20,13 +20,19 @@ Each stage is a schema-validated `agent()` call (or deterministic CLI). Finders 
 
 Read `CLAUDE.md`, `.gsd-t/progress.md`, `.gsd-t/contracts/`, and any existing `.gsd-t/techdebt.md` (the Workflow archives and continues from it). This tells the scan what's already known so it dedups rather than re-discovers.
 
-## Step 2: Invoke the scan Workflow
+## Step 2: Resolve the workflow path, then invoke
 
-Call the `Workflow` tool with:
+First resolve the ABSOLUTE path to the workflow script (the workflow ships inside the installed `@tekyzinc/gsd-t` package, NOT in the current project — a bare relative `templates/workflows/...` path only resolves when CWD is the GSD-T source repo, so from any other project `Workflow()` cannot find it). Run via Bash:
+
+```bash
+gsd-t workflow-path scan
+```
+
+It prints the absolute path (exit 0). Use that exact string as `scriptPath`. Then call the `Workflow` tool with:
 
 ```js
 {
-  scriptPath: "templates/workflows/gsd-t-scan.workflow.js",
+  scriptPath: "<absolute path printed by `gsd-t workflow-path scan`>",
   args: {
     projectDir: ".",        // the project to scan
     scanNumber: 12,         // optional — for the register header
@@ -65,6 +71,7 @@ Present a summary: headline volume totals, findings by severity, the top critica
 The scan Workflow updates ALL of these deterministically (no manual follow-on):
 
 - `.gsd-t/techdebt.md` — fresh register (synthesis; prior one archived to `.gsd-t/techdebt_YYYY-MM-DD.md`)
+- `.gsd-t/techdebt_in_plain_english.md` — non-technical companion to the register: every TD item in layman's terms, why it matters, and a real-world analogy (document phase)
 - `.gsd-t/scan/{architecture,security,quality,business-rules,contract-drift}.md` — dimension analysis files (document phase)
 - `docs/architecture.md`, `docs/workflows.md`, `docs/infrastructure.md`, `docs/requirements.md`, `README.md` — living docs, **merged not overwritten** (document phase)
 - HTML scan report via `bin/scan-report.js` (render phase)

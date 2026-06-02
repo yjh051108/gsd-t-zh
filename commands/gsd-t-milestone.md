@@ -18,7 +18,10 @@ Read `.gsd-t/progress.md` (current version + completed milestones), `docs/requir
 
 ```js
 {
-  scriptPath: "templates/workflows/gsd-t-phase.workflow.js",
+  // Resolve the ABSOLUTE path FIRST via Bash: `gsd-t workflow-path phase` (the
+  // workflow ships in the installed @tekyzinc/gsd-t package, not this project — a
+  // bare relative path only resolves from the GSD-T source repo). Use its stdout here:
+  scriptPath: "<absolute path printed by `gsd-t workflow-path phase`>",
   args: {
     phase: "milestone",
     projectDir: ".",

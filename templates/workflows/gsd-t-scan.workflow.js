@@ -43,7 +43,7 @@ export const meta = {
     { title: "Probe",       detail: "volume probe → derive per-area slice list", model: "haiku" },
     { title: "Deep Scan",   detail: "pipeline: per-slice deep finder → single verify" },
     { title: "Synthesis",   detail: "dedup / merge / re-rank into techdebt.md", model: "opus" },
-    { title: "Document",    detail: "deep living-doc + dimension-file cross-population (per-doc fan-out)" },
+    { title: "Document",    detail: "deep living-doc + dimension-file + plain-English cross-population (per-doc fan-out)" },
     { title: "Render",      detail: "schema extraction + diagrams + HTML report" },
   ],
 };
@@ -577,6 +577,16 @@ const docTargets = [
     id: "readme", label: "README.md", merge: true,
     prompt: `Update or create \`README.md\`: project name + description; tech stack + versions discovered; getting-started/setup (from infrastructure findings); brief architecture overview; link to \`docs/\` for detail. If it exists, MERGE — update tech-stack + setup sections but preserve the user's existing structure and custom content.`,
   },
+  {
+    id: "techdebt-plain-english", label: ".gsd-t/techdebt_in_plain_english.md",
+    prompt: `Write \`.gsd-t/techdebt_in_plain_english.md\` — a NON-TECHNICAL companion to the tech-debt register, written for a smart reader who is NOT an engineer (e.g. a founder, PM, or stakeholder). Cover EVERY item in the register (one entry per TD-NNN, in the same severity order). For each item:\n` +
+      `- **Heading**: \`### TD-NNN — <the plain-English name of the problem>\` (keep the TD-NNN id so it cross-references the technical register, but rename the title into everyday language — no jargon).\n` +
+      `- **What it is** (1-2 sentences): explain the problem with ZERO technical terms. If a technical word is unavoidable, define it in parentheses the way you'd explain it to a friend.\n` +
+      `- **Why it matters** (1-2 sentences): the business/user consequence — what could go wrong, who is affected, what it costs.\n` +
+      `- **Real-world analogy**: a concrete everyday comparison that makes the risk intuitive (e.g. "This is like leaving the spare house key under the doormat — convenient, but anyone who thinks to look can get in." for a hardcoded secret). The analogy must genuinely map to THIS specific item, not be generic.\n` +
+      `- **Severity in plain terms**: translate CRITICAL/HIGH/MEDIUM/LOW into urgency a non-engineer feels ("fix before launch" / "schedule soon" / "clean up eventually").\n` +
+      `Open with a 2-3 sentence plain-English summary of the overall health of the codebase and the headline counts. Derive everything from the verified findings — do not invent items or analogies that don't fit. This file is the layman's lens on the same findings as \`.gsd-t/techdebt.md\`.`,
+  },
 ];
 
 const docResults = await parallel(
@@ -680,7 +690,7 @@ if (render.ok) {
 // aren't versioned.
 const commit = spawnSync(
   "git",
-  ["add", "-A", ".gsd-t/scan", "docs", "README.md", ":!.gsd-t/scan/.doc-backup"],
+  ["add", "-A", ".gsd-t/scan", ".gsd-t/techdebt_in_plain_english.md", "docs", "README.md", ":!.gsd-t/scan/.doc-backup"],
   { cwd: projectDir, stdio: "pipe" }
 );
 if (commit.status === 0) {

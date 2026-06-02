@@ -432,6 +432,11 @@ Use these when user asks for help on a specific command:
 - **Files**: `.gsd-t/backlog-settings.md`
 - **Use when**: Customizing the classification dimensions for your project
 
+### workflow-path (M69)
+- **Summary**: Prints the ABSOLUTE path to a GSD-T workflow script (`gsd-t-<name>.workflow.js`) resolved from the CLI's own install root. Command files shell out to this instead of hard-coding a relative `templates/workflows/...` scriptPath — which only resolves from the GSD-T source repo, so from any consumer project `Workflow({scriptPath})` would silently fail and fall back to a hand-driven scan (the HiloAviation incident).
+- **Auto-invoked**: Yes — by every workflow-backed command (`gsd-t-scan`, `-execute`, `-verify`, `-wave`, `-integrate`, `-debug`, and the `-phase` runner) at Workflow-invocation time.
+- **CLI**: `gsd-t workflow-path <name>` (name with or without the `gsd-t-` prefix / `.workflow.js` suffix). Exit 0 + absolute path on stdout; exit 4 + available list on unknown name; exit 64 on missing arg.
+
 ### preflight (M55)
 - **Summary**: Deterministic state-precondition check (`bin/cli-preflight.cjs`); 6 built-in checks (branch-guard, contracts-stable, deps-installed, manifest-fresh, ports-free, working-tree-state). Exit 0/4. Pluggable, zero-dep, captureSpawn-exempt.
 - **Auto-invoked**: Yes — by `gsd-t-execute` Step 1 and `gsd-t verify-gate` Track 1

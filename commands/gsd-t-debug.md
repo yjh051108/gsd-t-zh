@@ -22,7 +22,10 @@ Call the `Workflow` tool with:
 
 ```js
 {
-  scriptPath: "templates/workflows/gsd-t-debug.workflow.js",
+  // Resolve the ABSOLUTE path FIRST via Bash: `gsd-t workflow-path debug` (the
+  // workflow ships in the installed @tekyzinc/gsd-t package, not this project — a
+  // bare relative path only resolves from the GSD-T source repo). Use its stdout here:
+  scriptPath: "<absolute path printed by `gsd-t workflow-path debug`>",
   args: {
     symptom: "describe the failing test or runtime error in one sentence",
     projectDir: "."

@@ -4446,6 +4446,43 @@ if (require.main === module) {
       const code = runParallelCli(args.slice(1), process.env);
       process.exit(code);
     }
+    case "workflow-path": {
+      // M69 — print the ABSOLUTE path to a GSD-T workflow script, resolved from
+      // this CLI's own install root. Command files shell out to this instead of
+      // hard-coding a relative `templates/workflows/...` scriptPath, which only
+      // resolves when CWD is the GSD-T source repo — from any consumer project
+      // the relative path is unresolvable and `Workflow({scriptPath})` silently
+      // fails, forcing a hand-driven fallback (the HiloAviation scan incident).
+      //
+      // Usage: gsd-t workflow-path <name>   (name with or without the
+      //        `gsd-t-` prefix / `.workflow.js` suffix). Exit 0 + path on stdout;
+      //        exit 4 + error on stderr if the workflow is unknown.
+      const raw = (args[1] || "").trim();
+      if (!raw) {
+        process.stderr.write("usage: gsd-t workflow-path <name>\n");
+        process.exit(64);
+      }
+      const wfDir = path.join(PKG_ROOT, "templates", "workflows");
+      // Normalize: strip a leading "gsd-t-" and a trailing ".workflow.js"/".js",
+      // then rebuild the canonical filename.
+      const stem = raw
+        .replace(/\.workflow\.js$/, "")
+        .replace(/\.js$/, "")
+        .replace(/^gsd-t-/, "");
+      const file = path.join(wfDir, `gsd-t-${stem}.workflow.js`);
+      if (!fs.existsSync(file)) {
+        const avail = fs.existsSync(wfDir)
+          ? fs.readdirSync(wfDir)
+              .filter((f) => f.endsWith(".workflow.js"))
+              .map((f) => f.replace(/^gsd-t-/, "").replace(/\.workflow\.js$/, ""))
+              .join(", ")
+          : "(workflows dir missing)";
+        process.stderr.write(`gsd-t workflow-path: unknown workflow "${raw}". Available: ${avail}\n`);
+        process.exit(4);
+      }
+      process.stdout.write(file + "\n");
+      process.exit(0);
+    }
     case "preflight": {
       // M55 D5 — `gsd-t preflight` thin dispatcher to bin/cli-preflight.cjs.
       const { spawnSync } = require("child_process");

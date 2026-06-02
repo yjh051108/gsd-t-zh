@@ -319,7 +319,7 @@ Routine GSD-T actions (milestone → partition → plan → execute → verify �
 
 ## GSD-T Workflows (M61 — v4.0.10+)
 
-GSD-T workflows live at `templates/workflows/`. Each workflow is a self-contained native Workflow script that handles one phase of the GSD-T lifecycle. Command files (`commands/gsd-t-*.md`) are thin invokers that call `Workflow({scriptPath, args})`.
+GSD-T workflows live at `templates/workflows/`. Each workflow is a self-contained native Workflow script that handles one phase of the GSD-T lifecycle. Command files (`commands/gsd-t-*.md`) are thin invokers that call `Workflow({scriptPath, args})`. The `scriptPath` MUST be resolved to an absolute path at invoke time via `gsd-t workflow-path <name>` (M69) — the workflow ships inside the installed `@tekyzinc/gsd-t` package, not the consumer project, so a bare relative `templates/workflows/...` path only resolves from the GSD-T source repo and silently breaks `Workflow()` everywhere else.
 
 Canonical scripts:
 - `gsd-t-execute.workflow.js` — preflight → brief → file-disjointness → parallel(domain workers) → integrate → verify-gate
