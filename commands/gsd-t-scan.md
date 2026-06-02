@@ -1,8 +1,30 @@
 # GSD-T: Scan — Deep Codebase Analysis and Tech Debt Discovery
 
-You are the lead agent. Run a deep codebase scan by invoking the canonical Workflow script at `templates/workflows/gsd-t-scan.workflow.js`.
+> ## ⛔ STOP — READ THIS FIRST. Your ONLY job is to invoke the Workflow tool.
+>
+> **You MUST NOT perform the scan yourself.** Do NOT run a volume probe by hand, do NOT
+> "carve the codebase into N slices," do NOT spawn deep-finder agents/teammates yourself,
+> do NOT "skip task-list overhead and drive the fan-out directly," and do NOT fall back to
+> any hand-driven or "proven fallback" pattern. The slicing, fan-out, verify, synthesis, and
+> document stages all happen **inside the Workflow script** — not in your reasoning.
+>
+> **The ONLY correct action is exactly two steps (Step 1 + Step 2 below):**
+> 1. Bash: `gsd-t workflow-path scan` → capture the absolute path it prints.
+> 2. Call the **`Workflow`** tool with that `scriptPath` and the `args` shown in Step 2.
+>
+> If you find yourself reading source files, counting files, listing routes, or spawning
+> Agent/Task subagents to find tech debt — **STOP. You are doing it wrong.** That work belongs
+> to the Workflow. Hand-driving the scan is a FAILURE: it skips the deterministic
+> synthesis/document/render stages, so it produces an incomplete result (no
+> `.gsd-t/scan/*.md` dimension files, no merged living docs, no plain-English doc).
+>
+> The prose below explains what the Workflow does internally — it is **background, not a
+> to-do list for you.** Read it as "what will happen when I call the tool," never as "steps I
+> should execute myself."
 
-## What this command does
+You are the lead agent. Your sole responsibility is to invoke the canonical scan Workflow (resolve its absolute path in Step 1, then call the `Workflow` tool in Step 2). Everything else is the Workflow's job.
+
+## What the Workflow does (background — NOT your to-do list)
 
 Replaces the legacy 5-teammate prose scan with a single deterministic, **volume-scaled** Workflow:
 

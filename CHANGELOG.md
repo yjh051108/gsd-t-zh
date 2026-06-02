@@ -2,6 +2,19 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.0.17] - 2026-06-02 (M70 Workflow Invocation Guard — patch)
+
+### Fixed — workflow commands no longer get hand-driven instead of invoking the Workflow
+
+A brand-new session running `/gsd-t-scan` (via the `/gsd` auto-router) read the v4.0.16 command file and STILL hand-drove an 18-slice fan-out — "skip task-list overhead and drive the fan-out directly … proven fallback pattern" — skipping the deterministic synthesis/document/render stages, so it produced only the register (no `.gsd-t/scan/*.md`, no merged living docs, no plain-English doc). Two compounding causes: the command file's prose *described the workflow's internals* and read like a to-do list, and the `/gsd` router's "execute the command's full workflow" was ambiguous between "invoke the tool" and "do the work yourself."
+
+- `commands/gsd-t-scan.md`: prepended a strong imperative guard — STOP, your only job is to resolve the path + call the `Workflow` tool; do NOT volume-probe, carve slices, spawn finders, or fall back to a hand-driven run; hand-driving is a FAILURE. Reframed the explanatory prose as "what the Workflow does (background — NOT your to-do list)."
+- `commands/gsd-t-{execute,verify,wave,integrate,debug}.md`: concise version of the same guard near the top.
+- `~/.claude/commands/gsd.md` (router): clarified that "execute the command's full workflow" means follow the command file's instruction to invoke the `Workflow` tool — not improvise the work.
+- `test/m70-workflow-invocation-guard.test.js`: +7 tests asserting every workflow-backed command carries the guard near the top (regression lock).
+
+Suite: 1285 pass / 0 fail / 4 skip — zero regressions.
+
 ## [4.0.16] - 2026-06-02 (M69 Workflow scriptPath Resolution — patch)
 
 ### Fixed — workflow commands now run from any project, not just the GSD-T source repo

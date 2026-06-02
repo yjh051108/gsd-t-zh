@@ -196,7 +196,7 @@ Valid command slugs: `quick`, `debug`, `feature`, `execute`, `milestone`, `proje
 → /gsd ──▶ continue /gsd-t-quick
 ```
 
-This MUST be the very first line of your response. Then immediately execute that command's full workflow, passing `$ARGUMENTS` through.
+This MUST be the very first line of your response. Then immediately **read and follow that command file's instructions** (`~/.claude/commands/gsd-t-{slug}.md`), passing `$ARGUMENTS` through. "Execute the command's full workflow" means **do what the command file says** — for workflow-backed commands (scan, execute, verify, wave, integrate, debug, and the phase-runner commands) that means **invoke the `Workflow` tool as the command instructs**. It does NOT mean improvise the work yourself, hand-drive a fan-out, or reconstruct the workflow's stages in your own reasoning. If the command file says "invoke the Workflow tool," you invoke the Workflow tool — full stop.
 
 **Do NOT ask "is this the right command?" — just route and go.** The user can interrupt with Esc if it's wrong.
 

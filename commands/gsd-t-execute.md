@@ -1,5 +1,8 @@
 # GSD-T: Execute — Run Domain Tasks
 
+> **⛔ Invoke the Workflow tool — do not hand-drive.** Your only job is to resolve the workflow path (`gsd-t workflow-path execute`) and call the `Workflow` tool as the steps below instruct. Do NOT reconstruct the workflow stages in your own reasoning, spawn finder/worker subagents yourself, or fall back to a hand-driven run — that skips the deterministic stages and produces an incomplete result. The prose below describes what the Workflow does internally; it is background, not a to-do list for you.
+
+
 You are the lead agent. Execute the current milestone by invoking the canonical Workflow script at `templates/workflows/gsd-t-execute.workflow.js`.
 
 ## What this command does

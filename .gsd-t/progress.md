@@ -1,9 +1,9 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M69 EXECUTING (workflow scriptPath resolution fix, v4.0.16; verifying); M68 COMPLETED (update-all retired-tool prune, v4.0.15)
-## Date: 2026-06-02 11:37 PDT
-## Version: 4.0.16
+## Status: ACTIVE — M70 COMPLETED (workflow invocation guard, v4.0.17); M69 COMPLETED (workflow scriptPath resolution, v4.0.16)
+## Date: 2026-06-02 13:53 PDT
+## Version: 4.0.17
 
 ## Current Milestone
 
@@ -208,6 +208,8 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-06-02 13:53 PDT: [m70][fix] M70 — workflow invocation guard, v4.0.17. Origin: user screenshot showed a BRAND-NEW Hilo session running /gsd-t-scan (via /gsd auto-router) hand-driving an 18-slice fan-out ("skip task-list overhead and drive the fan-out directly … proven fallback pattern") instead of invoking the Workflow — reproducing the M66/M67 incomplete-output bug despite the v4.0.16 fix being correctly installed. Root cause (two compounding): (1) gsd-t-scan.md's prose described the workflow's internals and read like a to-do list the agent should execute; (2) /gsd router's "execute the command's full workflow" was ambiguous between "invoke the tool" vs "do the work yourself." Fix: prepended a strong imperative ⛔ guard to gsd-t-scan.md (STOP — only job is resolve-path + call Workflow tool; do NOT probe/slice/spawn-finders/fall-back; hand-driving is a FAILURE) + reframed prose as "background, NOT your to-do list"; concise guard on execute/verify/wave/integrate/debug; clarified the /gsd router. +7 regression tests asserting the guard near the top of every workflow-backed command. Suite 1278→1285 pass / 0 fail / 4 skip. Patch bump 4.0.16 → 4.0.17.
 
 - 2026-06-02 11:37 PDT: [m69][fix] M69 — workflow scriptPath resolution, v4.0.16. Origin: user found a deep scan in HiloAviation produced the register + living docs but NOT the 5 `.gsd-t/scan/*.md` dimension files; investigation showed the M67 workflow never ran — every workflow-backed command hard-codes a RELATIVE `scriptPath: "templates/workflows/..."` that only resolves when CWD is the GSD-T source repo. From any consumer project the script (which ships inside the installed pkg, not the project) is unreachable → `Workflow({scriptPath})` silently fails → agent hand-drives a partial scan. Confirmed `require.resolve('@tekyzinc/gsd-t/...')` ALSO fails from consumers (global install, not a local node_modules dep). Fix: new `gsd-t workflow-path <name>` CLI subcommand resolves the absolute path from the CLI's own PKG_ROOT (works from any CWD / global / npx); all 13 command files now instruct resolving via it before the Workflow call. +6 tests (CWD-independence, aliases, all-8 workflows, exit 4/64). Suite 1272→1278 pass / 0 fail / 4 skip. Proven CWD-independent from Hilo's dir. **Also (same release):** added an 11th scan document output `.gsd-t/techdebt_in_plain_english.md` (user request) — non-technical companion restating every TD item in layman's terms + why-it-matters + a real-world analogy + plain-urgency severity, for non-engineer stakeholders. New `docTargets` entry in the Document phase + committed in the doc-phase git add. Patch bump 4.0.15 → 4.0.16.
 
