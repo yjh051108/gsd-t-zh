@@ -261,28 +261,55 @@ const deep = budget && budget.total && budget.total > 300000 ? "MAXIMUM" : "thor
 
 // Deep scan — pipeline: per-slice deep finder → single verify (no barrier).
 phase("Deep Scan");
+
+// M72: a finder that returns no schema-valid output (runtime nudged it twice then
+// dropped it) must NOT be silently treated as a clean slice — that presents PARTIAL
+// coverage as complete (7/19 slices dropped this way on the Hilo run). So: (1) the
+// finder call is RETRIED once on a null/invalid result; (2) a slice that still fails
+// is flagged `failed:true` and tracked — never conflated with a genuinely-empty slice.
+function finderPrompt(slice) {
+  return [
+    `⛔ Scan ONLY files under the absolute project path \`${projectDir}\`. \`cd ${projectDir}\` first; never read outside this tree.`,
+    `You are a DEEP tech-debt finder for ONE slice of a scan of \`${projectDir}\`: \`${slice.key}\` (dimension: ${slice.dimension}).`,
+    `Owned paths (relative to \`${projectDir}\`): ${JSON.stringify(slice.paths)}.`,
+    slice.why ? `Why this slice matters: ${slice.why}` : ``,
+    ``,
+    `MANDATE: ENUMERATE, do NOT sample. Read EVERY file under your owned paths (use Read/Grep). You own only this slice, so go to the bottom of it.`,
+    `Depth = ${deep}. "thorough" = every file, every non-trivial real defect (high+medium confidence). "MAXIMUM" = also lower-confidence/speculative items worth review.`,
+    `Surface: bugs, security holes, missing validation, broken invariants, race conditions, dead/duplicated code, N+1s, untested critical paths, contract drift, domain-specific correctness (money math, state-machine gaps, timezone bugs, idempotency holes).`,
+    `For each finding: title, severity (CRITICAL/HIGH/MEDIUM/LOW), human area label, concrete file:line refs, detail, impact, remediation, honest confidence. If a substantial slice yields only 1-2 findings, re-check before concluding it's clean. Empty findings array ONLY if genuinely clean.`,
+    `CRITICAL: you MUST return a JSON object matching the schema (slice + findings array) as your FINAL output — even if findings is empty. Do not end without the structured result.`,
+  ].filter(Boolean).join("\n");
+}
+async function runFinder(slice) {
+  // up to 2 attempts; a null/invalid (non-array findings) result counts as a drop.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const r = await agent(finderPrompt(slice), {
+        label: attempt === 1 ? `find:${slice.key}` : `find:${slice.key} (retry)`,
+        phase: "Deep Scan", schema: FINDER_SCHEMA, model: "sonnet",
+      });
+      if (r && Array.isArray(r.findings)) return r; // valid (incl. empty)
+      log(`⚠ finder slice "${slice.key}" attempt ${attempt} returned no valid output${attempt < 2 ? " — retrying" : ""}`);
+    } catch (e) {
+      log(`⚠ finder slice "${slice.key}" attempt ${attempt} threw: ${e && e.message}${attempt < 2 ? " — retrying" : ""}`);
+    }
+  }
+  return null; // both attempts failed → dropped slice
+}
+
 const sliceResults = await pipeline(
   slices,
-  (slice) => agent(
-    [
-      `⛔ Scan ONLY files under the absolute project path \`${projectDir}\`. \`cd ${projectDir}\` first; never read outside this tree.`,
-      `You are a DEEP tech-debt finder for ONE slice of a scan of \`${projectDir}\`: \`${slice.key}\` (dimension: ${slice.dimension}).`,
-      `Owned paths (relative to \`${projectDir}\`): ${JSON.stringify(slice.paths)}.`,
-      slice.why ? `Why this slice matters: ${slice.why}` : ``,
-      ``,
-      `MANDATE: ENUMERATE, do NOT sample. Read EVERY file under your owned paths (use Read/Grep). The legacy scan failed because one agent sampled ~5 issues across the whole repo and stopped — you own only this slice, so go to the bottom of it.`,
-      `Depth = ${deep}. "thorough" = every file, every non-trivial real defect (high+medium confidence). "MAXIMUM" = also lower-confidence/speculative items worth review.`,
-      `Surface: bugs, security holes, missing validation, broken invariants, race conditions, dead/duplicated code, N+1s, untested critical paths, contract drift, domain-specific correctness (money math, state-machine gaps, timezone bugs, idempotency holes).`,
-      `For each finding: title, severity (CRITICAL/HIGH/MEDIUM/LOW), human area label, concrete file:line refs, detail, impact, remediation, honest confidence. If a substantial slice yields only 1-2 findings, re-check before concluding it's clean. Empty findings array if genuinely clean. Return JSON per the schema.`,
-    ].filter(Boolean).join("\n"),
-    { label: `find:${slice.key}`, phase: "Deep Scan", schema: FINDER_SCHEMA, model: "sonnet" }
-  ),
+  (slice) => runFinder(slice),
   async (finderResult, originalItem) => {
     const slice = originalItem || {};
     const sliceKey = slice.key || (finderResult && finderResult.slice) || "unknown-slice";
-    if (!finderResult || !Array.isArray(finderResult.findings)) return { slice: sliceKey, findings: [] };
+    // M72: distinguish a FAILED finder (null after retries) from a genuinely-clean slice.
+    if (!finderResult || !Array.isArray(finderResult.findings)) {
+      return { slice: sliceKey, findings: [], failed: true };
+    }
     if (verifyMode === "none" || finderResult.findings.length === 0) {
-      return { slice: sliceKey, findings: finderResult.findings || [] };
+      return { slice: sliceKey, findings: finderResult.findings || [], failed: false };
     }
     const verified = await parallel(
       finderResult.findings.map((f) => async () => {
@@ -302,11 +329,25 @@ const sliceResults = await pipeline(
         }
       })
     );
-    return { slice: sliceKey, findings: verified.filter(Boolean) };
+    return { slice: sliceKey, findings: verified.filter(Boolean), failed: false };
   }
 );
-const allFindings = sliceResults.filter(Boolean).flatMap((r) => (r.findings || []).map((f) => ({ ...f, slice: r.slice })));
-log(`deep scan complete: ${allFindings.length} verified findings across ${sliceResults.filter(Boolean).length} slices`);
+
+// M72: coverage accounting — a dropped pipeline result (null) OR a failed:true slice
+// is a COVERAGE GAP. Surface it deterministically; never present partial as complete.
+const resultsByIndex = sliceResults; // pipeline preserves order
+const failedSlices = [];
+slices.forEach((s, i) => {
+  const r = resultsByIndex[i];
+  if (!r || r.failed) failedSlices.push(s.key);
+});
+const succeededCount = slices.length - failedSlices.length;
+const coverageComplete = failedSlices.length === 0;
+const allFindings = sliceResults.filter(Boolean).filter((r) => !r.failed).flatMap((r) => (r.findings || []).map((f) => ({ ...f, slice: r.slice })));
+if (!coverageComplete) {
+  log(`⚠ PARTIAL COVERAGE — ${failedSlices.length}/${slices.length} slices failed after retry and produced NO findings: ${failedSlices.join(", ")}. The register will be flagged INCOMPLETE. Resume the run to re-scan only the failed slices.`);
+}
+log(`deep scan complete: ${allFindings.length} verified findings across ${succeededCount}/${slices.length} slices${coverageComplete ? " (full coverage)" : " (PARTIAL)"}`);
 
 // Synthesis — an agent does the ARCHIVE + REGISTER WRITE + GIT entirely via its
 // own Bash/Write tools. The orchestrator does NOT touch fs. The agent is given the
@@ -320,13 +361,19 @@ const synthesis = await agent(
     ``,
     `STEP 1 — ARCHIVE (do this FIRST, deterministically, via Bash): if \`${projectDir}/.gsd-t/techdebt.md\` exists, rename it to \`${projectDir}/.gsd-t/techdebt_YYYY-MM-DD.md\` using its header date (fallback: today's date from \`date +%F\`); on same-day collision append \`_2\`, \`_3\`. Use \`git mv\` if it's a git repo, else \`mv\`. Capture the archive path. ${pre.priorRegisterExists ? "(A prior register EXISTS — you MUST archive it.)" : "(No prior register — skip archiving.)"}`,
     ``,
-    `STEP 2 — WRITE the fresh \`${projectDir}/.gsd-t/techdebt.md\` (Write tool). Start TD numbering at TD-${tdStart} (computed deterministically — do NOT renumber or restart). Structure: a Summary table (CRITICAL/HIGH/MEDIUM/LOW counts), then sections Critical→High→Medium→Low, each finding as \`### TD-NNN — {title}\` with Area / Severity / Status: OPEN / Location (file:line) / Description / Impact / Remediation / Milestone candidate. Re-rank globally by true severity; de-duplicate findings multiple slices surfaced into one item listing all locations. GSD-T effort units only (domain/wave/spawn/token) — never human-hours.`,
+    // M72: MANDATORY coverage banner — enforced here, not left to the agent's notice.
+    coverageComplete
+      ? `COVERAGE: all ${slices.length} slices succeeded — full coverage. Note this in the header.`
+      : `⚠ COVERAGE IS INCOMPLETE — ${failedSlices.length} of ${slices.length} slices FAILED to return findings and were NOT scanned: ${failedSlices.join(", ")}. You MUST put a prominent "> ⚠ PARTIAL COVERAGE — N of M codebase areas were not scanned this pass (listed below); findings UNDER-COUNT the real debt. Re-run for full coverage." banner at the TOP of the register, AND list the un-scanned slice names. Do NOT present this as a complete picture.`,
+    ``,
+    `STEP 2 — WRITE the fresh \`${projectDir}/.gsd-t/techdebt.md\` (Write tool). Start TD numbering at TD-${tdStart} (computed deterministically — do NOT renumber or restart). Structure: the coverage banner (above), a Summary table (CRITICAL/HIGH/MEDIUM/LOW counts), then sections Critical→High→Medium→Low, each finding as \`### TD-NNN — {title}\` with Area / Severity / Status: OPEN / Location (file:line) / Description / Impact / Remediation / Milestone candidate. Re-rank globally by true severity; de-duplicate findings multiple slices surfaced into one item listing all locations. GSD-T effort units only (domain/wave/spawn/token) — never human-hours.`,
+    `If the findings set is large, WRITE INCREMENTALLY — create the file with the header+summary first (Write), then APPEND each severity section with Edit. Do NOT attempt to emit the entire multi-hundred-item register in a single Write call (it can stall); build it up section by section so progress is durable.`,
     ``,
     `STEP 3 — COMMIT via Bash if it's a git repo (\`git add .gsd-t/techdebt.md\` + the archive; commit). Do NOT push.`,
     ``,
-    `Verified findings:`,
+    `Verified findings (${allFindings.length} total):`,
     "```json",
-    findingsJson.length > 200000 ? findingsJson.slice(0, 200000) + "\n…(truncated)" : findingsJson,
+    findingsJson.length > 500000 ? findingsJson.slice(0, 500000) + "\n…(TRUNCATED — too many findings to inline; the above is the first portion. Note in the register that some lower-severity items may be omitted due to volume.)" : findingsJson,
     "```",
     ``,
     `Return JSON per the schema: status "written" once the register file is on disk, the counts, the archivePath (or ""), and tdRange (e.g. "TD-${tdStart}..TD-NNN").`,
@@ -429,8 +476,12 @@ log(`docs commit: ${commitAgent && commitAgent.status}`);
 // projectDir. The fragile, wrong-tree HTML report is not worth that risk; dropped.
 
 return {
-  status: "complete",
-  slices: slices.length,
+  // M72: status reflects coverage — a partial scan is NOT "complete".
+  status: coverageComplete ? "complete" : "complete-partial-coverage",
+  coverageComplete,
+  slicesTotal: slices.length,
+  slicesSucceeded: succeededCount,
+  slicesFailed: failedSlices,           // names of un-scanned areas (empty if full coverage)
   findings: allFindings.length,
   counts: synthesis.counts,
   tdRange: synthesis.tdRange,

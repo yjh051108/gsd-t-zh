@@ -2,6 +2,23 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.0.19] - 2026-06-02 (M72 Scan Dropped-Slice Recovery + Coverage Honesty — patch)
+
+### Fixed — a scan that under-covers no longer presents partial results as complete
+
+The first real Hilo run (v4.0.18) surfaced 133 findings but 7 of 19 deep-finder slices had silently FAILED — they returned no schema-valid output (the runtime nudged them twice then dropped them), and the workflow treated a dropped slice identically to a genuinely-clean one (`findings: []`). The register confidently presented ~⅔ coverage as complete. For a quality tool, silent partial coverage is worse than a shallow scan.
+
+- `templates/workflows/gsd-t-scan.workflow.js`:
+  - **Retry**: each finder is now retried once on a null/invalid result (`runFinder`).
+  - **Detect, don't conflate**: a slice that still fails is flagged `failed:true` — never merged with an empty-but-successful slice. Coverage accounting computes `failedSlices`, `slicesSucceeded`, `coverageComplete` deterministically; dropped slices' (absent) findings are excluded from the count.
+  - **Surface loudly**: synthesis is REQUIRED (not relying on the agent's notice) to put a "⚠ PARTIAL COVERAGE — N of M areas not scanned" banner at the top of the register and list the un-scanned slices. The workflow return status downgrades to `"complete-partial-coverage"` (not `"complete"`) and includes `slicesFailed[]`.
+  - **Synthesis robustness**: instructed to write the register INCREMENTALLY (header+summary, then append each severity section) so a multi-hundred-item register can't stall on one giant Write; synthesis-input truncation raised 200KB→500KB.
+- `test/m72-coverage-accounting.test.js`: +4 tests (dropped slice excluded + flagged; clean slice not a gap; null pipeline result = failed; full coverage = complete). Coverage logic also verified by a real sandbox diagnostic run.
+
+Effect: a scan with any failed slice is clearly marked incomplete; resuming the run re-scans only the failed slices (cached successes are reused).
+
+Suite: 1297 pass / 0 fail / 4 skip — zero regressions.
+
 ## [4.0.18] - 2026-06-02 (M71 Runtime-Native Scan Workflow — patch)
 
 ### Fixed — the scan Workflow now actually RUNS in the Workflow sandbox (it never did)

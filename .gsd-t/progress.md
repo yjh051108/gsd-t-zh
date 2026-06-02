@@ -1,9 +1,9 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M71 COMPLETED (runtime-native scan workflow, v4.0.18, verified by real sandbox run); M70 COMPLETED (workflow invocation guard, v4.0.17)
-## Date: 2026-06-02 15:37 PDT
-## Version: 4.0.18
+## Status: ACTIVE — M72 COMPLETED (scan dropped-slice recovery + coverage honesty, v4.0.19); M71 COMPLETED (runtime-native scan workflow, v4.0.18)
+## Date: 2026-06-02 16:45 PDT
+## Version: 4.0.19
 
 ## Current Milestone
 
@@ -208,6 +208,8 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-06-02 16:45 PDT: [m72][fix] M72 — scan dropped-slice recovery + coverage honesty, v4.0.19. The first real Hilo scan (v4.0.18) ran clean and deep (133 findings, all 11 docs) but 7 of 19 deep-finder slices SILENTLY FAILED — returned no schema-valid output (runtime nudged twice then dropped), and the workflow treated a dropped slice identically to a genuinely-clean one (findings:[]), presenting ~⅔ coverage as complete. Fix: (1) retry each finder once (runFinder); (2) flag a still-failed slice failed:true — never conflate with empty-but-successful; (3) deterministic coverage accounting (failedSlices/slicesSucceeded/coverageComplete), dropped slices excluded from findings; (4) synthesis REQUIRED to write a "⚠ PARTIAL COVERAGE" banner (not relying on the agent noticing) + return status downgrades to "complete-partial-coverage"; (5) synthesis robustness — incremental section-by-section register write (avoids the ~9-min single-giant-Write stall) + truncation cap 200KB→500KB. +4 tests (m72-coverage-accounting); coverage logic verified by a real sandbox diagnostic run (failedSlices detected, status downgraded). Resume re-scans only failed slices (cached successes reused). User decision: detect+retry+surface (proper fix), fold in synthesis robustness. Patch bump 4.0.18 → 4.0.19. NOTE: this run's Hilo register (133 items) is PARTIAL — re-run for full coverage before promoting to milestones.
 
 - 2026-06-02 15:37 PDT: [m71][fix] M71 — runtime-native scan workflow, v4.0.18. The M61→M67 Workflow migration was NEVER executed in the real Workflow sandbox (only `node --check`); it always crashed and fell back to hand-driven scans — the root cause behind every shallow/incomplete scan in this whole thread. Found 5 distinct bugs via real-sandbox runs + a 1-agent diagnostic: (1) `require`/`fs`/`spawnSync` banned by the sandbox (only agent/parallel/pipeline/log/phase/budget/args exposed) → re-architected so the orchestrator does ZERO I/O and all reads/writes/git happen inside subagents; (2) `args` arrives as a JSON STRING not an object → `JSON.parse` normalization (every `args.x` was undefined → scanned package CWD not target); (3) runaway fan-out (5-file repo→~20 slices/44 agents, GSD-T→191) → slices redefined as cohesive sub-domains + deterministic volume-derived backstop cap `computeSliceCap` (tiny→3, Hilo→~27, huge→50); (4) HTML render stage overwrote the package's own report (data-loss) → removed; (5) dangling `render` ref crashed the return after 44 agents → fixed. **Process lesson (encoded): runtime-native workflows MUST be run to completion in the real sandbox before shipping — `node --check` is necessary but NOT sufficient.** +2 tests (forbidden-globals lint, cap calibration). Acceptance: real run wf_da75f310 — status complete, 3 slices (cap held), 22 findings (all planted caught), 11 docs+5 dimension files+plain-english in correct target, committed in-target, GSD-T repo unpolluted. **Scope note: only gsd-t-scan migrated; the other 7 workflows still use require/fs and will crash identically — follow-up needed.** Patch bump 4.0.17 → 4.0.18.
 
