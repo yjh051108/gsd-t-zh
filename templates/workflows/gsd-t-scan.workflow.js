@@ -463,6 +463,13 @@ if (!fs.existsSync(registerPath)) {
 }
 log(`register written: ${JSON.stringify(synthesis.counts)}`);
 
+// Read the synthesized register so the plain-English doc can mirror its EXACT
+// TD-NNN ids / order (red-team HIGH-1: raw findings carry no TD ids, so a doc
+// built only from findings would invent divergent numbering and break the
+// cross-reference to techdebt.md). The register exists here (confirmed above).
+let registerText = "";
+try { registerText = fs.readFileSync(registerPath, "utf8"); } catch (_) {}
+
 // ─── Document — deep living-doc + dimension-file cross-population (M67) ───
 // M66 made the register deep but left doc cross-population as a non-deterministic
 // "lead agent follow-on" — effectively dropped. M67 fans out one agent PER DOCUMENT,
@@ -579,7 +586,8 @@ const docTargets = [
   },
   {
     id: "techdebt-plain-english", label: ".gsd-t/techdebt_in_plain_english.md",
-    prompt: `Write \`.gsd-t/techdebt_in_plain_english.md\` — a NON-TECHNICAL companion to the tech-debt register, written for a smart reader who is NOT an engineer (e.g. a founder, PM, or stakeholder). Cover EVERY item in the register (one entry per TD-NNN, in the same severity order). For each item:\n` +
+    needsRegister: true, // red-team HIGH-1: must receive the synthesized register (TD-NNN ids live there, not in findings)
+    prompt: `Write \`.gsd-t/techdebt_in_plain_english.md\` — a NON-TECHNICAL companion to the tech-debt register, written for a smart reader who is NOT an engineer (e.g. a founder, PM, or stakeholder). Cover EVERY item in the register (one entry per TD-NNN, in the same severity order), using the EXACT TD-NNN ids from the register provided below. For each item:\n` +
       `- **Heading**: \`### TD-NNN — <the plain-English name of the problem>\` (keep the TD-NNN id so it cross-references the technical register, but rename the title into everyday language — no jargon).\n` +
       `- **What it is** (1-2 sentences): explain the problem with ZERO technical terms. If a technical word is unavoidable, define it in parentheses the way you'd explain it to a friend.\n` +
       `- **Why it matters** (1-2 sentences): the business/user consequence — what could go wrong, who is affected, what it costs.\n` +
@@ -592,10 +600,17 @@ const docTargets = [
 const docResults = await parallel(
   docTargets.map((d) => async () => {
     const isLiving = !!d.merge;
+    // red-team HIGH-1: targets that mirror the register (plain-english) get the
+    // synthesized register text — the authoritative source of TD-NNN ids/order —
+    // not just the raw findings.
+    const registerBlock = d.needsRegister
+      ? ["", "Synthesized register (.gsd-t/techdebt.md) — use these EXACT TD-NNN ids/order:", "```markdown", registerText.slice(0, 60000), "```"].join("\n")
+      : "";
     const prompt = [
       `You are the documentation agent for ONE document in a GSD-T deep scan.`,
       ``,
       baseCtx,
+      registerBlock,
       ``,
       d.prompt,
       ``,

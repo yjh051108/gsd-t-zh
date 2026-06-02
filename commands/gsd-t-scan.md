@@ -28,7 +28,7 @@ First resolve the ABSOLUTE path to the workflow script (the workflow ships insid
 gsd-t workflow-path scan
 ```
 
-It prints the absolute path (exit 0). Use that exact string as `scriptPath`. Then call the `Workflow` tool with:
+It prints the absolute path (exit 0). Use that exact string as `scriptPath`. If `gsd-t` is not on PATH, fall back to `npx @tekyzinc/gsd-t workflow-path scan`, or derive it from the package: `node -e "const p=require('child_process').execSync('npm root -g').toString().trim(); console.log(p+'/@tekyzinc/gsd-t/templates/workflows/gsd-t-scan.workflow.js')"`. Do NOT fall back to a relative path or a hand-driven scan — that produces an incomplete result (the original bug). Then call the `Workflow` tool with:
 
 ```js
 {
