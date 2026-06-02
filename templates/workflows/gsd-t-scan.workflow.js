@@ -603,9 +603,27 @@ const docResults = await parallel(
     // red-team HIGH-1: targets that mirror the register (plain-english) get the
     // synthesized register text — the authoritative source of TD-NNN ids/order —
     // not just the raw findings.
-    const registerBlock = d.needsRegister
-      ? ["", "Synthesized register (.gsd-t/techdebt.md) — use these EXACT TD-NNN ids/order:", "```markdown", registerText.slice(0, 60000), "```"].join("\n")
-      : "";
+    // red-team MEDIUM: do NOT silently truncate the register — a large register
+    // (e.g. 119 items ≈ 180KB) sliced to a small cap would drop the entire
+    // MEDIUM/LOW tail while the prompt says "cover EVERY item" (silent-cap
+    // anti-pattern the workflow forbids elsewhere). Cap generously, and if we DO
+    // hit it, tell the agent explicitly + log it so completeness loss is visible.
+    const REGISTER_CAP = 400000;
+    let registerBlock = "";
+    if (d.needsRegister) {
+      const truncated = registerText.length > REGISTER_CAP;
+      if (truncated) {
+        log(`⚠ register (${registerText.length} bytes) exceeds the ${REGISTER_CAP}-byte plain-english injection cap — the tail will be missing from techdebt_in_plain_english.md. Consider splitting the register.`);
+      }
+      registerBlock = [
+        "",
+        "Synthesized register (.gsd-t/techdebt.md) — use these EXACT TD-NNN ids/order:",
+        truncated ? "⚠ NOTE: the register was truncated to fit; cover every item you CAN see and end with a line noting that items beyond the last shown TD-NNN were omitted due to size." : "",
+        "```markdown",
+        registerText.slice(0, REGISTER_CAP),
+        "```",
+      ].join("\n");
+    }
     const prompt = [
       `You are the documentation agent for ONE document in a GSD-T deep scan.`,
       ``,
