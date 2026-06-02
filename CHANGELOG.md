@@ -2,6 +2,26 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.0.18] - 2026-06-02 (M71 Runtime-Native Scan Workflow — patch)
+
+### Fixed — the scan Workflow now actually RUNS in the Workflow sandbox (it never did)
+
+The M61→M67 "native Workflow migration" was verified only with `node --check` (syntax) and never executed in the real Anthropic Workflow runtime. It never worked: every invocation crashed and the agent silently fell back to a hand-driven scan (the cause of every shallow/incomplete scan in this saga). Root causes, all found via real-sandbox runs + a 1-agent diagnostic:
+
+- **`require`/`fs`/`spawnSync` banned**: the sandbox exposes only `agent/parallel/pipeline/log/phase/budget/args`. `require("./_lib.js")` etc. threw `ReferenceError: require is not defined`. **Fix:** re-architected `gsd-t-scan.workflow.js` to be runtime-native — the orchestrator does ZERO file I/O; all reads/writes/archive/git happen INSIDE subagents (which have Bash/Read/Write tools). `bin/_lib`, preflight-as-spawnSync, and the bin/scan-*.js render shell-outs are gone.
+- **`args` arrives as a JSON STRING, not an object**: `args.projectDir` was always `undefined` → defaulted to `"."` → agents scanned the package CWD instead of the target. **Fix:** `JSON.parse(args)` normalization at the top (verified by diagnostic run wf_6934cc1a).
+- **Runaway fan-out**: the probe over-sliced (a 5-file repo → ~20 slices/44 agents; the GSD-T repo → 191) — prose alone never bounded it. **Fix:** slices redefined as cohesive sub-domains/responsibilities (not per-file/per-module), AND a volume-derived backstop cap (`computeSliceCap`) deterministically truncates the fan-out (tiny→3, mid→10, Hilo-scale→~27, huge→50 ceiling). The probe decides the count by structure WITHIN the cap.
+- **HTML render stage removed**: `bin/scan-report.js` resolved its output to the package dir and overwrote the package's own report (data-loss). The register + 5 dimension files + plain-english + living docs are the authoritative deliverables; the fragile report was dropped.
+- **`projectDir` pinned**: probe + finder prompts now hard-direct agents to operate only under the target path.
+
+- `test/m71-workflow-runtime-native-lint.test.js`: mechanical lint failing any `*.workflow.js` that uses require/fs/child_process/spawnSync. `test/m71-slice-cap-algorithm.test.js`: locks the cap calibration.
+
+**Acceptance**: verified by an actual sandbox run (wf_da75f310) — `status: complete`, 3 slices (cap held), 22 findings (all planted issues caught), 11 docs + 5 dimension files + plain-english all written to the correct target, committed in-target, GSD-T repo unpolluted. `node --check` is no longer accepted as sufficient — runtime-native workflows must be RUN to completion in the sandbox before shipping.
+
+**Note**: only `gsd-t-scan` is migrated to runtime-native. The other 7 workflows (`execute/verify/wave/integrate/debug/phase/quick`) still use `require`/`fs` and will crash identically in the sandbox — they need the same treatment (follow-up).
+
+Suite: 1293 pass / 0 fail / 4 skip — zero regressions.
+
 ## [4.0.17] - 2026-06-02 (M70 Workflow Invocation Guard — patch)
 
 ### Fixed — workflow commands no longer get hand-driven instead of invoking the Workflow

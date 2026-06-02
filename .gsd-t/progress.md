@@ -1,9 +1,9 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M70 COMPLETED (workflow invocation guard, v4.0.17); M69 COMPLETED (workflow scriptPath resolution, v4.0.16)
-## Date: 2026-06-02 13:53 PDT
-## Version: 4.0.17
+## Status: ACTIVE — M71 COMPLETED (runtime-native scan workflow, v4.0.18, verified by real sandbox run); M70 COMPLETED (workflow invocation guard, v4.0.17)
+## Date: 2026-06-02 15:37 PDT
+## Version: 4.0.18
 
 ## Current Milestone
 
@@ -208,6 +208,8 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-06-02 15:37 PDT: [m71][fix] M71 — runtime-native scan workflow, v4.0.18. The M61→M67 Workflow migration was NEVER executed in the real Workflow sandbox (only `node --check`); it always crashed and fell back to hand-driven scans — the root cause behind every shallow/incomplete scan in this whole thread. Found 5 distinct bugs via real-sandbox runs + a 1-agent diagnostic: (1) `require`/`fs`/`spawnSync` banned by the sandbox (only agent/parallel/pipeline/log/phase/budget/args exposed) → re-architected so the orchestrator does ZERO I/O and all reads/writes/git happen inside subagents; (2) `args` arrives as a JSON STRING not an object → `JSON.parse` normalization (every `args.x` was undefined → scanned package CWD not target); (3) runaway fan-out (5-file repo→~20 slices/44 agents, GSD-T→191) → slices redefined as cohesive sub-domains + deterministic volume-derived backstop cap `computeSliceCap` (tiny→3, Hilo→~27, huge→50); (4) HTML render stage overwrote the package's own report (data-loss) → removed; (5) dangling `render` ref crashed the return after 44 agents → fixed. **Process lesson (encoded): runtime-native workflows MUST be run to completion in the real sandbox before shipping — `node --check` is necessary but NOT sufficient.** +2 tests (forbidden-globals lint, cap calibration). Acceptance: real run wf_da75f310 — status complete, 3 slices (cap held), 22 findings (all planted caught), 11 docs+5 dimension files+plain-english in correct target, committed in-target, GSD-T repo unpolluted. **Scope note: only gsd-t-scan migrated; the other 7 workflows still use require/fs and will crash identically — follow-up needed.** Patch bump 4.0.17 → 4.0.18.
 
 - 2026-06-02 13:53 PDT: [m70][fix] M70 — workflow invocation guard, v4.0.17. Origin: user screenshot showed a BRAND-NEW Hilo session running /gsd-t-scan (via /gsd auto-router) hand-driving an 18-slice fan-out ("skip task-list overhead and drive the fan-out directly … proven fallback pattern") instead of invoking the Workflow — reproducing the M66/M67 incomplete-output bug despite the v4.0.16 fix being correctly installed. Root cause (two compounding): (1) gsd-t-scan.md's prose described the workflow's internals and read like a to-do list the agent should execute; (2) /gsd router's "execute the command's full workflow" was ambiguous between "invoke the tool" vs "do the work yourself." Fix: prepended a strong imperative ⛔ guard to gsd-t-scan.md (STOP — only job is resolve-path + call Workflow tool; do NOT probe/slice/spawn-finders/fall-back; hand-driving is a FAILURE) + reframed prose as "background, NOT your to-do list"; concise guard on execute/verify/wave/integrate/debug; clarified the /gsd router. +7 regression tests asserting the guard near the top of every workflow-backed command. Suite 1278→1285 pass / 0 fail / 4 skip. Patch bump 4.0.16 → 4.0.17.
 

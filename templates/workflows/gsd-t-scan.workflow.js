@@ -1,77 +1,98 @@
 // templates/workflows/gsd-t-scan.workflow.js
 //
-// Runtime: Anthropic native Workflow tool only (not standalone-Node parseable).
-// Globals provided by runtime: agent, parallel, pipeline, log, phase, budget, args.
-// Top-level await + return are runtime-legal in that context.
+// RUNTIME: Anthropic native Workflow tool ONLY. The sandbox exposes EXACTLY these
+// globals: agent(), parallel(), pipeline(), log(), phase(), budget, args.
+// It does NOT provide require / module / fs / path / child_process / process.
+// Using any of those throws `ReferenceError: require is not defined` at runtime —
+// the bug (M71) that made every GSD-T workflow silently fail and fall back to a
+// hand-driven scan. `node --check` validates syntax only and CANNOT catch this;
+// `test/m71-workflow-runtime-native-lint.test.js` is the mechanical guard, and an
+// actual sandbox run is the acceptance gate.
 //
-// Canonical native-Workflow implementation of the GSD-T scan phase.
+// THE ARCHITECTURE (M71): the orchestrator body does NO file I/O. It only sequences
+// phases and threads data (as strings) between agents. ALL reads, writes, archive,
+// git, and counting happen INSIDE subagents — they have Bash/Read/Write/Grep tools.
+// `projectDir` is passed into prompts so each agent operates on the right tree.
 //
-// WHY THIS EXISTS (M66): the legacy commands/gsd-t-scan.md was the ONLY major
-// phase never migrated to a Workflow. It hard-coded exactly 5 teammates (one per
-// DIMENSION: architecture/business-rules/security/quality/contracts) with ZERO
-// volume scaling — a 5-file repo and a 1,809-file repo both got 5 agents. A single
-// `quality` agent asked to cover dead-code+dup+complexity+errors+perf+test-gaps
-// across the whole codebase samples ~5 issues and stops. That produced a cursory
-// 16-item register on a codebase whose deep scan surfaced 117 findings.
-// It also referenced a retired `autoSpawnHeadless()` + `headless-default-contract
-// v2.0.0` that no longer exist post-M61/M65.
-//
-// THE FIX: fan out by codebase VOLUME, not by a fixed dimension count.
-//   preflight → volume-probe (derive per-AREA slice list) →
-//   pipeline( slice → deep-finder "enumerate, do not sample" → single verify ) →
-//   archive prior register → synthesis (dedup/merge/re-rank, continue TD numbering) →
-//   deterministic bin/scan-*.js stages (schema / diagrams / HTML report).
-//
-// The number of finders scales with the slice list the probe derives, and slice
-// DEPTH scales with budget.total when a turn target is set. KEEPS the brains:
-// preflight + the deterministic bin/scan-*.js renderers.
+//   preflight(agent) → volume-probe(agent) → pipeline(deep-finder → single verify)
+//   → synthesis(agent: archive + write register + git) → document(parallel per-doc
+//   agents: living docs + 5 dimension files + plain-english) → render(agent: HTML).
 //
 // args shape:
-//   {
-//     projectDir: ".",          // optional — the project to scan
-//     scanNumber: 12,           // optional — for the register header
-//     maxSlicesHint: 40,        // optional — soft cap on derived slices
-//     verify: "single",         // optional — "single" (default) | "none"
-//   }
+//   { projectDir: ".", scanNumber?: 13, verify?: "single"|"none" }
+//   (no slice cap — the probe's cohesive-sub-domain decomposition is the slice set.)
 
 export const meta = {
   name: "gsd-t-scan",
   description:
-    "GSD-T scan phase: preflight → volume-probe → pipeline(deep-finder per slice → single verify) → archive → synthesis → deep document cross-population (living docs + dimension files) → deterministic schema/diagram/HTML render. Fans out by codebase volume, not a fixed 5-teammate dimension count.",
+    "GSD-T scan (runtime-native): preflight → volume-probe → pipeline(deep-finder per slice → single verify) → synthesis(archive+register) → document(living docs + 5 dimension files + plain-english) → render. Orchestrator does NO fs/require; all I/O is inside subagents. Fans out by codebase volume.",
   phases: [
-    { title: "Preflight",   detail: "preflight + load prior register" },
-    { title: "Probe",       detail: "volume probe → derive per-area slice list", model: "haiku" },
-    { title: "Deep Scan",   detail: "pipeline: per-slice deep finder → single verify" },
-    { title: "Synthesis",   detail: "dedup / merge / re-rank into techdebt.md", model: "opus" },
-    { title: "Document",    detail: "deep living-doc + dimension-file + plain-English cross-population (per-doc fan-out)" },
-    { title: "Render",      detail: "schema extraction + diagrams + HTML report" },
+    { title: "Preflight",  detail: "branch + prior-register check (agent via Bash)" },
+    { title: "Probe",      detail: "volume probe → per-area slice list", model: "sonnet" },
+    { title: "Deep Scan",  detail: "pipeline: per-slice deep finder → single verify" },
+    { title: "Synthesis",  detail: "archive prior + write fresh register + git", model: "opus" },
+    { title: "Document",   detail: "living docs + 5 dimension files + plain-english (per-doc fan-out)" },
+    { title: "Render",     detail: "HTML scan report via gsd-t bin renderers (agent via Bash)" },
   ],
 };
 
-const lib = require("./_lib.js");
-const { spawnSync } = require("child_process");
-const fs = require("fs");
-const path = require("path");
+// CRITICAL (M71): the Workflow runtime passes `args` as a JSON STRING, not a parsed
+// object — verified by diagnostic run wf_6934cc1a-537 (typeof args === "string").
+// Reading `args.projectDir` directly yields undefined → projectDir defaults to "."
+// → agents scan the GSD-T package CWD instead of the target, and maxSlicesHint is
+// undefined → the slice cap no-ops → runaway 150+ finder fan-out. Normalize FIRST.
+const _args = (typeof args === "string")
+  ? (() => { try { return JSON.parse(args); } catch (_) { return {}; } })()
+  : (args || {});
+const projectDir    = _args.projectDir || ".";
+const scanNumber    = _args.scanNumber || null;
+const verifyMode    = _args.verify || "single"; // "single" | "none"
+const maxSlicesOverride = _args.maxSlicesHint || null; // optional power-user ceiling override
 
-const projectDir   = (args && args.projectDir) || ".";
-const scanNumber   = (args && args.scanNumber) || null;
-const maxSlicesHint = (args && args.maxSlicesHint) || 40;
-const verifyMode   = (args && args.verify) || "single"; // "single" | "none"
+// VOLUME-DERIVED CAP — a RUNAWAY BACKSTOP, not the target count. The probe decides
+// the actual slice count by cohesive sub-domain WITHIN this cap; the cap only fires
+// when the probe over-slices. EVIDENCE it's necessary: with no cap, the probe sliced
+// a 5-FILE repo into ~20 slices → 44 agents (run wf_9c993376-097), and the GSD-T repo
+// into 191 — the slice-definition prose alone does NOT keep it bounded (same lesson as
+// M70: prose the agent can ignore isn't enforcement). So the count is structure-driven
+// but HARD-capped. Calibrated as a CEILING (the probe normally lands under it):
+// tiny(5 files)→3, mid(300)→10, Hilo(1809f/~1M LOC/150 routes/361 tables)→~27,
+// huge(10k files)→50. _args.maxSlicesHint optionally overrides. Tune here.
+function computeSliceCap(t) {
+  const files      = Number(t && (t.files || t.total_files || t.source_files)) || 0;
+  const loc        = Number(t && (t.loc || t.lines_of_code || t.totalLoc)) || 0;
+  const routes     = Number(t && (t.routes || t.route_modules)) || 0;
+  const tables     = Number(t && (t.tables || t.orm_tables)) || 0;
+  const components = Number(t && t.components) || 0;
+  const domains    = Number(t && (t.featureDomains || t.feature_domains)) || 0;
+  const fileSignal   = Math.sqrt(files) * 0.42;
+  const structSignal = domains + Math.round(routes / 70) + Math.round(tables / 200) + Math.round(components / 250);
+  const locSignal    = Math.sqrt(loc) / 800;
+  const raw = fileSignal * 0.7 + structSignal * 0.8 + locSignal;
+  return Math.max(3, Math.min(50, Math.round(raw)));
+}
 
-// ───── Schemas ──────────────────────────────────────────────────────────────
+// ───── Schemas (pure data — no runtime dependency) ──────────────────────────
 
-// Probe output: a list of slices to fan out over. Each slice is one narrow area
-// of the codebase a single deep-finder agent can exhaustively own.
+const PREFLIGHT_SCHEMA = {
+  type: "object",
+  required: ["ok", "branch", "priorRegisterExists"],
+  additionalProperties: false,
+  properties: {
+    ok:                  { type: "boolean" },
+    branch:              { type: "string" },
+    priorRegisterExists: { type: "boolean" },
+    priorMaxTd:          { type: "integer", description: "highest TD-NNN in the prior register, 0 if none" },
+    notes:               { type: "string" },
+  },
+};
+
 const PROBE_SCHEMA = {
   type: "object",
   required: ["totals", "slices"],
   additionalProperties: false,
   properties: {
-    totals: {
-      type: "object",
-      additionalProperties: true,
-      description: "Headline counts: files, routes, tables, components, testFiles, topLevelDirs.",
-    },
+    totals: { type: "object", additionalProperties: true },
     slices: {
       type: "array",
       minItems: 1,
@@ -80,13 +101,10 @@ const PROBE_SCHEMA = {
         required: ["key", "paths", "dimension"],
         additionalProperties: false,
         properties: {
-          key:       { type: "string", description: "kebab slice id, e.g. 'lib-billing' or 'routes-tenant-scoping'" },
-          paths:     { type: "array", items: { type: "string" }, description: "globs/dirs this slice exhaustively owns" },
-          dimension: {
-            type: "string",
-            enum: ["architecture", "business-rules", "security", "quality", "contracts", "feature-domain", "data-layer", "api-surface", "testing"],
-          },
-          why:       { type: "string", description: "what makes this slice worth a dedicated deep finder" },
+          key:       { type: "string" },
+          paths:     { type: "array", items: { type: "string" } },
+          dimension: { type: "string", enum: ["architecture", "business-rules", "security", "quality", "contracts", "feature-domain", "data-layer", "api-surface", "testing"] },
+          why:       { type: "string" },
         },
       },
     },
@@ -109,7 +127,7 @@ const FINDER_SCHEMA = {
         properties: {
           title:          { type: "string" },
           severity:       { type: "string", enum: ["CRITICAL", "HIGH", "MEDIUM", "LOW"] },
-          area:           { type: "string", description: "human area label, e.g. 'Multi-tenant isolation'" },
+          area:           { type: "string" },
           files:          { type: "array", items: { type: "string" } },
           detail:         { type: "string" },
           impact:         { type: "string" },
@@ -127,235 +145,142 @@ const VERIFY_SCHEMA = {
   required: ["confirmed", "verdict"],
   additionalProperties: false,
   properties: {
-    confirmed: { type: "boolean", description: "true if the finding is real after checking the actual code" },
-    verdict:   { type: "string", enum: ["confirmed", "false-positive", "needs-detail"] },
-    note:      { type: "string" },
+    confirmed:         { type: "boolean" },
+    verdict:           { type: "string", enum: ["confirmed", "false-positive", "needs-detail"] },
+    note:              { type: "string" },
     correctedSeverity: { type: "string", enum: ["CRITICAL", "HIGH", "MEDIUM", "LOW"] },
-  },
-};
-
-const DOC_RESULT_SCHEMA = {
-  type: "object",
-  required: ["doc", "status", "path"],
-  additionalProperties: false,
-  properties: {
-    doc:    { type: "string", description: "logical doc id, e.g. 'docs/architecture.md'" },
-    status: { type: "string", enum: ["written", "merged", "skipped", "failed"] },
-    path:   { type: "string" },
-    bytes:  { type: "integer" },
-    notes:  { type: "string" },
   },
 };
 
 const SYNTHESIS_SCHEMA = {
   type: "object",
-  required: ["status", "registerPath", "counts"],
+  required: ["status", "counts"],
   additionalProperties: false,
   properties: {
     status:       { type: "string", enum: ["written", "failed"] },
     registerPath: { type: "string" },
+    archivePath:  { type: "string" },
     counts: {
       type: "object",
       required: ["critical", "high", "medium", "low"],
       properties: {
-        critical: { type: "integer" },
-        high:     { type: "integer" },
-        medium:   { type: "integer" },
-        low:      { type: "integer" },
-        total:    { type: "integer" },
+        critical: { type: "integer" }, high: { type: "integer" },
+        medium:   { type: "integer" }, low:  { type: "integer" }, total: { type: "integer" },
       },
     },
-    archivePath:  { type: "string" },
-    notes:        { type: "string" },
+    tdRange: { type: "string", description: "e.g. 'TD-01..TD-119'" },
+    notes:   { type: "string" },
   },
 };
 
-// ───── Local-bin resolution for the deterministic bin/scan-*.js renderers ─────
-// Mirrors verify.workflow.js::_runJsonCli — prefer project-local bin/, the scan
-// renderers live in the GSD-T package bin/ which is the project root here.
-function _runNode(scriptRelPath, evalExpr, argv = []) {
-  const local = path.join(projectDir, scriptRelPath);
-  if (!fs.existsSync(local)) return { ok: false, exitCode: 127, stderr: `missing ${scriptRelPath}` };
-  const r = spawnSync(process.execPath, ["-e", evalExpr, ...argv], { cwd: projectDir, stdio: "pipe" });
-  return {
-    ok: r.status === 0,
-    exitCode: r.status,
-    stdout: r.stdout && r.stdout.toString(),
-    stderr: r.stderr && r.stderr.toString(),
-  };
-}
+const DOC_RESULT_SCHEMA = {
+  type: "object",
+  required: ["doc", "status"],
+  additionalProperties: false,
+  properties: {
+    doc:    { type: "string" },
+    status: { type: "string", enum: ["written", "merged", "skipped", "failed"] },
+    path:   { type: "string" },
+    notes:  { type: "string" },
+  },
+};
 
-// ───── Script body ────────────────────────────────────────────────────────────
+const RENDER_SCHEMA = {
+  type: "object",
+  required: ["status"],
+  additionalProperties: false,
+  properties: {
+    status:     { type: "string", enum: ["rendered", "skipped", "failed"] },
+    outputPath: { type: "string" },
+    notes:      { type: "string" },
+  },
+};
 
+// ───── Script body — orchestration only, ZERO file I/O here ─────────────────
+
+// Preflight: an agent checks branch + whether a prior register exists, via Bash.
+// (No fs in the body — that was the bug.)
 phase("Preflight");
-const pre = lib.runPreflight({ projectDir });
-if (!pre.ok) {
-  log(`preflight FAIL exitCode=${pre.exitCode} — halting scan`);
-  return { status: "failed", reason: "preflight-failed", preflight: pre.envelope };
+const pre = await agent(
+  [
+    `You are the preflight check for a GSD-T deep scan of the project at \`${projectDir}\`.`,
+    `Using Bash/Read tools, determine:`,
+    `1. The current git branch (\`git -C ${projectDir} rev-parse --abbrev-ref HEAD\`; if not a git repo, report branch "(no-git)").`,
+    `2. Whether \`${projectDir}/.gsd-t/techdebt.md\` exists (priorRegisterExists).`,
+    `3. If it exists, the HIGHEST TD-NNN number in it (grep \`### TD-\`, parse the max integer; priorMaxTd). If absent, priorMaxTd=0.`,
+    `Set ok=true unless something makes scanning impossible (e.g. projectDir does not exist). Return JSON per the schema.`,
+  ].join("\n"),
+  { label: "preflight", phase: "Preflight", schema: PREFLIGHT_SCHEMA, model: "haiku" }
+);
+if (!pre || !pre.ok) {
+  log(`preflight failed — halting. notes: ${pre && pre.notes}`);
+  return { status: "failed", reason: "preflight-failed", preflight: pre };
 }
-log("preflight OK");
+const tdStart = (pre.priorRegisterExists ? (pre.priorMaxTd || 0) : 0) + 1;
+log(`preflight ok — branch=${pre.branch}, priorRegister=${pre.priorRegisterExists}, TD numbering starts at TD-${tdStart}`);
 
-// Load prior register (for dedup + TD-numbering continuation).
-// Red-team fix (CRITICAL-1/CRITICAL-2/MEDIUM-1): the archive + TD-numbering must be
-// DETERMINISTIC JS, not LLM prose — an agent told to "archive then rewrite" can
-// clobber the register without archiving, and an agent told to "continue numbering"
-// with no data hallucinates a start number → colliding TD IDs. So we do the rename
-// here (collision-safe), parse the max TD number, and PASS the prior content into
-// synthesis. This mirrors verify.workflow.js, where every destructive gate is
-// deterministic code, not an agent instruction.
-let priorRegister = null;
-let priorArchivePath = null;
-let tdStart = 1;
-const registerPath = path.join(projectDir, ".gsd-t", "techdebt.md");
-
-function _parseMaxTd(text) {
-  // Match TD-1, TD-01, TD-001, TD-117 in any "### TD-NNN" or "TD-NNN" form.
-  const nums = [];
-  const re = /TD-0*(\d+)/g;
-  let m;
-  while ((m = re.exec(text)) !== null) nums.push(parseInt(m[1], 10));
-  return nums.length ? Math.max(...nums) : 0;
-}
-function _archiveDateFrom(text, fallbackDate) {
-  // Prefer an explicit YYYY-MM-DD in the header; else use the fallback (mtime-derived).
-  const m = text.match(/\b(\d{4}-\d{2}-\d{2})\b/);
-  return (m && m[1]) || fallbackDate;
-}
-
-if (fs.existsSync(registerPath)) {
-  priorRegister = fs.readFileSync(registerPath, "utf8");
-  tdStart = _parseMaxTd(priorRegister) + 1;
-  // Derive archive date deterministically: header date, else file mtime (NOT Date.now —
-  // unavailable in this runtime). Collision-safe suffixing.
-  const mtime = fs.statSync(registerPath).mtime;
-  const fallbackDate = mtime.toISOString().slice(0, 10);
-  const archiveDate = _archiveDateFrom(priorRegister, fallbackDate);
-  const scanDir = path.join(projectDir, ".gsd-t");
-  let candidate = path.join(scanDir, `techdebt_${archiveDate}.md`);
-  let counter = 2;
-  while (fs.existsSync(candidate)) {
-    candidate = path.join(scanDir, `techdebt_${archiveDate}_${counter}.md`);
-    counter += 1;
-  }
-  fs.renameSync(registerPath, candidate);
-  priorArchivePath = candidate;
-  log(`prior register archived → ${path.basename(candidate)} (${priorRegister.length} bytes); TD numbering continues at TD-${tdStart}`);
-} else {
-  log(`no prior register — TD numbering starts at TD-01`);
-}
-
-// ─── Volume probe — derive the slice list (this is the fix for the 5-teammate cap) ───
+// Volume probe — an agent measures the codebase (its own Bash) and carves slices.
 phase("Probe");
-const probePrompt = [
-  `You are the VOLUME PROBE for a GSD-T deep codebase scan of \`${projectDir}\`.`,
-  ``,
-  `Your job: measure the codebase's volume, then carve it into NARROW SLICES — one`,
-  `slice per area that a single deep-finder agent can EXHAUSTIVELY own. The number`,
-  `of slices MUST scale with volume: a tiny repo yields 1-3 slices; a large repo`,
-  `(thousands of files, hundreds of routes/tables, many feature domains) yields`,
-  `15-40. Do NOT default to a fixed 5 — that under-scaling is exactly the bug M66 fixes.`,
-  ``,
-  `How to slice (combine these axes — prefer FEATURE-DOMAIN slicing for large apps):`,
-  `- By feature domain: each major business area (e.g. billing, scheduling, dispatch,`,
-  `  work-orders, LMS, maintenance, integrations) is its own slice, owned end-to-end.`,
-  `- By layer where a layer is huge: routes/API surface, data/schema layer, the`,
-  `  largest component trees, async jobs/queues.`,
-  `- By cross-cutting concern: tenant-isolation, secrets/config, auth, rate-limiting.`,
-  `Each slice names the concrete \`paths\` (dirs/globs) it owns and a \`dimension\`.`,
-  ``,
-  `Use real tooling to measure: count files by extension, count route modules,`,
-  `count ORM table definitions (e.g. pgTable/Entity/model), count components, list`,
-  `top-level source dirs and their subdirs. Read package.json for the stack. If a`,
-  `single dir (e.g. src/lib/) has many independent subdirs, each substantial subdir`,
-  `is a candidate slice.`,
-  ``,
-  `Soft cap: aim for ≤ ${maxSlicesHint} slices. If volume genuinely exceeds that,`,
-  `merge the smallest related areas but state in notes what you merged so depth loss`,
-  `is visible (no silent truncation).`,
-  ``,
-  `Return JSON per the schema: totals (headline counts) + slices (the fan-out list).`,
-].join("\n");
-
-// Red-team fix: probe runs on SONNET, not haiku. The probe's whole job is to
-// measure volume and resist under-slicing; a haiku probe that under-counts a large
-// repo (truncated tooling output → guesses) would re-introduce the exact under-scaling
-// M66 fixes. Sonnet is the right tier for this measurement+judgment task.
-const probe = await agent(probePrompt, {
-  label: "volume-probe",
-  phase: "Probe",
-  schema: PROBE_SCHEMA,
-  model: "sonnet",
-});
-
-const slices = (probe && Array.isArray(probe.slices) && probe.slices) || [];
-if (!slices.length) {
-  log("probe returned no slices — halting (cannot scan with an empty slice list)");
+const probe = await agent(
+  [
+    `⛔ TARGET DIRECTORY IS FIXED: you MUST scan ONLY the project at the absolute path \`${projectDir}\`. Before any measurement, \`cd ${projectDir}\` (or pass that exact path to every Read/Grep/Bash). Do NOT scan your current working directory, the GSD-T package, or any other tree — every file you measure and every slice path you emit MUST be under \`${projectDir}\`. If \`${projectDir}\` does not exist or is empty, return a single slice noting that.`,
+    ``,
+    `You are the VOLUME PROBE for a GSD-T deep scan. Measure the codebase (Bash/Grep/Read), then decompose it into SLICES.`,
+    ``,
+    `WHAT A SLICE IS: one COHESIVE SUB-DOMAIN or RESPONSIBILITY — a logical section of the code, like a domain but SMALLER. Finer than a domain, coarser than a single file. Examples: "invoice generation", "Stripe webhook handling", "refund/void logic", "tenant-scoping enforcement", "the work-order state machine", "scheduling conflict detection", "the auth/session layer". Each slice is something a developer would name as a distinct concern, and small enough that ONE agent can read EVERY file in it and reason about it as a coherent whole.`,
+    ``,
+    `HOW TO DECOMPOSE (structure leads, not a number):`,
+    `1. Find the logical seams — walk the actual structure (dirs, modules, services, feature areas, route groups, schema groupings) and identify cohesive units of responsibility. Think the way you'd list a system's sub-domains.`,
+    `2. Size-check each unit — if a logical section is too big for one agent to read exhaustively (e.g. a giant component tree, a monolithic schema with hundreds of tables, a sprawling service), SUBDIVIDE it into smaller cohesive sub-sections until each fits one agent.`,
+    `3. The slice COUNT falls out of this — you produce as many slices as the code has cohesive, agent-sized sections. Do NOT target a number; do NOT split by raw file boundaries; do NOT make one slice per file/per module. A small repo naturally yields few slices; a large multi-domain app yields more.`,
+    ``,
+    `Each slice: a \`key\` (kebab name of the responsibility, e.g. "invoice-generation"), concrete \`paths\` it owns (under \`${projectDir}\`), a \`dimension\`, and \`why\` (what makes it one cohesive concern).`,
+    ``,
+    `Decompose HONESTLY by cohesive responsibility: not so coarse that an agent can't read its whole slice, not so fine that you emit one slice per file. A well-decomposed system has a finite, sensible number of real responsibilities — find them. (A volume-derived backstop cap is enforced after you return ONLY to catch over-slicing; a clean sub-domain decomposition lands under it. Report accurate \`totals\` — they set the backstop. If your count is truncated, you sliced too finely.)`,
+    ``,
+    `Measure with real tooling and report in \`totals\`: files, loc, routes, tables, components, featureDomains (distinct business/feature areas). Read \`${projectDir}/package.json\` for the stack. Return JSON per the schema: totals + slices.`,
+  ].join("\n"),
+  { label: "volume-probe", phase: "Probe", schema: PROBE_SCHEMA, model: "sonnet" }
+);
+const rawSlices = (probe && Array.isArray(probe.slices) && probe.slices) || [];
+if (!rawSlices.length) {
+  log("probe returned no slices — halting");
   return { status: "failed", reason: "no-slices", probe };
 }
-log(`probe derived ${slices.length} slice(s) from totals=${JSON.stringify(probe.totals)}`);
-
-// Red-team fix (HIGH-2): deterministic silent-truncation detection. If the probe hit
-// the soft cap, the operator MUST be told whether coverage was merged away. CLAUDE.md
-// forbids silent caps — so we surface a coverage-risk warning in code, not just prose.
-if (slices.length >= maxSlicesHint) {
-  if (probe.notes && /merg/i.test(probe.notes)) {
-    log(`⚠ COVERAGE NOTE: probe hit the ${maxSlicesHint}-slice cap and merged areas — see probe.notes: ${probe.notes}`);
-  } else {
-    log(`⚠ COVERAGE RISK: probe returned ${slices.length} slices (≥ cap ${maxSlicesHint}) with NO documented merges. Some areas may be under-covered. Re-run with a higher maxSlicesHint to confirm full coverage.`);
-  }
+// Volume-derived cap as a runaway backstop (the probe over-slices without it).
+const computedCap = computeSliceCap(probe.totals || {});
+const sliceCap = maxSlicesOverride || computedCap;
+let slices = rawSlices;
+if (rawSlices.length > sliceCap) {
+  slices = rawSlices.slice(0, sliceCap);
+  log(`⚠ SLICE CAP ENFORCED: probe returned ${rawSlices.length} cohesive slices; volume-derived backstop=${computedCap}${maxSlicesOverride ? ` (override ${maxSlicesOverride})` : ""}. Truncated to ${sliceCap} to bound the agent fan-out. Dropped ${rawSlices.length - sliceCap}: ${rawSlices.slice(sliceCap).map((s) => s.key).join(", ")}. (Probe over-sliced — it should group by cohesive sub-domain, not per file/module.)`);
 }
+log(`probe derived ${rawSlices.length} slice(s); backstop cap=${computedCap}; running ${slices.length} deep-finder(s); totals=${JSON.stringify(probe.totals)}`);
 
-// budget-aware depth hint: with a larger turn target, finders are told to dig deeper.
-// "thorough" and "MAXIMUM" are defined inline in the finder prompt so the hint is actionable.
 const deep = budget && budget.total && budget.total > 300000 ? "MAXIMUM" : "thorough";
 
-// ─── Deep scan — pipeline: per-slice deep finder → single verify (no barrier) ───
-// pipeline() runs each slice through both stages independently: slice A can be in
-// verify while slice B is still finding. Wall-clock = slowest single chain.
+// Deep scan — pipeline: per-slice deep finder → single verify (no barrier).
 phase("Deep Scan");
 const sliceResults = await pipeline(
   slices,
-  // Stage 1 — deep finder. One agent OWNS one slice and enumerates exhaustively.
   (slice) => agent(
     [
-      `You are a DEEP tech-debt finder for ONE slice of a GSD-T scan: \`${slice.key}\`.`,
-      `Dimension: ${slice.dimension}. Owned paths: ${JSON.stringify(slice.paths)}.`,
+      `⛔ Scan ONLY files under the absolute project path \`${projectDir}\`. \`cd ${projectDir}\` first; never read outside this tree.`,
+      `You are a DEEP tech-debt finder for ONE slice of a scan of \`${projectDir}\`: \`${slice.key}\` (dimension: ${slice.dimension}).`,
+      `Owned paths (relative to \`${projectDir}\`): ${JSON.stringify(slice.paths)}.`,
       slice.why ? `Why this slice matters: ${slice.why}` : ``,
       ``,
-      `MANDATE: ENUMERATE, do NOT sample. Walk EVERY file under your owned paths.`,
-      `The legacy scan failed because one agent sampled the top ~5 issues across the`,
-      `whole repo and stopped. You own only this slice, so go to the bottom of it.`,
-      ``,
-      `Depth = ${deep}. "thorough" = walk every file in your paths and report every`,
-      `non-trivial real defect, high and medium confidence. "MAXIMUM" = additionally`,
-      `include lower-confidence and speculative issues worth a human's review.`,
-      `Surface every real defect: bugs, security holes, missing validation, broken`,
-      `invariants, race conditions, dead/duplicated code, N+1s, untested critical`,
-      `paths, contract drift, and domain-specific correctness flaws (e.g. money math,`,
-      `state-machine gaps, timezone bugs, idempotency holes).`,
-      ``,
-      `For each finding give: title, severity (CRITICAL/HIGH/MEDIUM/LOW), a human area`,
-      `label, concrete file:line refs, the detail, the impact, and a remediation.`,
-      `Set confidence honestly. If this slice is a substantial area (many files), a`,
-      `result of only 1-2 findings is suspicious — re-check before concluding it is`,
-      `clean. If the slice is genuinely clean, return an empty findings array.`,
-      ``,
-      `Return JSON per the schema.`,
+      `MANDATE: ENUMERATE, do NOT sample. Read EVERY file under your owned paths (use Read/Grep). The legacy scan failed because one agent sampled ~5 issues across the whole repo and stopped — you own only this slice, so go to the bottom of it.`,
+      `Depth = ${deep}. "thorough" = every file, every non-trivial real defect (high+medium confidence). "MAXIMUM" = also lower-confidence/speculative items worth review.`,
+      `Surface: bugs, security holes, missing validation, broken invariants, race conditions, dead/duplicated code, N+1s, untested critical paths, contract drift, domain-specific correctness (money math, state-machine gaps, timezone bugs, idempotency holes).`,
+      `For each finding: title, severity (CRITICAL/HIGH/MEDIUM/LOW), human area label, concrete file:line refs, detail, impact, remediation, honest confidence. If a substantial slice yields only 1-2 findings, re-check before concluding it's clean. Empty findings array if genuinely clean. Return JSON per the schema.`,
     ].filter(Boolean).join("\n"),
     { label: `find:${slice.key}`, phase: "Deep Scan", schema: FINDER_SCHEMA, model: "sonnet" }
   ),
-  // Stage 2 — single verify pass (per user decision: single, not 3-vote).
-  // Confirms each finding against the ACTUAL code; drops false positives.
-  // Red-team fix (HIGH-3): pipeline() stage-2 contract is (prevResult, originalItem, index).
-  // Defend against an unexpected runtime signature so a missing `slice` arg can never
-  // throw `slice.key` and silently drop a whole slice's findings (which would resolve
-  // to null at the pipeline level). Recover the key from the finder result if needed.
-  async (finderResult, originalItem, _index) => {
+  async (finderResult, originalItem) => {
     const slice = originalItem || {};
     const sliceKey = slice.key || (finderResult && finderResult.slice) || "unknown-slice";
-    if (!finderResult || !Array.isArray(finderResult.findings)) {
-      return { slice: sliceKey, findings: [] };
-    }
+    if (!finderResult || !Array.isArray(finderResult.findings)) return { slice: sliceKey, findings: [] };
     if (verifyMode === "none" || finderResult.findings.length === 0) {
       return { slice: sliceKey, findings: finderResult.findings || [] };
     }
@@ -364,391 +289,155 @@ const sliceResults = await pipeline(
         try {
           const v = await agent(
             [
-              `You are a VERIFIER for one tech-debt finding. Confirm it against the ACTUAL code — do not trust the finder.`,
-              `Open the referenced files and check the claim is real and correctly characterized.`,
-              ``,
+              `You are a VERIFIER for one tech-debt finding in \`${projectDir}\`. Confirm it against the ACTUAL code (open the referenced files with Read) — do not trust the finder.`,
               `Finding: ${JSON.stringify(f)}`,
-              ``,
-              `Set confirmed=true only if the defect genuinely exists. If the finder`,
-              `misread the code, return verdict="false-positive". If real but the`,
-              `severity is wrong, set correctedSeverity. If real but underspecified,`,
-              `verdict="needs-detail" (still kept). Return JSON per the schema.`,
+              `confirmed=true only if the defect genuinely exists. If misread → verdict="false-positive". If real but wrong severity → set correctedSeverity. If real but underspecified → verdict="needs-detail" (kept). Return JSON per the schema.`,
             ].join("\n"),
             { label: `verify:${sliceKey}`, phase: "Deep Scan", schema: VERIFY_SCHEMA, model: "sonnet" }
           );
           if (!v || v.verdict === "false-positive" || v.confirmed === false) return null;
           return { ...f, severity: v.correctedSeverity || f.severity, _verify: v.verdict };
         } catch (e) {
-          // verify errored — keep the finding flagged rather than silently drop it
           return { ...f, _verify: "verify-errored" };
         }
       })
     );
-    return { slice: sliceKey, findings: verified.filter(Boolean), notes: finderResult.notes };
+    return { slice: sliceKey, findings: verified.filter(Boolean) };
   }
 );
-
-const allFindings = sliceResults
-  .filter(Boolean)
-  .flatMap((r) => (r.findings || []).map((f) => ({ ...f, slice: r.slice })));
+const allFindings = sliceResults.filter(Boolean).flatMap((r) => (r.findings || []).map((f) => ({ ...f, slice: r.slice })));
 log(`deep scan complete: ${allFindings.length} verified findings across ${sliceResults.filter(Boolean).length} slices`);
 
-// ─── Synthesis — archive prior register, dedup/merge/re-rank, write fresh register ───
+// Synthesis — an agent does the ARCHIVE + REGISTER WRITE + GIT entirely via its
+// own Bash/Write tools. The orchestrator does NOT touch fs. The agent is given the
+// deterministic tdStart so numbering can't drift, and is told to archive FIRST.
 phase("Synthesis");
-// Red-team fix (CRITICAL-1/CRITICAL-2): the archive already happened in JS above.
-// Synthesis no longer touches the archive — it gets the prior register CONTENT and the
-// deterministically-computed starting TD number, so dedup + numbering can't hallucinate.
-// Red-team fix (HIGH-1): synthesis ALSO writes the .gsd-t/scan/*.md dimension files the
-// deterministic renderer (bin/scan-data-collector.js) reads, so the HTML report reflects
-// real data instead of silently rendering a hollow shell. scanNumber (formerly dead) is
-// threaded into the register header here.
-const synthesisPrompt = [
-  `You are the SYNTHESIS agent for a GSD-T deep scan of \`${projectDir}\`.`,
-  `${slices.length} slices ran; ${allFindings.length} verified findings came back.`,
-  scanNumber ? `This is scan #${scanNumber} — put it in the register header.` : ``,
-  ``,
-  priorRegister
-    ? [
-        `The prior register was ALREADY archived (in code) to \`${priorArchivePath ? path.basename(priorArchivePath) : "an archive"}\`.`,
-        `Start TD numbering at TD-${tdStart} (computed deterministically from the highest`,
-        `prior TD number — do NOT renumber existing items or restart at 1).`,
-        `DEDUPLICATE against the prior register below: do not re-add a finding already`,
-        `represented there; cross-reference the prior TD id instead.`,
-        ``,
-        `Prior register content (for dedup + numbering reference):`,
-        "```markdown",
-        priorRegister.slice(0, 20000),
-        "```",
-      ].join("\n")
-    : `No prior register — start TD numbering at TD-${String(tdStart).padStart(2, "0")}.`,
-  ``,
-  `Verified findings:`,
-  "```json",
-  JSON.stringify(allFindings, null, 2),
-  "```",
-  ``,
-  `Write a FRESH \`.gsd-t/techdebt.md\` (use the Write tool). Structure per the GSD-T`,
-  `register format: a Summary table (CRITICAL/HIGH/MEDIUM/LOW counts), then sections`,
-  `Critical → High → Medium → Low, each finding as \`### TD-NNN — {title}\` with`,
-  `Area / Severity / Status: OPEN / Location (file:line) / Description / Impact /`,
-  `Remediation / Milestone candidate fields. Re-rank globally by true severity, not`,
-  `by slice order. De-duplicate findings that multiple slices surfaced (e.g. a`,
-  `cross-cutting tenant-scoping gap) into one item that lists all locations.`,
-  ``,
-  `Write ONLY the register here. The .gsd-t/scan/*.md analysis files and the living`,
-  `docs are produced by the Document phase that runs next (M67) — do not write them.`,
-  ``,
-  `Do NOT express effort in human-hours/days/sprints — GSD-T units only (domain/`,
-  `wave/spawn/token-spend) per the effort-estimates rule. Then commit the new`,
-  `register via git (you are on a feature branch; do not push).`,
-  `Return JSON per the schema with the final counts and the archivePath`,
-  `\`${priorArchivePath || ""}\`.`,
-].filter(Boolean).join("\n");
-
-const synthesis = await agent(synthesisPrompt, {
-  label: "synthesis",
-  phase: "Synthesis",
-  schema: SYNTHESIS_SCHEMA,
-  model: "opus",
-});
-
+const findingsJson = JSON.stringify(allFindings, null, 2);
+const synthesis = await agent(
+  [
+    `You are the SYNTHESIS agent for a GSD-T deep scan of \`${projectDir}\`. ${slices.length} slices ran; ${allFindings.length} verified findings came back.`,
+    scanNumber ? `This is scan #${scanNumber} — put it in the register header.` : ``,
+    ``,
+    `STEP 1 — ARCHIVE (do this FIRST, deterministically, via Bash): if \`${projectDir}/.gsd-t/techdebt.md\` exists, rename it to \`${projectDir}/.gsd-t/techdebt_YYYY-MM-DD.md\` using its header date (fallback: today's date from \`date +%F\`); on same-day collision append \`_2\`, \`_3\`. Use \`git mv\` if it's a git repo, else \`mv\`. Capture the archive path. ${pre.priorRegisterExists ? "(A prior register EXISTS — you MUST archive it.)" : "(No prior register — skip archiving.)"}`,
+    ``,
+    `STEP 2 — WRITE the fresh \`${projectDir}/.gsd-t/techdebt.md\` (Write tool). Start TD numbering at TD-${tdStart} (computed deterministically — do NOT renumber or restart). Structure: a Summary table (CRITICAL/HIGH/MEDIUM/LOW counts), then sections Critical→High→Medium→Low, each finding as \`### TD-NNN — {title}\` with Area / Severity / Status: OPEN / Location (file:line) / Description / Impact / Remediation / Milestone candidate. Re-rank globally by true severity; de-duplicate findings multiple slices surfaced into one item listing all locations. GSD-T effort units only (domain/wave/spawn/token) — never human-hours.`,
+    ``,
+    `STEP 3 — COMMIT via Bash if it's a git repo (\`git add .gsd-t/techdebt.md\` + the archive; commit). Do NOT push.`,
+    ``,
+    `Verified findings:`,
+    "```json",
+    findingsJson.length > 200000 ? findingsJson.slice(0, 200000) + "\n…(truncated)" : findingsJson,
+    "```",
+    ``,
+    `Return JSON per the schema: status "written" once the register file is on disk, the counts, the archivePath (or ""), and tdRange (e.g. "TD-${tdStart}..TD-NNN").`,
+  ].filter(Boolean).join("\n"),
+  { label: "synthesis", phase: "Synthesis", schema: SYNTHESIS_SCHEMA, model: "opus" }
+);
 if (!synthesis || synthesis.status !== "written") {
-  log("synthesis did not write the register — halting before render");
-  return { status: "failed", reason: "synthesis-failed", synthesis, findingCount: allFindings.length, archivePath: priorArchivePath };
+  log("synthesis did not write the register — halting before document phase");
+  return { status: "failed", reason: "synthesis-failed", synthesis, findingCount: allFindings.length };
 }
-// Deterministic confirmation the register actually landed (don't trust the agent's status alone).
-if (!fs.existsSync(registerPath)) {
-  log("synthesis reported written but .gsd-t/techdebt.md is absent — halting");
-  return { status: "failed", reason: "register-missing", synthesis, archivePath: priorArchivePath };
-}
-log(`register written: ${JSON.stringify(synthesis.counts)}`);
+log(`register written: ${JSON.stringify(synthesis.counts)} (${synthesis.tdRange || ""})`);
 
-// Read the synthesized register so the plain-English doc can mirror its EXACT
-// TD-NNN ids / order (red-team HIGH-1: raw findings carry no TD ids, so a doc
-// built only from findings would invent divergent numbering and break the
-// cross-reference to techdebt.md). The register exists here (confirmed above).
-let registerText = "";
-try { registerText = fs.readFileSync(registerPath, "utf8"); } catch (_) {}
-
-// ─── Document — deep living-doc + dimension-file cross-population (M67) ───
-// M66 made the register deep but left doc cross-population as a non-deterministic
-// "lead agent follow-on" — effectively dropped. M67 fans out one agent PER DOCUMENT,
-// each drawing on the SAME slices + verified findings the finders produced, so the
-// docs are as thorough as the register. Runs BEFORE Render so the HTML report reads
-// the deep .gsd-t/scan/architecture.md (with the parseable file/LOC line) instead of
-// a stub. Per-doc failures are non-fatal (the register is authoritative) but logged.
+// Document — per-doc fan-out. Each agent writes its file via Write/Edit (its tools).
+// The orchestrator passes the findings + (for plain-english) tells the agent to
+// READ the just-written register itself, since the orchestrator can't read it.
 phase("Document");
-
-// Red-team fix (HIGH-1): the living-doc agents "merge not overwrite" via prose, and a
-// dirty working tree does NOT halt the scan (working-tree-state is a warn, not error).
-// So a doc agent could clobber a user's UNCOMMITTED edits to docs/ or README.md —
-// unrecoverable via git. Deterministic backstop: snapshot every existing living doc to
-// .gsd-t/scan/.doc-backup/ BEFORE the fan-out, mirroring the deterministic archive the
-// register gets. Recovery is then a plain file copy, regardless of git state.
-const LIVING_DOCS = [
-  "docs/architecture.md",
-  "docs/workflows.md",
-  "docs/infrastructure.md",
-  "docs/requirements.md",
-  "README.md",
-];
-const docBackupDir = path.join(projectDir, ".gsd-t", "scan", ".doc-backup");
-const backedUp = [];
-fs.mkdirSync(docBackupDir, { recursive: true });
-for (const rel of LIVING_DOCS) {
-  const src = path.join(projectDir, rel);
-  if (fs.existsSync(src)) {
-    const dest = path.join(docBackupDir, rel.replace(/[\/]/g, "__"));
-    fs.copyFileSync(src, dest);
-    backedUp.push(rel);
-  }
-}
-if (backedUp.length) {
-  log(`backed up ${backedUp.length} existing living doc(s) to .gsd-t/scan/.doc-backup/ before the document phase (recover by copying back if a merge clobbers content): ${backedUp.join(", ")}`);
-}
-
 const sliceSummary = slices.map((s) => `- ${s.key} (${s.dimension}): ${JSON.stringify(s.paths)}`).join("\n");
-const findingsByArea = {};
-for (const f of allFindings) {
-  const k = (f.area || "general").toLowerCase();
-  (findingsByArea[k] = findingsByArea[k] || []).push(f);
-}
-const findingsJson = JSON.stringify(allFindings, null, 2).slice(0, 40000);
-
-// Each entry: { id, label, prompt }. mergeNote is appended to every living-doc prompt.
-const mergeNote =
-  `If the file already exists with real content: MERGE, and do it with the Edit tool ` +
-  `(targeted section edits/appends) — do NOT call Write on a pre-existing file, because ` +
-  `Write is a full overwrite that would destroy the user's structure and any content you ` +
-  `did not reproduce. Preserve the user's structure and custom content; update/add sections. ` +
-  `If the file is only placeholder/template tokens, you may replace it. If absent, create it ` +
-  `with Write. Replace {Project Name}/{Date} tokens with real values (date from the system ` +
-  `clock). Do NOT invent facts — derive everything from the slices, findings, and the actual ` +
-  `code you read. (A pre-edit backup exists at .gsd-t/scan/.doc-backup/ as a safety net, but ` +
-  `do not rely on it — edit carefully.)`;
-
 const baseCtx = [
   `Project: \`${projectDir}\`. Probe totals: ${JSON.stringify(probe.totals)}.`,
-  ``,
-  `Slices the scan covered (your raw material — each names the paths it owns):`,
+  `Slices the scan covered:`,
   sliceSummary,
-  ``,
-  `Verified findings (truncated):`,
+  `Verified findings:`,
   "```json",
-  findingsJson,
+  findingsJson.length > 120000 ? findingsJson.slice(0, 120000) + "\n…(truncated)" : findingsJson,
   "```",
 ].join("\n");
 
+const mergeNote =
+  `If the target file already exists with real content: MERGE using the Edit tool ` +
+  `(targeted section edits) — do NOT overwrite with Write (that destroys content you ` +
+  `didn't reproduce). If it's placeholder/template-only, you may replace. If absent, create. ` +
+  `Replace {Project Name}/{Date} tokens with real values. Derive everything from the slices, ` +
+  `findings, and the actual code you read — invent nothing.`;
+
 const docTargets = [
-  {
-    id: "scan-architecture", label: "scan:architecture",
-    prompt: `Write \`.gsd-t/scan/architecture.md\` — the architecture dimension analysis. Include stack, structure, patterns, a Components/Domains list (one per feature-domain slice), and data flow. ` +
-      `CRITICAL for the HTML renderer: give the file+LOC GRAND TOTAL as a markdown TABLE ROW in EXACTLY this form (the renderer reads this exact shape and stops, so it is NOT double-counted):\n` +
-      `\`| Grand Total | <N> files | <LOC> |\`  — e.g. \`| Grand Total | 1809 files | 250000 |\`, from the probe totals.\n` +
-      `Do NOT also write a bare \`<N> files (~<LOC> LOC)\` GRAND-TOTAL line and do NOT write "Files analyzed: N". ` +
-      `Per-directory \`<n> files (~<loc> LOC)\` lines inside a Structure section are fine (they describe individual dirs), but the authoritative TOTAL must be the single table row above.`,
-  },
-  {
-    id: "scan-security", label: "scan:security",
-    prompt: `Write \`.gsd-t/scan/security.md\` — the security findings. The renderer parses sections headed \`### SEC-H<n>: <title>\` (HIGH) / \`### SEC-M<n>: <title>\` (MEDIUM), each with \`- **Details**: …\` and \`- **Fix**: …\` bullets. Use that exact form for every security-area finding.`,
-  },
-  {
-    id: "scan-quality", label: "scan:quality",
-    prompt: `Write \`.gsd-t/scan/quality.md\` — quality / dead-code / duplication / test-gap findings. The renderer parses sections headed \`### DC-<n>: <title>\` (dead code), \`### TCG-<n>: <title>\` (test gap), or \`### TD-<n>: <title>\`, each with a \`\\\`file:line\\\`\` location line and \`- **Impact**: …\` / \`- **Suggestion**: …\` bullets. Use that exact form.`,
-  },
-  {
-    id: "scan-business-rules", label: "scan:business-rules",
-    prompt: `Write \`.gsd-t/scan/business-rules.md\` — embedded business logic discovered across the slices: validation rules, authorization rules, workflow/state-machine rules, calculation rules (pricing/scoring/quotas), integration rules (retry/fallback/timeout). For each: where implemented (file:line) and an assessment. Add an "Undocumented Rules" section for logic with no comments/docs.`,
-  },
-  {
-    id: "scan-contract-drift", label: "scan:contract-drift",
-    prompt: `Write \`.gsd-t/scan/contract-drift.md\` — compare \`.gsd-t/contracts/\` (if it exists) to the actual implementation: API endpoints vs api-contract, schema vs schema-contract, undocumented endpoints/tables/components, drift. If no contracts dir exists, write a short note saying so and list the de-facto interfaces worth documenting.`,
-  },
-  {
-    id: "docs-architecture", label: "docs/architecture.md", merge: true,
-    prompt: `Update or create \`docs/architecture.md\`: system overview (stack, structure, patterns); component descriptions with locations + dependencies (one section per feature-domain slice); data flow (request → handler → service → data layer → response); data models from schema/ORM; API structure from routes; external integrations; design decisions found in code/configs. Go deep — this should be a real architecture reference, not a stub.`,
-  },
-  {
-    id: "docs-workflows", label: "docs/workflows.md", merge: true,
-    prompt: `Update or create \`docs/workflows.md\`: trace USER JOURNEYS per feature-domain slice (each major business area gets its own end-to-end journey from entry point through handlers to data); technical workflows from cron jobs / queue workers / scheduled tasks; API workflows for multi-step operations; integration workflows for external syncing; state machines and approval flows discovered in code. One journey per feature-domain slice minimum.`,
-  },
-  {
-    id: "docs-infrastructure", label: "docs/infrastructure.md", merge: true,
-    prompt: `Update or create \`docs/infrastructure.md\` (the most commonly-lost knowledge): Quick Reference commands (package.json scripts, Makefile, CI/CD); local dev setup (README, docker-compose, .env.example); database commands (migrations, seeds, ORM, backups); cloud provisioning (Terraform/CFN/Pulumi/deploy scripts); credentials/secrets (NAMES ONLY from .env.example, never values); deployment (CI/CD, Dockerfiles, platform configs); logging/monitoring.`,
-  },
-  {
-    id: "docs-requirements", label: "docs/requirements.md", merge: true,
-    prompt: `Update or create \`docs/requirements.md\`: functional requirements discovered from routes/handlers/UI components; technical requirements from configs/package.json/runtime; non-functional requirements from performance configs, rate limits, caching. Derive from what the code actually does.`,
-  },
-  {
-    id: "readme", label: "README.md", merge: true,
-    prompt: `Update or create \`README.md\`: project name + description; tech stack + versions discovered; getting-started/setup (from infrastructure findings); brief architecture overview; link to \`docs/\` for detail. If it exists, MERGE — update tech-stack + setup sections but preserve the user's existing structure and custom content.`,
-  },
-  {
-    id: "techdebt-plain-english", label: ".gsd-t/techdebt_in_plain_english.md",
-    needsRegister: true, // red-team HIGH-1: must receive the synthesized register (TD-NNN ids live there, not in findings)
-    prompt: `Write \`.gsd-t/techdebt_in_plain_english.md\` — a NON-TECHNICAL companion to the tech-debt register, written for a smart reader who is NOT an engineer (e.g. a founder, PM, or stakeholder). Cover EVERY item in the register (one entry per TD-NNN, in the same severity order), using the EXACT TD-NNN ids from the register provided below. For each item:\n` +
-      `- **Heading**: \`### TD-NNN — <the plain-English name of the problem>\` (keep the TD-NNN id so it cross-references the technical register, but rename the title into everyday language — no jargon).\n` +
-      `- **What it is** (1-2 sentences): explain the problem with ZERO technical terms. If a technical word is unavoidable, define it in parentheses the way you'd explain it to a friend.\n` +
-      `- **Why it matters** (1-2 sentences): the business/user consequence — what could go wrong, who is affected, what it costs.\n` +
-      `- **Real-world analogy**: a concrete everyday comparison that makes the risk intuitive (e.g. "This is like leaving the spare house key under the doormat — convenient, but anyone who thinks to look can get in." for a hardcoded secret). The analogy must genuinely map to THIS specific item, not be generic.\n` +
-      `- **Severity in plain terms**: translate CRITICAL/HIGH/MEDIUM/LOW into urgency a non-engineer feels ("fix before launch" / "schedule soon" / "clean up eventually").\n` +
-      `Open with a 2-3 sentence plain-English summary of the overall health of the codebase and the headline counts. Derive everything from the verified findings — do not invent items or analogies that don't fit. This file is the layman's lens on the same findings as \`.gsd-t/techdebt.md\`.`,
-  },
+  { id: "scan-architecture", label: "scan:architecture",
+    prompt: `Write \`${projectDir}/.gsd-t/scan/architecture.md\` (use Bash mkdir -p for .gsd-t/scan first if needed) — architecture dimension: stack, structure, patterns, a Components/Domains list (one per feature-domain slice), data flow. For the HTML renderer, give the file+LOC GRAND TOTAL as a markdown TABLE ROW exactly: \`| Grand Total | <N> files | <LOC> |\` from the probe totals. Per-dir \`<n> files (~<loc> LOC)\` lines in a Structure section are fine; do NOT write a second bare grand-total line.` },
+  { id: "scan-security", label: "scan:security",
+    prompt: `Write \`${projectDir}/.gsd-t/scan/security.md\` — security findings as sections \`### SEC-H<n>: <title>\` (HIGH) / \`### SEC-M<n>: <title>\` (MEDIUM), each with \`- **Details**: …\` and \`- **Fix**: …\` bullets.` },
+  { id: "scan-quality", label: "scan:quality",
+    prompt: `Write \`${projectDir}/.gsd-t/scan/quality.md\` — quality/dead-code/dup/test-gap findings as \`### DC-<n>: <title>\` / \`### TCG-<n>: <title>\` / \`### TD-<n>: <title>\`, each with a \`\\\`file:line\\\`\` location line and \`- **Impact**: …\` / \`- **Suggestion**: …\` bullets.` },
+  { id: "scan-business-rules", label: "scan:business-rules",
+    prompt: `Write \`${projectDir}/.gsd-t/scan/business-rules.md\` — embedded business logic across the slices: validation, authorization, workflow/state-machine, calculation (pricing/scoring/quotas), integration (retry/fallback/timeout) rules. Each: where implemented (file:line) + assessment. Add an "Undocumented Rules" section.` },
+  { id: "scan-contract-drift", label: "scan:contract-drift",
+    prompt: `Write \`${projectDir}/.gsd-t/scan/contract-drift.md\` — compare \`${projectDir}/.gsd-t/contracts/\` (if present) to the implementation: endpoints vs api-contract, schema vs schema-contract, undocumented endpoints/tables/components, drift. If no contracts dir, say so + list de-facto interfaces worth documenting.` },
+  { id: "docs-architecture", label: "docs/architecture.md", merge: true,
+    prompt: `Update or create \`${projectDir}/docs/architecture.md\`: system overview; component descriptions w/ locations+dependencies (one section per feature-domain slice); data flow (request→handler→service→data→response); data models; API structure; integrations; design decisions. Go deep.` },
+  { id: "docs-workflows", label: "docs/workflows.md", merge: true,
+    prompt: `Update or create \`${projectDir}/docs/workflows.md\`: a USER JOURNEY per feature-domain slice (entry→handlers→data); technical workflows (cron/queues/scheduled); API workflows for multi-step ops; integration workflows; state machines/approval flows. ≥1 journey per feature-domain slice.` },
+  { id: "docs-infrastructure", label: "docs/infrastructure.md", merge: true,
+    prompt: `Update or create \`${projectDir}/docs/infrastructure.md\`: Quick Reference commands (package.json scripts/Makefile/CI); local dev setup; DB commands (migrations/seeds/ORM/backups); cloud provisioning; credentials/secrets (NAMES ONLY, never values); deployment; logging/monitoring.` },
+  { id: "docs-requirements", label: "docs/requirements.md", merge: true,
+    prompt: `Update or create \`${projectDir}/docs/requirements.md\`: functional requirements from routes/handlers/UI; technical from configs/package.json/runtime; non-functional from perf configs/rate limits/caching.` },
+  { id: "readme", label: "README.md", merge: true,
+    prompt: `Update or create \`${projectDir}/README.md\`: project name+description; tech stack+versions; getting-started/setup; brief architecture overview; link to docs/. If it exists, MERGE — preserve the user's structure/custom content.` },
+  { id: "techdebt-plain-english", label: ".gsd-t/techdebt_in_plain_english.md", needsRegister: true,
+    prompt: `Write \`${projectDir}/.gsd-t/techdebt_in_plain_english.md\` — a NON-TECHNICAL companion to the register for a non-engineer (founder/PM/stakeholder). FIRST read \`${projectDir}/.gsd-t/techdebt.md\` (Read tool) to get the EXACT TD-NNN ids/order — it was just written and IS the source of truth (the findings JSON has no TD ids). Cover EVERY item, one entry each: \`### TD-NNN — <plain-English name>\`; **What it is** (no jargon; define any unavoidable term in parentheses); **Why it matters** (business/user consequence); **Real-world analogy** (a concrete everyday comparison that genuinely maps to THIS item); **Severity in plain terms** (CRITICAL/HIGH/MEDIUM/LOW → "fix before launch"/"schedule soon"/"clean up eventually"). Open with a 2-3 sentence plain-English health summary + headline counts.` },
 ];
 
 const docResults = await parallel(
   docTargets.map((d) => async () => {
     const isLiving = !!d.merge;
-    // red-team HIGH-1: targets that mirror the register (plain-english) get the
-    // synthesized register text — the authoritative source of TD-NNN ids/order —
-    // not just the raw findings.
-    // red-team MEDIUM: do NOT silently truncate the register — a large register
-    // (e.g. 119 items ≈ 180KB) sliced to a small cap would drop the entire
-    // MEDIUM/LOW tail while the prompt says "cover EVERY item" (silent-cap
-    // anti-pattern the workflow forbids elsewhere). Cap generously, and if we DO
-    // hit it, tell the agent explicitly + log it so completeness loss is visible.
-    const REGISTER_CAP = 400000;
-    let registerBlock = "";
-    if (d.needsRegister) {
-      const truncated = registerText.length > REGISTER_CAP;
-      if (truncated) {
-        log(`⚠ register (${registerText.length} bytes) exceeds the ${REGISTER_CAP}-byte plain-english injection cap — the tail will be missing from techdebt_in_plain_english.md. Consider splitting the register.`);
-      }
-      registerBlock = [
-        "",
-        "Synthesized register (.gsd-t/techdebt.md) — use these EXACT TD-NNN ids/order:",
-        truncated ? "⚠ NOTE: the register was truncated to fit; cover every item you CAN see and end with a line noting that items beyond the last shown TD-NNN were omitted due to size." : "",
-        "```markdown",
-        registerText.slice(0, REGISTER_CAP),
-        "```",
-      ].join("\n");
-    }
     const prompt = [
-      `You are the documentation agent for ONE document in a GSD-T deep scan.`,
-      ``,
+      `You are the documentation agent for ONE document in a GSD-T deep scan of \`${projectDir}\`.`,
       baseCtx,
-      registerBlock,
+      d.needsRegister ? `\nThe synthesized register lives at \`${projectDir}/.gsd-t/techdebt.md\` — READ it first for the authoritative TD-NNN ids/order.` : ``,
       ``,
       d.prompt,
       ``,
-      isLiving ? mergeNote : `Write the file fresh from the scan data in the format described.`,
-      ``,
-      `Read the actual code under the relevant slice paths to get specifics right —`,
-      `do not summarize only from the findings. Use the Write/Edit tools to write the`,
-      `file, then return JSON per the schema (status: "written" new, "merged" if you`,
-      `merged into existing content, "skipped" if genuinely nothing to write, "failed"`,
-      `on error). Do NOT commit — the workflow handles git.`,
-    ].join("\n");
+      isLiving ? mergeNote : `Write the file fresh in the format described (use Bash \`mkdir -p\` for parent dirs if needed).`,
+      `Read the actual code under the relevant slice paths for specifics — don't summarize only from findings. Use Write/Edit to write the file, then return JSON per the schema (status "written"/"merged"/"skipped"/"failed"). Do NOT commit — the workflow handles git at the end.`,
+    ].filter(Boolean).join("\n");
     try {
-      return await agent(prompt, {
-        label: d.label,
-        phase: "Document",
-        schema: DOC_RESULT_SCHEMA,
-        model: "sonnet",
-      });
+      return await agent(prompt, { label: d.label, phase: "Document", schema: DOC_RESULT_SCHEMA, model: "sonnet" });
     } catch (e) {
-      return { doc: d.id, status: "failed", path: "", notes: `agent error: ${e && e.message}` };
+      return { doc: d.id, status: "failed", notes: `agent error: ${e && e.message}` };
     }
   })
 );
-
 const docsOk = docResults.filter(Boolean).filter((r) => r.status === "written" || r.status === "merged");
 const docsFailed = docResults.filter(Boolean).filter((r) => r.status === "failed");
-log(`document phase: ${docsOk.length}/${docTargets.length} docs written/merged${docsFailed.length ? `, ${docsFailed.length} failed (non-fatal — register is authoritative): ${docsFailed.map((d) => d.doc).join(", ")}` : ""}`);
+log(`document phase: ${docsOk.length}/${docTargets.length} written/merged${docsFailed.length ? `; ${docsFailed.length} failed (non-fatal): ${docsFailed.map((d) => d.doc).join(", ")}` : ""}`);
 
-// Deterministic check the renderer's required dimension file actually landed with the
-// parseable file-count line (the render hollow-guard depends on it).
-const archDimPath = path.join(projectDir, ".gsd-t", "scan", "architecture.md");
-if (!fs.existsSync(archDimPath)) {
-  log(`⚠ .gsd-t/scan/architecture.md was not written — the HTML report will render hollow. The techdebt.md register and docs/ are unaffected.`);
-}
+// Commit the docs + dimension files + plain-english via a small agent (Bash git).
+const commitAgent = await agent(
+  [
+    `Commit the GSD-T scan's generated documents in \`${projectDir}\` via Bash git, IF it is a git repo (else report skipped).`,
+    `Stage: \`.gsd-t/scan\`, \`.gsd-t/techdebt_in_plain_english.md\`, \`docs\`, \`README.md\` (do NOT stage \`.gsd-t/scan/.doc-backup\` if present). Commit message: "scan: deep document cross-population (${docsOk.length} docs) + dimension files". Do NOT push. Return JSON per the schema (status "rendered" if committed, "skipped" if not a git repo / nothing to commit, "failed" on error; outputPath optional).`,
+  ].join("\n"),
+  { label: "commit-docs", phase: "Document", schema: RENDER_SCHEMA, model: "haiku" }
+).catch((e) => ({ status: "failed", notes: String(e && e.message) }));
+log(`docs commit: ${commitAgent && commitAgent.status}`);
 
-// ─── Render — deterministic schema extraction + diagrams + HTML report ───
-// These bin/scan-*.js renderers are KEPT verbatim (M66 does not touch them).
-// Red-team fix (HIGH-1): guard ALL FOUR required bin files (the eval requires four,
-// not just scan-report.js), and detect a hollow report instead of claiming success.
-phase("Render");
-const requiredBins = [
-  "bin/scan-data-collector.js",
-  "bin/scan-schema.js",
-  "bin/scan-diagrams.js",
-  "bin/scan-report.js",
-];
-const missingBin = requiredBins.find((b) => !fs.existsSync(path.join(projectDir, b)));
-let render;
-if (missingBin) {
-  render = { ok: false, exitCode: 127, stderr: `missing renderer ${missingBin}` };
-  log(`render skipped — ${missingBin} not found (register is the primary artifact; report is optional)`);
-} else {
-  const renderExpr = `
-const {collectScanData}=require('./bin/scan-data-collector.js');
-const {extractSchema}=require('./bin/scan-schema.js');
-const {generateDiagrams}=require('./bin/scan-diagrams.js');
-const {generateReport}=require('./bin/scan-report.js');
-const root=process.argv[1];
-const analysisData=collectScanData(root);
-const schemaData=extractSchema(root);
-const diagrams=generateDiagrams(analysisData, schemaData, {projectRoot:root});
-const r=generateReport(analysisData, schemaData, diagrams, {projectRoot:root});
-if (r.outputPath) console.log(JSON.stringify({outputPath:r.outputPath, diagramsRendered:r.diagramsRendered, filesScanned:analysisData.filesScanned||0, findings:(analysisData.findings||[]).length}));
-else console.error('report-failed:', r.error);
-`;
-  render = _runNode("bin/scan-report.js", renderExpr, [projectDir]);
-}
-let reportInfo = null;
-let reportHollow = null;
-if (render.ok) {
-  try { reportInfo = JSON.parse((render.stdout || "").trim()); } catch (_) {}
-  // A real scan ALWAYS has files. filesScanned===0 alone is a hollow signal —
-  // do NOT require findings===0 too (that &&-guard was defeated by any non-empty
-  // scan, where the security/quality findings parse but the file count does not).
-  reportHollow = !!(reportInfo && reportInfo.filesScanned === 0);
-  if (reportHollow) {
-    log(`⚠ HTML report rendered but reads HOLLOW (filesScanned=0) — the architecture.md file/LOC line is missing or in an unparsed format. Report at ${reportInfo && reportInfo.outputPath}; the techdebt.md register is the authoritative artifact.`);
-  } else {
-    log(`HTML report: ${render.stdout && render.stdout.trim()}`);
-  }
-} else {
-  // Non-fatal — the register is the primary artifact; the report is a nicety.
-  log(`render stage non-fatal failure (exitCode=${render.exitCode}): ${render.stderr || render.stdout}`);
-}
-
-// Commit the docs + dimension files + HTML report deterministically (doc agents were
-// told NOT to commit, to avoid interleaved concurrent git operations). Best-effort:
-// a commit failure is non-fatal (artifacts are on disk).
-// Red-team fix (LOW): drop `-f` — none of these targets are gitignored, and `-f` would
-// force-add gitignored junk under the pathspecs (e.g. docs/.DS_Store). The .doc-backup
-// dir lives under .gsd-t/scan/ which IS committed; exclude it explicitly so backups
-// aren't versioned.
-const commit = spawnSync(
-  "git",
-  ["add", "-A", ".gsd-t/scan", ".gsd-t/techdebt_in_plain_english.md", "docs", "README.md", ":!.gsd-t/scan/.doc-backup"],
-  { cwd: projectDir, stdio: "pipe" }
-);
-if (commit.status === 0) {
-  const ci = spawnSync(
-    "git",
-    ["commit", "-q", "-m", `scan: deep document cross-population (${docsOk.length} docs) + HTML report`],
-    { cwd: projectDir, stdio: "pipe" }
-  );
-  if (ci.status === 0) log("docs + report committed");
-  else log(`docs staged but commit skipped (likely nothing to commit or hook): ${ci.stderr && ci.stderr.toString().slice(0, 200)}`);
-} else {
-  log(`doc git add non-fatal failure: ${commit.stderr && commit.stderr.toString().slice(0, 200)}`);
-}
+// NOTE (M71): the HTML render stage was REMOVED. The deterministic bin/scan-report.js
+// renderer resolves its output path relative to the package dir (where the renderer
+// modules live), not projectDir — so it wrote/overwrote `scan-report.html` in the
+// GSD-T package instead of the target project (a data-loss risk: it clobbered the
+// package's own committed report). The authoritative deliverables are the register +
+// 5 dimension files + plain-english + living docs, all correctly written to
+// projectDir. The fragile, wrong-tree HTML report is not worth that risk; dropped.
 
 return {
   status: "complete",
   slices: slices.length,
   findings: allFindings.length,
   counts: synthesis.counts,
-  registerPath,
-  archivePath: priorArchivePath,
-  docs: docResults,
+  tdRange: synthesis.tdRange,
+  archivePath: synthesis.archivePath || null,
   docsWritten: docsOk.length,
   docsFailed: docsFailed.map((d) => d.doc),
-  htmlReport: reportInfo ? reportInfo.outputPath : null,
-  reportHollow,
+  docsCommitted: commitAgent && commitAgent.status,
+  htmlReport: null, // render stage removed (M71)
   probeTotals: probe.totals,
 };
