@@ -294,28 +294,77 @@ const MAX_CONCURRENT = 10;
 
 // Minimal counting semaphore: acquire() resolves when a permit is free; release()
 // hands the permit to the next waiter (FIFO).
-function makeSemaphore(permits) {
-  let avail = permits;
+// M74: ADAPTIVE semaphore — the ceiling can shrink (on a rate limit) and recover.
+// `inUse` = permits currently held; a permit is grantable only while inUse < ceiling.
+// Lowering the ceiling doesn't yank in-flight permits; it just stops granting new
+// ones until enough release that inUse drops below the new ceiling.
+const MIN_CONCURRENT = 4; // never throttle below this — keeps the run moving
+function makeAdaptiveSemaphore(initial) {
+  let ceiling = initial;
+  let inUse = 0;
   const waiters = [];
+  function pump() {
+    while (inUse < ceiling && waiters.length) { inUse++; waiters.shift()(); }
+  }
   return {
     async acquire() {
-      if (avail > 0) { avail--; return; }
-      await new Promise((res) => waiters.push(res));
-      // resumed: a release() handed us the permit (avail already decremented there).
+      if (inUse < ceiling) { inUse++; return; }
+      await new Promise((res) => waiters.push(res)); // pump() increments inUse on grant
     },
-    release() {
-      const next = waiters.shift();
-      if (next) next();           // hand permit directly to the next waiter
-      else avail++;               // no waiter: return permit to the pool
+    release() { inUse--; pump(); },
+    lower() { // shrink ceiling by 1 on a rate limit (floor at MIN_CONCURRENT)
+      if (ceiling > MIN_CONCURRENT) { ceiling--; return true; }
+      return false;
     },
+    raise() { // gentle recovery toward the initial ceiling after sustained success
+      if (ceiling < initial) { ceiling++; pump(); return true; }
+      return false;
+    },
+    get ceiling() { return ceiling; },
   };
 }
-const gate = makeSemaphore(MAX_CONCURRENT);
+const gate = makeAdaptiveSemaphore(MAX_CONCURRENT);
+
+function isRateLimit(err) {
+  const s = String((err && (err.message || err)) || "").toLowerCase();
+  return /rate.?limit|temporarily limiting|429|overloaded|too many requests|capacity/.test(s);
+}
+
+// M74: gatedAgent now reacts to rate limits in REAL TIME — on a rate-limit error it
+// lowers the global ceiling (10→9→8…, floor MIN_CONCURRENT), backs off, and retries
+// the SAME agent (up to a few times) instead of letting it fail. After a streak of
+// clean completions it nudges the ceiling back up. This means a transient rate limit
+// throttles the run down automatically rather than failing it (the v4.0.19 wipeout).
+let _cleanStreak = 0;
 async function gatedAgent(prompt, opts) {
   await gate.acquire();
-  try { return await agent(prompt, opts); }
-  finally { gate.release(); }
+  try {
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try {
+        const r = await agent(prompt, opts);
+        // success: nudge the ceiling back up after every 8 clean completions.
+        if (++_cleanStreak >= 8) { _cleanStreak = 0; if (gate.raise()) log(`↑ throttle recovered to ${gate.ceiling} concurrent (clean streak)`); }
+        return r;
+      } catch (e) {
+        if (isRateLimit(e) && attempt < 4) {
+          _cleanStreak = 0;
+          const lowered = gate.lower();
+          const backoffMs = 2000 * attempt; // 2s, 4s, 6s
+          log(`⚠ rate limit hit — ${lowered ? `throttling down to ${gate.ceiling} concurrent` : `already at floor ${gate.ceiling}`}; backing off ${backoffMs}ms then retry ${attempt + 1}/4 (${(opts && opts.label) || "agent"})`);
+          await sleep(backoffMs);
+          continue;
+        }
+        throw e; // non-rate-limit error, or out of retries → bubble up
+      }
+    }
+  } finally {
+    gate.release();
+  }
 }
+// Backoff sleep. setTimeout is available in the Workflow sandbox (verified by a
+// real sandbox probe, run wf_7e90a974 — NOT assumed; Date.now/Math.random ARE banned
+// but setTimeout is not). Used only for rate-limit backoff between retries.
+function sleep(ms) { return new Promise((res) => setTimeout(res, ms)); }
 
 async function runFinder(slice) {
   // up to 2 attempts; a null/invalid (non-array findings) result counts as a drop.

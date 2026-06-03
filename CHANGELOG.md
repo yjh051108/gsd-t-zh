@@ -2,6 +2,19 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.0.21] - 2026-06-02 (M74 Adaptive Rate-Limit Throttle — patch)
+
+### Added — the scan throttle now self-lowers on a rate limit instead of failing
+
+M73's fixed 10-permit gate prevents the all-at-once stampede, but couldn't react if a rate limit still occurred. M74 makes the gate ADAPTIVE: on a rate-limit error (`isRateLimit` matches "temporarily limiting requests", 429, overloaded, etc.) `gatedAgent` lowers the global ceiling by 1 (10→9→8…, floor `MIN_CONCURRENT=4`), backs off (2s/4s/6s), and RETRIES the same agent (up to 4 attempts) — so a transient rate limit throttles the run down rather than failing it. After 8 clean completions the ceiling nudges back up toward 10. A non-rate-limit error is not retried (bubbles up normally).
+
+- `templates/workflows/gsd-t-scan.workflow.js`: `makeAdaptiveSemaphore` (shrinkable/recoverable ceiling, never yanks in-flight permits), rate-limit-aware `gatedAgent` with backoff+retry, `isRateLimit`, runtime `sleep`.
+- `test/m74-adaptive-throttle.test.js`: +5 tests (rate-limit detection incl. the real server message; floor/recovery bounds; lowered-ceiling stops granting until in-use drops; **all work completes despite 5 injected rate limits, zero failures**).
+
+Verified by 3 real sandbox diagnostics: `setTimeout` resolves in the sandbox (backoff is real); the adaptive gate lowered 10→5 under injected rate limits and completed all 12 items with 0 errors.
+
+Suite: 1302 pass / 0 fail / 4 skip — zero regressions.
+
 ## [4.0.20] - 2026-06-02 (M73 Scan Concurrency Throttle — patch)
 
 ### Fixed — unthrottled fan-out triggered an API rate limit that wiped a whole scan

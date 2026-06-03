@@ -1,9 +1,9 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M73 COMPLETED (scan concurrency throttle, v4.0.20, gate proven peak=10 in sandbox); M72 COMPLETED (dropped-slice recovery + coverage honesty, v4.0.19)
-## Date: 2026-06-02 18:06 PDT
-## Version: 4.0.20
+## Status: ACTIVE — M74 COMPLETED (adaptive rate-limit throttle, v4.0.21, proven self-lower-and-recover in sandbox); M73 COMPLETED (scan concurrency throttle, v4.0.20)
+## Date: 2026-06-02 18:24 PDT
+## Version: 4.0.21
 
 ## Current Milestone
 
@@ -208,6 +208,8 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-06-02 18:24 PDT: [m74][feature] M74 — adaptive rate-limit throttle, v4.0.21. User asked for a real-time throttle-down safeguard ("if you see rate limits, drop to 9 or 8 so the whole run doesn't fail"). M73's fixed gate couldn't react. M74: makeAdaptiveSemaphore with a shrinkable/recoverable ceiling; gatedAgent detects rate-limit errors (isRateLimit: "temporarily limiting requests"/429/overloaded/capacity), lowers ceiling 10→9→8… (floor MIN_CONCURRENT=4), backs off 2s/4s/6s, RETRIES the same agent (≤4 attempts); recovers +1 toward 10 every 8 clean completions; non-rate-limit errors bubble up un-retried. Verified by 3 real sandbox diagnostics: setTimeout resolves (backoff real — NOT assumed; Date.now/Math.random remain banned), adaptive gate lowered 10→5 under 5 injected rate limits and completed all 12 items with 0 errors, peak-10 cap still holds. +5 unit tests (m74-adaptive-throttle). Patch bump 4.0.20 → 4.0.21. The scan fix chain is now complete: M71 runtime-native + M72 coverage-honesty + M73 throttle + M74 adaptive-throttle.
 
 - 2026-06-02 18:06 PDT: [m73][fix] M73 — scan concurrency throttle, v4.0.20. A v4.0.19 Hilo run produced an EMPTY register: the scan fanned out 29 finders + verifiers all at once (~58 concurrent Sonnet agents) → server-side API rate limit ("temporarily limiting requests · Rate limited") → all 58 errored empty → 0 findings (confirmed from finder transcripts: stop_reason=stop_sequence, is_error, 42/58 stillborn at ≤4 records). NOT a workflow-logic bug — unthrottled fan-out self-inflicting a rate limit. M72 coverage-honesty worked perfectly (flagged 0/29, preserved + pointed to the prior 133-item register). User design call: shared 10-slot worker queue, not per-slice batching. Fix: one GLOBAL counting semaphore (makeSemaphore, 10 permits); every finder+verify goes through gatedAgent (acquire→run→release, FIFO hand-off); all slices+findings still fan out via parallel() but the gate caps total in-flight at 10 → max throughput, no idle slots, safe ceiling. Replaced my initial batched approach (left slots idle while a slice serialized verifies) — user correctly identified the global-queue model as better throughput AND simpler. Finders+verifiers are Sonnet (fine at 10); lone Opus synthesis runs after, ungated. Verified by 2 real sandbox diagnostics: 30-agent and 56-agent (all fanned at once) probes both measured peakConcurrency=10, never exceeded. Patch bump 4.0.19 → 4.0.20.
 
