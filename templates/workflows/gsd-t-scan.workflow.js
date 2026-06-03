@@ -31,8 +31,8 @@ export const meta = {
     { title: "Probe",      detail: "volume probe → per-area slice list", model: "sonnet" },
     { title: "Deep Scan",  detail: "pipeline: per-slice deep finder → single verify" },
     { title: "Synthesis",  detail: "archive prior + write fresh register + git", model: "opus" },
-    { title: "Document",   detail: "living docs + 5 dimension files + plain-english (per-doc fan-out)" },
-    { title: "Render",     detail: "HTML scan report via gsd-t bin renderers (agent via Bash)" },
+    { title: "Document",      detail: "living docs + 5 dimension files (per-doc fan-out)" },
+    { title: "Plain-English", detail: "non-technical companion: batched gen + severity-grouped chunked write" },
   ],
 };
 
@@ -645,8 +645,10 @@ const docTargets = [
     prompt: `Update or create \`${projectDir}/docs/requirements.md\`: functional requirements from routes/handlers/UI; technical from configs/package.json/runtime; non-functional from perf configs/rate limits/caching.` },
   { id: "readme", label: "README.md", merge: true,
     prompt: `Update or create \`${projectDir}/README.md\`: project name+description; tech stack+versions; getting-started/setup; brief architecture overview; link to docs/. If it exists, MERGE — preserve the user's structure/custom content.` },
-  { id: "techdebt-plain-english", label: ".gsd-t/techdebt_in_plain_english.md", needsRegister: true,
-    prompt: `Write \`${projectDir}/.gsd-t/techdebt_in_plain_english.md\` — a NON-TECHNICAL companion to the register for a non-engineer (founder/PM/stakeholder). FIRST read \`${projectDir}/.gsd-t/techdebt.md\` (Read tool) to get the EXACT TD-NNN ids/order — it was just written and IS the source of truth (the findings JSON has no TD ids). Cover EVERY item, one entry each: \`### TD-NNN — <plain-English name>\`; **What it is** (no jargon; define any unavoidable term in parentheses); **Why it matters** (business/user consequence); **Real-world analogy** (a concrete everyday comparison that genuinely maps to THIS item); **Severity in plain terms** (CRITICAL/HIGH/MEDIUM/LOW → "fix before launch"/"schedule soon"/"clean up eventually"). Open with a 2-3 sentence plain-English health summary + headline counts.` },
+  // NOTE (M78): the plain-english companion is NOT in docTargets — a single agent
+  // stalls writing 300+ entries (the M75 register bug). It has its own dedicated phase
+  // below: batched generation (bounded fan-out) + deterministic severity-grouped,
+  // chunked write.
 ];
 
 const docResults = await parallel(
@@ -673,6 +675,85 @@ const docResults = await parallel(
 const docsOk = docResults.filter(Boolean).filter((r) => r.status === "written" || r.status === "merged");
 const docsFailed = docResults.filter(Boolean).filter((r) => r.status === "failed");
 log(`document phase: ${docsOk.length}/${docTargets.length} written/merged${docsFailed.length ? `; ${docsFailed.length} failed (non-fatal): ${docsFailed.map((d) => d.doc).join(", ")}` : ""}`);
+
+// ─── Plain-English phase (M78) ───────────────────────────────────────────────
+// The non-technical companion can be 300+ entries — a single agent stalls writing
+// it (the M75 register bug). So: batch the (already severity-sorted) findings, fan
+// out bounded generator agents (each writes its batch's entries via the shared gate),
+// then ASSEMBLE deterministically with severity section headers, and chunk-write.
+phase("Plain-English");
+const peTarget = `${projectDir}/.gsd-t/techdebt_in_plain_english.md`;
+const sevLabel = { CRITICAL: "fix before launch", HIGH: "fix soon", MEDIUM: "schedule", LOW: "clean up eventually" };
+// Attach the deterministic TD number (matches the register: severity-sorted, tdStart+).
+const peItems = finalFindings.map((f, i) => ({
+  td: tdStart + i, severity: f.severity, title: ascii(f.title),
+  area: ascii(f.area), detail: ascii(f.detail || f.impact || "").slice(0, 500),
+}));
+const PE_BATCH = 36;
+const peBatches = [];
+for (let i = 0; i < peItems.length; i += PE_BATCH) peBatches.push(peItems.slice(i, i + PE_BATCH));
+const PE_SCHEMA = { type: "object", required: ["entries"], additionalProperties: false,
+  properties: { entries: { type: "array", items: { type: "object", required: ["td", "markdown"], properties: { td: { type: "integer" }, markdown: { type: "string" } } } } } };
+
+const peResults = await parallel(peBatches.map((batch, bi) => async () => {
+  const prompt = [
+    `Write NON-TECHNICAL ("plain English") companion entries for a tech-debt register, for a non-engineer stakeholder (founder/PM).`,
+    `For EACH finding below, produce one entry. Return JSON {entries:[{td, markdown}]} where markdown is EXACTLY:`,
+    `### TD-<td> - <plain-English name, no jargon>`,
+    `**What it is.** <1-2 sentences, no jargon; define any unavoidable term in parentheses>`,
+    `**Why it matters.** <business/user consequence>`,
+    `**Real-world analogy.** <a concrete everyday comparison that genuinely maps to THIS issue>`,
+    `**Severity.** <the plain-urgency phrase given per item>`,
+    `Keep the td number EXACTLY. ASCII punctuation only (hyphens, straight quotes — NO em-dashes/smart-quotes/ellipsis). No preamble.`,
+    ``,
+    `Findings (batch ${bi + 1}/${peBatches.length}):`,
+    "```json",
+    JSON.stringify(batch.map((it) => ({ ...it, severityPhrase: sevLabel[it.severity] || "review" }))),
+    "```",
+  ].join("\n");
+  try {
+    const r = await gatedAgent(prompt, { label: `plain-english ${bi + 1}/${peBatches.length}`, phase: "Plain-English", schema: PE_SCHEMA, model: "sonnet" });
+    return { bi, entries: (r && Array.isArray(r.entries)) ? r.entries : [] };
+  } catch (e) { return { bi, entries: [], failed: true }; }
+}));
+// Map td -> entry markdown, then assemble grouped by severity (deterministic headers).
+const peByTd = {};
+for (const r of peResults) for (const e of (r.entries || [])) if (e && e.td != null) peByTd[e.td] = ascii(e.markdown || "");
+const peFailed = peResults.filter((r) => r.failed).length;
+const peGroups = { CRITICAL: [], HIGH: [], MEDIUM: [], LOW: [] };
+for (const it of peItems) { const md = peByTd[it.td]; if (md && peGroups[it.severity]) peGroups[it.severity].push(md.trim()); }
+const peSevHead = { CRITICAL: "## 🔴 Critical", HIGH: "## 🟠 High", MEDIUM: "## 🟡 Medium", LOW: "## 🟢 Low" };
+const peHeader = [
+  `# Tech Debt - Plain English`, "",
+  `> Non-technical companion to .gsd-t/techdebt.md (Scan${scanNumber ? " #" + scanNumber : ""}, ${peItems.length} findings). One entry per item: what it is, why it matters, a real-world analogy, plain-urgency severity. Grouped by severity.`, "", "---",
+].join("\n");
+// Build chunks: header, then per-severity section (header + its entries), sub-split ≤30KB.
+const peChunks = [peHeader];
+for (const sev of ["CRITICAL", "HIGH", "MEDIUM", "LOW"]) {
+  const items = peGroups[sev];
+  if (!items.length) continue;
+  let buf = `\n${peSevHead[sev]} (${items.length})\n\n`;
+  for (const md of items) {
+    const piece = md + "\n\n";
+    if (buf.length + piece.length > 30000) { peChunks.push(buf); buf = ""; }
+    buf += piece;
+  }
+  if (buf.trim()) peChunks.push(buf);
+}
+let peWrote = 0;
+for (let ci = 0; ci < peChunks.length; ci++) {
+  const first = ci === 0;
+  const res = await gatedAgent(
+    [
+      first ? `Create the file \`${peTarget}\` (overwrite) with EXACTLY the content between markers, using the Write tool. Verbatim.`
+            : `APPEND EXACTLY the content between markers to the END of \`${peTarget}\` (do not overwrite; append) via a Bash heredoc \`cat >> ${peTarget} <<'GSDTEOF'\` … \`GSDTEOF\`. Verbatim.`,
+      `Reply ONLY "OK".`, "", "<<<C>>>", peChunks[ci], "<<<END>>>",
+    ].join("\n"),
+    { label: `plain-english write ${ci + 1}/${peChunks.length}`, phase: "Plain-English", model: "haiku" }
+  ).catch((e) => ({ _e: String(e && e.message) }));
+  if (typeof res === "string" && /ok/i.test(res)) peWrote++;
+}
+log(`plain-english: ${Object.values(peGroups).reduce((a, b) => a + b.length, 0)}/${peItems.length} entries, grouped by severity, ${peWrote}/${peChunks.length} chunks written${peFailed ? `; ${peFailed} gen batch(es) failed` : ""}`);
 
 // Commit the docs + dimension files + plain-english via a small agent (Bash git).
 const commitAgent = await agent(

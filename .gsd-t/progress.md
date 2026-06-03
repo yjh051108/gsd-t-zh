@@ -1,9 +1,9 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M76 COMPLETED (punctuation-clean register, KEEPS severity color bullets, v4.0.24); M75 COMPLETED (deterministic chunked register write, v4.0.22)
-## Date: 2026-06-03 07:59 PDT
-## Version: 4.0.24
+## Status: ACTIVE — M78 COMPLETED (plain-english grouped+batched, v4.0.26); M77 COMPLETED (HTML report reads deep-scan table, v4.0.25); M76 COMPLETED (punctuation-clean register, v4.0.24)
+## Date: 2026-06-03 10:36 PDT
+## Version: 4.0.26
 
 ## Current Milestone
 
@@ -208,6 +208,10 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-06-03 10:36 PDT: [m78][fix] M78 - plain-english grouped + batched, v4.0.26. User: techdebt_in_plain_english.md must group by Critical/High/Medium/Low (it was a flat list). Two coupled problems: (1) no severity grouping; (2) the in-workflow step was a SINGLE agent that would stall on 300+ entries (M75 bug, unfixed for this doc) AND the agents' severity phrasing was inconsistent so it couldn't be re-grouped by text-parse. Fix: dedicated Plain-English phase - batch the severity-sorted findings, bounded gated generator fan-out, then DETERMINISTIC assembly with section headers (## 🔴 Critical / 🟠 High / 🟡 Medium / 🟢 Low) keyed by authoritative severity (not parsed phrasing), chunk-written. Removed from docTargets; dropped the stale Render phase from meta (gone since M71). +3 tests (grouped+complete+ordered, no mid-item split, empty-severity omission), assembly proven in sandbox diagnostic (322 entries, all grouped correctly). One-off: regrouped the live Hilo plain-english doc (322 entries, by authoritative TD->severity map). Patch bump 4.0.25 -> 4.0.26.
+
+- 2026-06-03 09:52 PDT: [m77][fix] M77 - HTML report reads deep-scan table format, v4.0.25. The scan-report.js renderer's parseDebtSummary only read legacy prose ("Critical items: N"); the deep-scan register uses a markdown severity table, so the HTML report showed 0 critical/0 high on a 322-finding scan. Fixed parseDebtSummary to read both. Also diagnosed (not yet fixed) that the report's DIAGRAMS render near-empty because the findings-derived scan/architecture.md lacks the component/service/layer/endpoint structure the mermaid generators consume, and extractSchema caught only 4 of Hilo's 417 tables - the HTML report is a counts+volume dashboard; techdebt.md is the authoritative findings source. mermaid-cli IS installed and works (the "tools not found" placeholder was from a stale pre-install report). +4 tests. Patch bump 4.0.24 -> 4.0.25.
 
 - 2026-06-03 07:59 PDT: [m76][fix] M76 revision - keep severity color bullets, v4.0.24. v4.0.23 over-corrected: it stripped the severity emoji (🔴🟠🟡🟢) along with the em-dashes, but the user wanted the color bullets kept - they render fine; only the em/en-dashes + smart quotes were the mojibake cause. Reverted: ascii() now normalizes em/en-dashes, smart quotes, ellipsis ONLY (no emoji strip); fmtChunks keeps the severity bullets in the summary table + section headers; doc-phase punctuation instruction allows the bullets. Tests updated to assert bullets KEPT + dashes normalized. One-off: restored the color bullets in the live Hilo register. Patch bump 4.0.23 -> 4.0.24.
 
