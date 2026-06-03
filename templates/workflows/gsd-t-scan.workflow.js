@@ -494,30 +494,43 @@ counts.total = finalFindings.length;
 // of a 466KB register truncates at ~165KB — verified). Chunk 0 is the header+summary
 // (Write/create); the rest are appends. Items are grouped so a chunk never splits an
 // item, and the severity-section heading rides with its first item's chunk.
+// M76: register output must be ASCII-clean — no emoji, no em/en-dashes, no smart
+// quotes. They render as mojibake boxes in non-UTF-8 terminals/pagers (the
+// βPADCCH/πAPCCCH garbage a user saw). Finder text can also contain these, so sanitize
+// every user-supplied field, not just our own template strings.
+function ascii(s) {
+  return String(s == null ? "" : s)
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}️]/gu, "") // emoji/symbols
+    .replace(/[—–]/g, "-")        // em/en dash -> hyphen
+    .replace(/[‘’]/g, "'")        // smart single quotes
+    .replace(/[“”]/g, '"')        // smart double quotes
+    .replace(/…/g, "...")              // ellipsis
+    .replace(/[ \t]+\n/g, "\n");            // tidy trailing whitespace
+}
 function fmtChunks(today) {
-  const sevHead = { CRITICAL: "🔴 Critical", HIGH: "🟠 High", MEDIUM: "🟡 Medium", LOW: "🟢 Low" };
+  const sevHead = { CRITICAL: "Critical", HIGH: "High", MEDIUM: "Medium", LOW: "Low" };
   const head = [];
-  head.push(`# Tech Debt Register — ${projectDir.split("/").pop()}`, "");
-  if (scanNumber) head.push(`**Scan #${scanNumber}** — Deep codebase scan (runtime-native, ${coverageComplete ? "full coverage" : "PARTIAL coverage"})`);
+  head.push(`# Tech Debt Register - ${projectDir.split("/").pop()}`, "");
+  if (scanNumber) head.push(`**Scan #${scanNumber}** - Deep codebase scan (runtime-native, ${coverageComplete ? "full coverage" : "PARTIAL coverage"})`);
   head.push(`**Date:** ${today}`);
-  head.push(`**Slices run:** ${slices.length} | **Coverage:** ${coverageComplete ? `FULL — all ${slices.length} slices succeeded` : `PARTIAL — ${succeededCount}/${slices.length} succeeded`}`);
+  head.push(`**Slices run:** ${slices.length} | **Coverage:** ${coverageComplete ? `FULL - all ${slices.length} slices succeeded` : `PARTIAL - ${succeededCount}/${slices.length} succeeded`}`);
   head.push(`**Verified findings:** ${counts.total}`, "");
   head.push(`> Effort estimates use GSD-T-native units (domain / wave / spawn / token-spend). Never human-hours.`);
   head.push(`> TD numbering continues from the prior register (if any, archived). This scan begins at **TD-${tdStart}**.`, "");
-  if (!coverageComplete) head.push(`> ⚠ **PARTIAL COVERAGE — ${failedSlices.length} of ${slices.length} codebase areas were NOT scanned this pass** (failed to return findings): ${failedSlices.join(", ")}. Findings UNDER-COUNT the real debt. Re-run (resume) for full coverage.`, "");
+  if (!coverageComplete) head.push(`> [!] **PARTIAL COVERAGE - ${failedSlices.length} of ${slices.length} codebase areas were NOT scanned this pass** (failed to return findings): ${ascii(failedSlices.join(", "))}. Findings UNDER-COUNT the real debt. Re-run (resume) for full coverage.`, "");
   head.push(`## Summary`, "", `| Severity | Count |`, `|----------|-------|`,
-    `| 🔴 CRITICAL | ${counts.critical} |`, `| 🟠 HIGH | ${counts.high} |`,
-    `| 🟡 MEDIUM | ${counts.medium} |`, `| 🟢 LOW | ${counts.low} |`,
+    `| CRITICAL | ${counts.critical} |`, `| HIGH | ${counts.high} |`,
+    `| MEDIUM | ${counts.medium} |`, `| LOW | ${counts.low} |`,
     `| **Total** | **${counts.total}** |`, "", "---", "");
 
   function itemMd(f, td) {
-    const L = [`### TD-${td} — ${f.title || "(untitled)"}`,
-      `- **Area:** ${f.area || "—"}`, `- **Severity:** ${f.severity}`, `- **Status:** OPEN`,
-      `- **Location:** ${(f.files && f.files.length) ? f.files.join(", ") : "—"}`];
-    if (f.detail) L.push(`- **Description:** ${f.detail}`);
-    if (f.impact) L.push(`- **Impact:** ${f.impact}`);
-    if (f.recommendation) L.push(`- **Remediation:** ${f.recommendation}`);
-    if (f.slice) L.push(`- **Found in slice:** ${f.slice}`);
+    const L = [`### TD-${td} - ${ascii(f.title) || "(untitled)"}`,
+      `- **Area:** ${ascii(f.area) || "(none)"}`, `- **Severity:** ${f.severity}`, `- **Status:** OPEN`,
+      `- **Location:** ${(f.files && f.files.length) ? ascii(f.files.join(", ")) : "(none)"}`];
+    if (f.detail) L.push(`- **Description:** ${ascii(f.detail)}`);
+    if (f.impact) L.push(`- **Impact:** ${ascii(f.impact)}`);
+    if (f.recommendation) L.push(`- **Remediation:** ${ascii(f.recommendation)}`);
+    if (f.slice) L.push(`- **Found in slice:** ${ascii(f.slice)}`);
     L.push("");
     return L.join("\n");
   }
@@ -646,7 +659,8 @@ const docResults = await parallel(
       d.prompt,
       ``,
       isLiving ? mergeNote : `Write the file fresh in the format described (use Bash \`mkdir -p\` for parent dirs if needed).`,
-      `Read the actual code under the relevant slice paths for specifics — don't summarize only from findings. Use Write/Edit to write the file, then return JSON per the schema (status "written"/"merged"/"skipped"/"failed"). Do NOT commit — the workflow handles git at the end.`,
+      `ASCII ONLY: do NOT use emoji, em-dashes (use " - "), en-dashes, smart quotes, or other non-ASCII punctuation — they render as garbage in non-UTF-8 terminals. Plain ASCII markdown only.`,
+      `Read the actual code under the relevant slice paths for specifics - don't summarize only from findings. Use Write/Edit to write the file, then return JSON per the schema (status "written"/"merged"/"skipped"/"failed"). Do NOT commit - the workflow handles git at the end.`,
     ].filter(Boolean).join("\n");
     try {
       return await agent(prompt, { label: d.label, phase: "Document", schema: DOC_RESULT_SCHEMA, model: "sonnet" });

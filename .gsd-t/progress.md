@@ -1,9 +1,9 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M75 COMPLETED (deterministic chunked register write, v4.0.22, proven 322-item write intact in sandbox); M74 COMPLETED (adaptive rate-limit throttle, v4.0.21)
-## Date: 2026-06-02 19:28 PDT
-## Version: 4.0.22
+## Status: ACTIVE — M76 COMPLETED (ASCII-clean register output, v4.0.23); M75 COMPLETED (deterministic chunked register write, v4.0.22)
+## Date: 2026-06-03 07:54 PDT
+## Version: 4.0.23
 
 ## Current Milestone
 
@@ -208,6 +208,8 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-06-03 07:54 PDT: [m76][fix] M76 - ASCII-clean register output, v4.0.23. User saw mojibake boxes (βPADCCH/πAPCCCH) in techdebt.md - the file bytes were valid UTF-8 (emoji 🔴🟠🟡🟢 + em-dashes), purely a non-UTF-8-terminal render problem, but emoji added nothing and made the register unreadable in common viewers. Fix: ascii() sanitizer in fmtChunks (strip emoji/symbols, em/en-dash->hyphen, smart quotes->ascii, ellipsis->...), applied to all user-supplied fields; plain-ASCII headers/table; doc-phase agents told "ASCII ONLY". +5 tests (m76-ascii-clean-register incl. structural guard on fmtChunks literals). One-off: cleaned the live Hilo scan docs (0 emoji/em-dash remaining). Patch bump 4.0.22 -> 4.0.23.
 
 - 2026-06-02 19:28 PDT: [m75][fix] M75 — deterministic chunked register write, v4.0.22. Hilo Scan #14 got FULL coverage + 322 verified findings but the single synthesis agent STALLED writing the register (9 of 322 items, then out of budget). Diagnostics proved even a single bounded Write truncates a large register at ~165KB (466KB → 161/322 items, mid-item). One agent cannot write a multi-hundred-item register. Fix: separate judgment from writing — bounded dedup agent (small input) → orchestrator deterministically merges/sorts/numbers/formats the register STRING (no fs, pure string-building) → fmtChunks splits into ≤30KB chunks that never split an item → sequence of bounded write-agents (chunk 0 = Write, rest = Bash heredoc append). Each step small enough to pass intact. Verified by real sandbox diagnostics: single-Write truncated to 161/322 (the bug); chunked write produced ALL 322 intact, no gaps/dups/truncation across 12 chunks (verified by reading the file, not trusting agent "OK"). +4 tests (m75-chunked-register). Closes the scan fix chain (M71 runs + M72 coverage + M73 cap + M74 adaptive + M75 chunked-write). User had already accepted the salvaged 322-item Hilo register; this makes future large scans write it automatically. Patch bump 4.0.21 → 4.0.22. NEXT: regenerate Hilo's stale .gsd-t/scan/*.md + plain-english from the extracted 322 findings (no re-scan, per user).
 

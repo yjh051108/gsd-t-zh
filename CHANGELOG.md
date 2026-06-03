@@ -2,6 +2,18 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.0.23] - 2026-06-03 (M76 ASCII-Clean Register Output — patch)
+
+### Fixed — register/docs rendered as mojibake in non-UTF-8 terminals
+
+The scan register used emoji severity markers (🔴🟠🟡🟢) and em-dashes. In a non-UTF-8 terminal/pager these display as garbage boxes (`βPADCCH`/`πAPCCCH`). The file bytes were valid UTF-8 — purely a render problem — but the emoji added nothing and made the register unreadable in common viewers.
+
+- `templates/workflows/gsd-t-scan.workflow.js`: added `ascii()` sanitizer (strips emoji/symbols, normalizes em/en dashes → `-`, smart quotes → ASCII, ellipsis → `...`). `fmtChunks` now emits plain-ASCII headers/tables and sanitizes every user-supplied field (finder text can contain these too). Document-phase agents instructed "ASCII ONLY".
+- `test/m76-ascii-clean-register.test.js`: +5 tests (sanitizer behavior + a structural guard that fmtChunks' output literals contain no emoji/em-dash).
+- One-off: cleaned the existing HiloAviation scan docs (techdebt.md + plain-english + 5 dimension files) — 0 emoji / 0 em-dashes remaining.
+
+Suite: 1311 pass / 0 fail / 4 skip — zero regressions.
+
 ## [4.0.22] - 2026-06-02 (M75 Deterministic Chunked Register Write — patch)
 
 ### Fixed — synthesis no longer stalls writing a large register
