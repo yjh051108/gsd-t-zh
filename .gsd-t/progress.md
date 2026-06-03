@@ -1,9 +1,9 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M72 COMPLETED (scan dropped-slice recovery + coverage honesty, v4.0.19); M71 COMPLETED (runtime-native scan workflow, v4.0.18)
-## Date: 2026-06-02 16:45 PDT
-## Version: 4.0.19
+## Status: ACTIVE — M73 COMPLETED (scan concurrency throttle, v4.0.20, gate proven peak=10 in sandbox); M72 COMPLETED (dropped-slice recovery + coverage honesty, v4.0.19)
+## Date: 2026-06-02 18:06 PDT
+## Version: 4.0.20
 
 ## Current Milestone
 
@@ -208,6 +208,8 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 <!-- No active blockers -->
 
 ## Decision Log
+
+- 2026-06-02 18:06 PDT: [m73][fix] M73 — scan concurrency throttle, v4.0.20. A v4.0.19 Hilo run produced an EMPTY register: the scan fanned out 29 finders + verifiers all at once (~58 concurrent Sonnet agents) → server-side API rate limit ("temporarily limiting requests · Rate limited") → all 58 errored empty → 0 findings (confirmed from finder transcripts: stop_reason=stop_sequence, is_error, 42/58 stillborn at ≤4 records). NOT a workflow-logic bug — unthrottled fan-out self-inflicting a rate limit. M72 coverage-honesty worked perfectly (flagged 0/29, preserved + pointed to the prior 133-item register). User design call: shared 10-slot worker queue, not per-slice batching. Fix: one GLOBAL counting semaphore (makeSemaphore, 10 permits); every finder+verify goes through gatedAgent (acquire→run→release, FIFO hand-off); all slices+findings still fan out via parallel() but the gate caps total in-flight at 10 → max throughput, no idle slots, safe ceiling. Replaced my initial batched approach (left slots idle while a slice serialized verifies) — user correctly identified the global-queue model as better throughput AND simpler. Finders+verifiers are Sonnet (fine at 10); lone Opus synthesis runs after, ungated. Verified by 2 real sandbox diagnostics: 30-agent and 56-agent (all fanned at once) probes both measured peakConcurrency=10, never exceeded. Patch bump 4.0.19 → 4.0.20.
 
 - 2026-06-02 16:45 PDT: [m72][fix] M72 — scan dropped-slice recovery + coverage honesty, v4.0.19. The first real Hilo scan (v4.0.18) ran clean and deep (133 findings, all 11 docs) but 7 of 19 deep-finder slices SILENTLY FAILED — returned no schema-valid output (runtime nudged twice then dropped), and the workflow treated a dropped slice identically to a genuinely-clean one (findings:[]), presenting ~⅔ coverage as complete. Fix: (1) retry each finder once (runFinder); (2) flag a still-failed slice failed:true — never conflate with empty-but-successful; (3) deterministic coverage accounting (failedSlices/slicesSucceeded/coverageComplete), dropped slices excluded from findings; (4) synthesis REQUIRED to write a "⚠ PARTIAL COVERAGE" banner (not relying on the agent noticing) + return status downgrades to "complete-partial-coverage"; (5) synthesis robustness — incremental section-by-section register write (avoids the ~9-min single-giant-Write stall) + truncation cap 200KB→500KB. +4 tests (m72-coverage-accounting); coverage logic verified by a real sandbox diagnostic run (failedSlices detected, status downgraded). Resume re-scans only failed slices (cached successes reused). User decision: detect+retry+surface (proper fix), fold in synthesis robustness. Patch bump 4.0.18 → 4.0.19. NOTE: this run's Hilo register (133 items) is PARTIAL — re-run for full coverage before promoting to milestones.
 
