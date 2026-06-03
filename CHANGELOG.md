@@ -2,6 +2,19 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.0.20] - 2026-06-02 (M73 Scan Concurrency Throttle — patch)
+
+### Fixed — unthrottled fan-out triggered an API rate limit that wiped a whole scan
+
+A v4.0.19 Hilo run produced an EMPTY register (0 findings) — not a workflow-logic bug: the scan fanned out 29 finders + their verifiers ALL AT ONCE (~58 concurrent Sonnet agents), hit a server-side API rate limit ("temporarily limiting requests · Rate limited"), and all 58 agents errored out empty. (M72's coverage-honesty correctly flagged it: 0/29, pointed to the prior 133-item register — no false "complete".)
+
+- `templates/workflows/gsd-t-scan.workflow.js`: added a single GLOBAL counting semaphore (`makeSemaphore`) of 10 permits. EVERY finder + verify agent acquires a permit before running and releases after (`gatedAgent`); freed permits are handed FIFO to the next waiter. All slices + findings still fan out at once, but total in-flight never exceeds 10 — a shared worker-pool: the instant any agent finishes, the next queued one starts, so throughput stays maximal at a safe ceiling. (Finders + verifiers are Sonnet, fine at 10; the lone Opus synthesis runs after, ungated.)
+- This replaces the initial batched approach (which left worker slots idle while a slice serialized its verifies) with a global queue — better throughput AND simpler.
+
+Verified by two real sandbox diagnostics: a 30-agent `mapLimit` probe and a 56-agent (8 finders × 6 verifies, fanned out at once) semaphore probe — both measured peakConcurrency = 10, never exceeded.
+
+Suite: 1297 pass / 0 fail / 4 skip — zero regressions.
+
 ## [4.0.19] - 2026-06-02 (M72 Scan Dropped-Slice Recovery + Coverage Honesty — patch)
 
 ### Fixed — a scan that under-covers no longer presents partial results as complete

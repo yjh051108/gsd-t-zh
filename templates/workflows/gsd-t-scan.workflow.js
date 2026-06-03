@@ -281,11 +281,47 @@ function finderPrompt(slice) {
     `CRITICAL: you MUST return a JSON object matching the schema (slice + findings array) as your FINAL output — even if findings is empty. Do not end without the structured result.`,
   ].filter(Boolean).join("\n");
 }
+// M73: GLOBAL CONCURRENCY GATE (shared-worker-pool model). The v4.0.19 Hilo run
+// fanned out 29 finders + their verifiers ALL AT ONCE → ~58 concurrent Sonnet agents
+// → server-side API rate limit → all errored empty → 0 findings. Rather than batch
+// per-slice (which leaves slots idle while a slice serializes its verifies), use ONE
+// global semaphore of MAX_CONCURRENT permits that EVERY agent call (finder OR verify,
+// from any slice) must acquire. Work fans out naturally; the gate alone enforces the
+// cap. The instant any agent finishes, the next queued one starts → always ≈10 in
+// flight while work remains = max throughput at a safe ceiling. (All gated agents are
+// Sonnet; the lone Opus synthesis runs after, ungated.)
+const MAX_CONCURRENT = 10;
+
+// Minimal counting semaphore: acquire() resolves when a permit is free; release()
+// hands the permit to the next waiter (FIFO).
+function makeSemaphore(permits) {
+  let avail = permits;
+  const waiters = [];
+  return {
+    async acquire() {
+      if (avail > 0) { avail--; return; }
+      await new Promise((res) => waiters.push(res));
+      // resumed: a release() handed us the permit (avail already decremented there).
+    },
+    release() {
+      const next = waiters.shift();
+      if (next) next();           // hand permit directly to the next waiter
+      else avail++;               // no waiter: return permit to the pool
+    },
+  };
+}
+const gate = makeSemaphore(MAX_CONCURRENT);
+async function gatedAgent(prompt, opts) {
+  await gate.acquire();
+  try { return await agent(prompt, opts); }
+  finally { gate.release(); }
+}
+
 async function runFinder(slice) {
   // up to 2 attempts; a null/invalid (non-array findings) result counts as a drop.
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const r = await agent(finderPrompt(slice), {
+      const r = await gatedAgent(finderPrompt(slice), {
         label: attempt === 1 ? `find:${slice.key}` : `find:${slice.key} (retry)`,
         phase: "Deep Scan", schema: FINDER_SCHEMA, model: "sonnet",
       });
@@ -298,40 +334,43 @@ async function runFinder(slice) {
   return null; // both attempts failed → dropped slice
 }
 
-const sliceResults = await pipeline(
-  slices,
-  (slice) => runFinder(slice),
-  async (finderResult, originalItem) => {
-    const slice = originalItem || {};
-    const sliceKey = slice.key || (finderResult && finderResult.slice) || "unknown-slice";
-    // M72: distinguish a FAILED finder (null after retries) from a genuinely-clean slice.
-    if (!finderResult || !Array.isArray(finderResult.findings)) {
-      return { slice: sliceKey, findings: [], failed: true };
-    }
-    if (verifyMode === "none" || finderResult.findings.length === 0) {
-      return { slice: sliceKey, findings: finderResult.findings || [], failed: false };
-    }
-    const verified = await parallel(
-      finderResult.findings.map((f) => async () => {
-        try {
-          const v = await agent(
-            [
-              `You are a VERIFIER for one tech-debt finding in \`${projectDir}\`. Confirm it against the ACTUAL code (open the referenced files with Read) — do not trust the finder.`,
-              `Finding: ${JSON.stringify(f)}`,
-              `confirmed=true only if the defect genuinely exists. If misread → verdict="false-positive". If real but wrong severity → set correctedSeverity. If real but underspecified → verdict="needs-detail" (kept). Return JSON per the schema.`,
-            ].join("\n"),
-            { label: `verify:${sliceKey}`, phase: "Deep Scan", schema: VERIFY_SCHEMA, model: "sonnet" }
-          );
-          if (!v || v.verdict === "false-positive" || v.confirmed === false) return null;
-          return { ...f, severity: v.correctedSeverity || f.severity, _verify: v.verdict };
-        } catch (e) {
-          return { ...f, _verify: "verify-errored" };
-        }
-      })
-    );
-    return { slice: sliceKey, findings: verified.filter(Boolean), failed: false };
+async function scanSlice(slice) {
+  const sliceKey = slice.key || "unknown-slice";
+  const finderResult = await runFinder(slice);
+  // M72: distinguish a FAILED finder (null after retries) from a genuinely-clean slice.
+  if (!finderResult || !Array.isArray(finderResult.findings)) {
+    return { slice: sliceKey, findings: [], failed: true };
   }
-);
+  if (verifyMode === "none" || finderResult.findings.length === 0) {
+    return { slice: sliceKey, findings: finderResult.findings || [], failed: false };
+  }
+  // Fan out ALL verifies for this slice — the global gate (not a per-slice limit)
+  // bounds total in-flight, so this is safe AND keeps every worker slot busy.
+  const verified = await parallel(
+    finderResult.findings.map((f) => async () => {
+      try {
+        const v = await gatedAgent(
+          [
+            `You are a VERIFIER for one tech-debt finding in \`${projectDir}\`. Confirm it against the ACTUAL code (open the referenced files with Read) — do not trust the finder.`,
+            `Finding: ${JSON.stringify(f)}`,
+            `confirmed=true only if the defect genuinely exists. If misread → verdict="false-positive". If real but wrong severity → set correctedSeverity. If real but underspecified → verdict="needs-detail" (kept). Return JSON per the schema.`,
+          ].join("\n"),
+          { label: `verify:${sliceKey}`, phase: "Deep Scan", schema: VERIFY_SCHEMA, model: "sonnet" }
+        );
+        if (!v || v.verdict === "false-positive" || v.confirmed === false) return null;
+        return { ...f, severity: v.correctedSeverity || f.severity, _verify: v.verdict };
+      } catch (e) {
+        return { ...f, _verify: "verify-errored" };
+      }
+    })
+  );
+  return { slice: sliceKey, findings: verified.filter(Boolean), failed: false };
+}
+
+// Fan out ALL slices at once — every finder + verify acquires the shared gate, so
+// total in-flight never exceeds MAX_CONCURRENT regardless of slice/finding counts.
+log(`deep scan: ${slices.length} slices via a shared ${MAX_CONCURRENT}-permit gate (Sonnet finders+verifiers; max throughput at a safe ceiling)`);
+const sliceResults = await parallel(slices.map((slice) => () => scanSlice(slice)));
 
 // M72: coverage accounting — a dropped pipeline result (null) OR a failed:true slice
 // is a COVERAGE GAP. Surface it deterministically; never present partial as complete.
