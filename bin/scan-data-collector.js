@@ -8,11 +8,25 @@ function read(filePath) {
 
 function parseDebtSummary(text) {
   const n = (pattern) => { const m = text.match(pattern); return m ? parseInt(m[1], 10) : 0; };
-  return {
+  // Legacy prose format ("Critical items: N").
+  let out = {
     debtCritical: n(/Critical items?:\s*(\d+)/i),
     debtHigh:     n(/High priority:\s*(\d+)/i),
     debtMedium:   n(/Medium priority:\s*(\d+)/i)
   };
+  // M77: deep-scan register uses a markdown SEVERITY TABLE instead, e.g.
+  //   | 🔴 CRITICAL | 9 |   /   | HIGH | 90 |   (emoji optional, case-insensitive).
+  // If the prose format yielded nothing, parse the table rows.
+  if (!out.debtCritical && !out.debtHigh && !out.debtMedium) {
+    const row = (label) => {
+      // a table row whose first cell contains the label and whose next cell is a number
+      const re = new RegExp("\\|[^|\\n]*\\b" + label + "\\b[^|\\n]*\\|\\s*\\**\\s*(\\d+)\\s*\\**\\s*\\|", "i");
+      const m = text.match(re);
+      return m ? parseInt(m[1], 10) : 0;
+    };
+    out = { debtCritical: row("CRITICAL"), debtHigh: row("HIGH"), debtMedium: row("MEDIUM") };
+  }
+  return out;
 }
 
 function parseTestCoverage(text) {

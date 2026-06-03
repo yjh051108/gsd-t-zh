@@ -2,6 +2,14 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.0.25] - 2026-06-03 (M77 HTML Report Reads Deep-Scan Table Format - patch)
+
+### Fixed - scan report showed 0 critical/0 high on a 322-finding register
+
+The HTML report renderer (`bin/scan-data-collector.js::parseDebtSummary`) parsed only the LEGACY breadth-scan prose format ("Critical items: N"). The deep-scan register uses a markdown severity TABLE (`| CRITICAL | 9 |`, emoji optional), so the report displayed 0 critical / 0 high. parseDebtSummary now reads both formats (prose first, then the table). +test/m77-renderer-table-summary.test.js (4 tests). Note: the per-item techDebt[] list section + the 10-finding sample still use legacy formats (secondary; headline cards are the fix).
+
+Suite: 1315 pass / 0 fail / 4 skip.
+
 ## [4.0.24] - 2026-06-03 (M76 revision — keep severity color bullets)
 
 ### Fixed — over-correction: v4.0.23 stripped the severity color bullets too
