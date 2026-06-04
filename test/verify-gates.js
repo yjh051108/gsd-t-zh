@@ -33,8 +33,10 @@ gate('extractSchema.entities is array', Array.isArray(schemaResult.entities));
 gate('extractSchema.parseWarnings is array', Array.isArray(schemaResult.parseWarnings));
 
 // generateDiagrams output shape (6 items, ordered)
+// M79: database-schema is suppressed by default; includeSchemaDiagram re-enables it.
+// This gate exercises the full 6-diagram shape via the opt-in flag.
 const noSchema = { detected: false, ormType: null, entities: [], parseWarnings: [] };
-const diagrams = generateDiagrams({ projectName: 'test' }, noSchema, {});
+const diagrams = generateDiagrams({ projectName: 'test' }, noSchema, { includeSchemaDiagram: true });
 const EXPECTED_TYPES = ['system-architecture','app-architecture','workflow','data-flow','sequence','database-schema'];
 gate('generateDiagrams returns 6 items', diagrams.length === 6, 'got ' + diagrams.length);
 gate('generateDiagrams types in order', JSON.stringify(diagrams.map(d => d.type)) === JSON.stringify(EXPECTED_TYPES));

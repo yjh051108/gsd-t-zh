@@ -2,6 +2,19 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.0.27] - 2026-06-04 (M79 Diagram Quality - patch)
+
+### Fixed - scan-report diagrams were generic boilerplate, clashed with the dark theme, and one was actively misleading
+
+The HTML scan report's six diagrams had three problems. (1) Four of them rendered a hardcoded "Tasks/Projects/Auth" template because `collectScanData` never populated the `services`/`layers`/`endpoints`/`states` inputs the generators read. (2) The database-schema diagram picked the wrong schema file on large repos (a 5-table video shim instead of the 417-table `src/lib/schema/index.ts`) and emitted `unknown` column types — a misleading diagram is worse than none. (3) All diagrams rendered on a white background with sharp corners and shrink-wrapped labels, clashing with the report's dark theme. The sequence diagram also failed to render because `validate &amp; sanitize` broke the Mermaid sequence parser.
+
+- `bin/scan-data-collector.js`: parse real `services`/`layers`/`endpoints` from `docs/architecture.md` and `states` from `docs/workflows.md` (strict transition-chain detection — prose noise yields `[]` so generators keep their good defaults).
+- `bin/scan-diagrams-generators.js`: `genSystemArchitecture` draws up to 12 real feature domains with rounded `classDef`s; `genSequence` uses `validate and sanitize` (no `&amp;` entity).
+- `bin/scan-diagrams.js`: database-schema diagram suppressed by default via `SUPPRESSED_TYPES`; re-enable per call with `options.includeSchemaDiagram` once the schema extractor is fixed.
+- `bin/scan-renderer.js`: shared `MERMAID_CONFIG` (dark `base` theme, rounded corners, node padding/spacing) applied via `mmdc -c`, plus `-b transparent` so diagrams blend into the dark panel.
+- `test/m79-diagram-quality.test.js`: regression test (services extracted, schema suppressed + opt-in, sequence has no `&amp;`, config injected).
+- `test/scan.test.js`, `test/verify-gates.js`: updated to the 5-diagrams-by-default contract (schema via opt-in).
+
 ## [4.0.26] - 2026-06-03 (M78 Plain-English Grouped + Batched - patch)
 
 ### Fixed - plain-english companion was a flat ungrouped list + would stall on large registers

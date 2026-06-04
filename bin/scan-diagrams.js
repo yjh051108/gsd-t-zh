@@ -42,11 +42,20 @@ function buildPlaceholder(def, mmd) {
   };
 }
 
+// M79: the database-schema diagram is SUPPRESSED by default. The schema extractor
+// picks the wrong file on large repos (grabbed a 5-table video shim instead of the
+// 417-table src/lib/schema/index.ts) and emits `unknown` column types — a misleading
+// diagram is worse than none. Re-enable per-call with options.includeSchemaDiagram
+// once parseDrizzle/detectOrm are fixed to use the real schema.
+const SUPPRESSED_TYPES = new Set(['database-schema']);
+
 function generateDiagrams(analysisData, schemaData, options) {
   try {
     const { renderDiagram } = require('./scan-renderer');
+    const opts = options || {};
     const results = [];
     for (const def of DIAGRAM_DEFS) {
+      if (SUPPRESSED_TYPES.has(def.type) && !opts.includeSchemaDiagram) continue;
       try {
         const mmd = def.gen(analysisData, schemaData);
         const isDbSchema = def.type === 'database-schema';

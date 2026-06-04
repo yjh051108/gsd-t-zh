@@ -2,14 +2,22 @@
 
 function genSystemArchitecture(analysisData) {
   try {
-    const services = (analysisData.services || []).slice(0, 4);
+    // M79: when real feature domains were extracted from docs/architecture.md, draw
+    // them as the system's services (User -> Backend -> each domain). Show up to 12.
+    const services = (analysisData.services || []).slice(0, 12);
     if (services.length >= 2) {
       const lines = ['graph TB',
-        '  classDef user fill:#0d2035,stroke:#06b6d4,color:#a5f3fc',
-        '  classDef svc fill:#1a0f3a,stroke:#7c3aed,color:#ddd6fe',
-        '  classDef db fill:#0a2318,stroke:#10b981,color:#a7f3d0',
-        '  User(["&#128100; User"]):::user'];
-      services.forEach((s, i) => { lines.push('  S' + i + '["' + s + '"]:::svc'); lines.push('  User --> S' + i); });
+        '  User(["&#128100; User"]):::user',
+        '  API["&#9889; Backend / API"]:::core',
+        '  User -->|"HTTPS"| API'];
+      services.forEach((s, i) => {
+        const label = String(s).replace(/"/g, "'");
+        lines.push('  S' + i + '["' + label + '"]:::svc');
+        lines.push('  API --> S' + i);
+      });
+      lines.push('  classDef user fill:#0d2035,stroke:#22d3ee,color:#a5f3fc,rx:8,ry:8');
+      lines.push('  classDef core fill:#1a0f3a,stroke:#a78bfa,color:#ede9fe,rx:8,ry:8');
+      lines.push('  classDef svc fill:#0f1d3a,stroke:#60a5fa,color:#bfdbfe,rx:8,ry:8');
       return lines.join('\n');
     }
     return `graph TB
@@ -150,7 +158,7 @@ function genSequence(analysisData) {
   participant Queue
   User->>Client: Submit form
   Client->>API: ${ep}
-  API->>API: validate &amp; sanitize
+  API->>API: validate and sanitize
   alt invalid input
     API-->>Client: 400 Bad Request
   else valid

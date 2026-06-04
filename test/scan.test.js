@@ -96,8 +96,16 @@ describe('generateDiagrams', () => {
   const noSchema = { detected: false, ormType: null, entities: [], parseWarnings: [] };
   const minAnalysis = { projectName: 'TestProject' };
 
-  it('returns exactly 6 DiagramResult objects', () => {
+  // M79: the database-schema diagram is suppressed by default (the extractor picked
+  // the wrong file on large repos and emitted `unknown` columns). Default = 5 diagrams;
+  // includeSchemaDiagram re-enables the 6th.
+  it('returns 5 DiagramResult objects by default (schema suppressed)', () => {
     const results = generateDiagrams(minAnalysis, noSchema, { projectRoot: tmpDir });
+    assert.equal(results.length, 5);
+  });
+
+  it('returns 6 DiagramResult objects when includeSchemaDiagram is set', () => {
+    const results = generateDiagrams(minAnalysis, noSchema, { projectRoot: tmpDir, includeSchemaDiagram: true });
     assert.equal(results.length, 6);
   });
 
@@ -114,15 +122,14 @@ describe('generateDiagrams', () => {
     }
   });
 
-  it('returns correct diagram types in order', () => {
+  it('returns correct diagram types in order (schema suppressed by default)', () => {
     const results = generateDiagrams(minAnalysis, noSchema, { projectRoot: tmpDir });
     const expectedTypes = [
       'system-architecture',
       'app-architecture',
       'workflow',
       'data-flow',
-      'sequence',
-      'database-schema'
+      'sequence'
     ];
     assert.deepEqual(results.map(r => r.type), expectedTypes);
   });
@@ -135,8 +142,8 @@ describe('generateDiagrams', () => {
     }
   });
 
-  it('database-schema diagram has rendered:false when schema not detected', () => {
-    const results = generateDiagrams(minAnalysis, noSchema, { projectRoot: tmpDir });
+  it('database-schema diagram has rendered:false when schema not detected (opt-in)', () => {
+    const results = generateDiagrams(minAnalysis, noSchema, { projectRoot: tmpDir, includeSchemaDiagram: true });
     const dbDiagram = results.find(r => r.type === 'database-schema');
     assert.equal(dbDiagram.rendered, false);
     assert.equal(dbDiagram.rendererUsed, 'placeholder');
@@ -148,9 +155,9 @@ describe('generateDiagrams', () => {
     assert.doesNotThrow(() => generateDiagrams({}, {}, null));
   });
 
-  it('always returns 6 results even on invalid input', () => {
+  it('always returns 5 results even on invalid input (schema suppressed)', () => {
     const results = generateDiagrams(null, null, {});
-    assert.equal(results.length, 6);
+    assert.equal(results.length, 5);
   });
 });
 
@@ -323,7 +330,7 @@ describe('M17 pipeline integration', () => {
     assert.ok(result);
     assert.equal(typeof result.diagramsRendered, 'number');
     assert.equal(typeof result.diagramsPlaceholder, 'number');
-    assert.equal(result.diagramsRendered + result.diagramsPlaceholder, 6);
+    assert.equal(result.diagramsRendered + result.diagramsPlaceholder, 5);
   });
 
   it('pipeline produces a valid HTML file', () => {

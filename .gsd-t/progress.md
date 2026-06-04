@@ -1,9 +1,9 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M78 COMPLETED (plain-english grouped+batched, v4.0.26); M77 COMPLETED (HTML report reads deep-scan table, v4.0.25); M76 COMPLETED (punctuation-clean register, v4.0.24)
-## Date: 2026-06-03 10:36 PDT
-## Version: 4.0.26
+## Status: ACTIVE — M79 COMPLETED (scan-report diagram quality, v4.0.27); M78 COMPLETED (plain-english grouped+batched, v4.0.26); M77 COMPLETED (HTML report reads deep-scan table, v4.0.25)
+## Date: 2026-06-04 08:56 PDT
+## Version: 4.0.27
 
 ## Current Milestone
 
@@ -209,6 +209,7 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 
 ## Decision Log
 
+- 2026-06-04 08:56 PDT: [m79][fix] M79 - scan-report diagram quality, v4.0.27. User reviewed the 6 rendered Hilo diagrams: 4 were generic Tasks/Projects/Auth boilerplate, the DB-schema diagram showed 4 wrong tables with `unknown` columns, and all clashed with the dark page (white bg, sharp corners, shrink-wrapped labels); the sequence diagram failed to render at all. Root causes: (1) collectScanData never populated services/layers/endpoints/states so generators always hit the hardcoded template; (2) detectOrm/parseDrizzle picked the wrong schema file on large repos; (3) renderer used `-t dark` only (white box, sharp, tight); (4) `validate &amp; sanitize` broke the Mermaid sequence parser. Fix: source services/layers/endpoints from docs/architecture.md + states from docs/workflows.md (strict transition-chain detection); genSystemArchitecture draws up to 12 real domains with rounded classDefs; suppress the misleading DB-schema diagram by default (SUPPRESSED_TYPES, opt-in via includeSchemaDiagram) per user "hide the schema section for now"; shared MERMAID_CONFIG (dark base theme + rounded corners + node padding/spacing) applied via `mmdc -c`, plus `-b transparent`; genSequence uses "validate and sanitize". +1 regression test (m79-diagram-quality), updated scan.test.js + verify-gates.js to the 5-diagrams-by-default contract. Regenerated Hilo report: 5/5 render, 35 real services, rounded corners present (15 rx=), schema section gone, no placeholders. Suite 1325/1325 pass. Patch bump 4.0.26 -> 4.0.27.
 - 2026-06-03 10:36 PDT: [m78][fix] M78 - plain-english grouped + batched, v4.0.26. User: techdebt_in_plain_english.md must group by Critical/High/Medium/Low (it was a flat list). Two coupled problems: (1) no severity grouping; (2) the in-workflow step was a SINGLE agent that would stall on 300+ entries (M75 bug, unfixed for this doc) AND the agents' severity phrasing was inconsistent so it couldn't be re-grouped by text-parse. Fix: dedicated Plain-English phase - batch the severity-sorted findings, bounded gated generator fan-out, then DETERMINISTIC assembly with section headers (## 🔴 Critical / 🟠 High / 🟡 Medium / 🟢 Low) keyed by authoritative severity (not parsed phrasing), chunk-written. Removed from docTargets; dropped the stale Render phase from meta (gone since M71). +3 tests (grouped+complete+ordered, no mid-item split, empty-severity omission), assembly proven in sandbox diagnostic (322 entries, all grouped correctly). One-off: regrouped the live Hilo plain-english doc (322 entries, by authoritative TD->severity map). Patch bump 4.0.25 -> 4.0.26.
 
 - 2026-06-03 09:52 PDT: [m77][fix] M77 - HTML report reads deep-scan table format, v4.0.25. The scan-report.js renderer's parseDebtSummary only read legacy prose ("Critical items: N"); the deep-scan register uses a markdown severity table, so the HTML report showed 0 critical/0 high on a 322-finding scan. Fixed parseDebtSummary to read both. Also diagnosed (not yet fixed) that the report's DIAGRAMS render near-empty because the findings-derived scan/architecture.md lacks the component/service/layer/endpoint structure the mermaid generators consume, and extractSchema caught only 4 of Hilo's 417 tables - the HTML report is a counts+volume dashboard; techdebt.md is the authoritative findings source. mermaid-cli IS installed and works (the "tools not found" placeholder was from a stale pre-install report). +4 tests. Patch bump 4.0.24 -> 4.0.25.

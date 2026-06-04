@@ -165,6 +165,55 @@ function parseQualityFindings(text) {
   return findings.slice(0, 3);
 }
 
+// M79: derive the diagram inputs (services/layers/endpoints/states) from the DEEP
+// living docs (docs/architecture.md, docs/workflows.md) so the architecture/data-flow
+// diagrams reflect the project's REAL feature domains instead of falling back to the
+// generic "Tasks/Projects" templates. Falls back to scan/architecture.md, then [].
+function parseServices(docArch) {
+  if (!docArch) return [];
+  // Top-level numbered domain sections: "## 5. Multi-Tenant School and Location Model"
+  const svc = [];
+  for (const m of docArch.matchAll(/^##\s+\d+\.\s+(.+?)\s*$/gm)) {
+    const name = m[1].trim();
+    // skip meta sections that aren't feature domains
+    if (/^(system overview|technology stack|application structure|table of contents)/i.test(name)) continue;
+    svc.push(name);
+  }
+  return svc;
+}
+function parseLayers(docArch) {
+  if (!docArch) return [];
+  // "### Controller Layer", "## 4. Authentication and Session Layer", etc.
+  const layers = [];
+  for (const m of docArch.matchAll(/^#{2,3}\s+(?:\d+\.\s+)?(.+?\bLayer)\s*$/gmi)) {
+    const n = m[1].trim(); if (!layers.includes(n)) layers.push(n);
+  }
+  return layers;
+}
+function parseEndpoints(docArch) {
+  if (!docArch) return [];
+  // real route lines like `GET /feature-flags/resolve/:flagKey` or `POST /api/...`
+  const eps = [];
+  for (const m of docArch.matchAll(/\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[A-Za-z0-9_\-\/:{}.]+)/g)) {
+    const e = m[1] + ' ' + m[2]; if (!eps.includes(e)) eps.push(e);
+  }
+  return eps;
+}
+function parseStates(docWorkflows) {
+  if (!docWorkflows) return [];
+  // Only accept REAL state transitions written as "Draft -> Open" / "Draft → Open"
+  // where BOTH sides look like status enum values (short, capitalized, no spaces).
+  // If we can't find a genuine transition chain, return [] so the generator keeps
+  // its (good) default state machine rather than rendering doc-prose noise. (M79:
+  // a loose match previously pulled "Domains/Source/Schedule" from prose headers.)
+  const isState = (w) => /^[A-Z][A-Za-z]{1,14}$/.test(w) && /(Draft|Open|Progress|Review|Done|Block|Cancel|Pending|Active|Closed|Approved|Rejected|Queued|Failed|Complete)/i.test(w);
+  const states = [];
+  for (const m of docWorkflows.matchAll(/\b([A-Z][A-Za-z]+)\s*(?:->|→)\s*([A-Z][A-Za-z]+)\b/g)) {
+    if (isState(m[1]) && isState(m[2])) for (const s of [m[1], m[2]]) if (!states.includes(s)) states.push(s);
+  }
+  return states.length >= 3 ? states : [];
+}
+
 function collectScanData(projectRoot) {
   const scanDir = path.join(projectRoot, '.gsd-t', 'scan');
   const rs = (f) => read(path.join(scanDir, f));
@@ -175,6 +224,9 @@ function collectScanData(projectRoot) {
   const secText   = rs('security.md');
   const qualText  = rs('quality.md');
   const debtText  = rr('.gsd-t/techdebt.md');
+  // Deep living docs — the real architecture knowledge (M79).
+  const docArch   = rr('docs/architecture.md');
+  const docFlow   = rr('docs/workflows.md');
 
   let projectName = path.basename(projectRoot);
   try { projectName = JSON.parse(rr('package.json')).name || projectName; } catch {}
@@ -188,8 +240,15 @@ function collectScanData(projectRoot) {
   const qualFinds = parseQualityFindings(qualText);
   const findings  = secFinds.concat(qualFinds).slice(0, 10);
 
+  // Diagram inputs from the deep docs (M79).
+  const services  = parseServices(docArch);
+  const layers    = parseLayers(docArch);
+  const endpoints = parseEndpoints(docArch);
+  const states    = parseStates(docFlow);
+
   return { projectName, filesScanned, totalLoc, debtCritical, debtHigh, debtMedium,
-           testCoverage, domains, techDebt, findings };
+           testCoverage, domains, techDebt, findings,
+           services, layers, endpoints, states };
 }
 
 module.exports = { collectScanData };
