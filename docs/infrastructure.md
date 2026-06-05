@@ -1,153 +1,396 @@
-# Infrastructure — GSD-T Framework (@tekyzinc/gsd-t)
+# Infrastructure - GSD-T Framework (@tekyzinc/gsd-t)
 
-## Last Updated: 2026-03-22 (M23 — Headless Mode)
+## Last Updated: 2026-06-04 (deep-scan M80)
 
-> **Scan #11 note (2026-04-16, v3.11.11)**: the `ANTHROPIC_API_KEY` setup section
-> below is now stale — the context meter switched to a local token estimator
-> in v3.11.11 and the key is no longer required by the meter. The key is still
-> consumed by `bin/runway-estimator.js` and some telemetry paths. Doctor was
-> updated; this doc was not. See `.gsd-t/techdebt.md` TD-103.
+---
 
 ## Quick Reference
 
 | Task | Command |
 |------|---------|
 | Install GSD-T | `npx @tekyzinc/gsd-t install` |
-| Check status | `npx @tekyzinc/gsd-t status` |
 | Update GSD-T | `npx @tekyzinc/gsd-t update` |
-| Update all projects | `npx @tekyzinc/gsd-t update-all` |
+| Update GSD-T + all projects | `npx @tekyzinc/gsd-t update-all` |
+| Check installation status | `npx @tekyzinc/gsd-t status` |
 | Diagnose issues | `npx @tekyzinc/gsd-t doctor` |
+| Scaffold a project | `npx @tekyzinc/gsd-t init [project-name]` |
+| Register current dir | `npx @tekyzinc/gsd-t register` |
 | View changelog | `npx @tekyzinc/gsd-t changelog` |
-| Register project | `npx @tekyzinc/gsd-t register` |
-| Publish to npm | `npm publish` (runs `npm test` automatically via prepublishOnly) |
+| Uninstall | `npx @tekyzinc/gsd-t uninstall` |
+| Run unit tests | `npm test` (Node built-in runner; prepublishOnly hook) |
+| Run E2E tests | `npm run e2e` (Playwright - chromium) |
+| Install Playwright | `npm run e2e:install` |
+| Publish to npm | `npm publish` (runs `npm test` first via prepublishOnly) |
 | Headless exec | `gsd-t headless <command> [--json] [--timeout=N] [--log]` |
-| Headless query | `gsd-t headless query <type>` (no LLM, <100ms) |
+| Headless query (no LLM) | `gsd-t headless query <type>` (<100ms, pure file parse) |
+| Code graph index | `gsd-t graph index` |
+| Code graph status | `gsd-t graph status` |
+| Code graph query | `gsd-t graph query <entity>` |
+| Preflight check | `gsd-t preflight [--json]` |
+| Context brief | `gsd-t brief --kind <kind> [--domain <d>]` |
+| Verify gate | `gsd-t verify-gate [--json]` |
+| CI-parity check | `gsd-t ci-parity [--json]` |
+| Build coverage check | `gsd-t build-coverage [--json]` |
+| Test data ledger | `gsd-t test-data --list | --purge --run <id>` |
+| Parallel tasks | `gsd-t parallel [--dry-run] [--domain <d>]` |
+| Workflow path resolver | `gsd-t workflow-path <name>` |
+| Journey coverage | `gsd-t check-coverage [--report] [--strict]` |
+| Doctor (full) | `gsd-t doctor [--prune] [--install-playwright] [--install-hooks] [--install-journey-hook]` |
+| Archive progress log | `node bin/archive-progress.cjs [--project DIR] [--dry-run] [--keep N]` |
+
+---
 
 ## Local Development
 
 ### Setup
+
 ```bash
-# Clone and install
+# Clone the repo
 git clone https://github.com/Tekyz-Inc/get-stuff-done-teams.git
 cd get-stuff-done-teams
 
-# No npm install needed — zero dependencies
-# Test the CLI directly:
+# No npm install needed for runtime - zero runtime dependencies
+# Install dev dependency (Playwright) if running E2E tests:
+npm install
+
+# Test the CLI directly (no build step needed):
 node bin/gsd-t.js status
+node bin/gsd-t.js install
+node bin/gsd-t.js doctor
 ```
 
 ### Testing
+
 ```bash
-# Run automated test suite (205 tests, zero dependencies)
+# Run all unit tests (Node built-in test runner, 78 test files)
 npm test
 
-# Test CLI subcommands manually
-node bin/gsd-t.js install
+# Run E2E tests (Playwright - requires chromium)
+npm run e2e:install   # one-time: install chromium
+npm run e2e           # run E2E suite
+
+# Test specific CLI subcommands manually
 node bin/gsd-t.js status
 node bin/gsd-t.js doctor
 node bin/gsd-t.js init test-project
 
-# Validate command files exist
-ls commands/*.md | wc -l  # Should be 48
-ls templates/*.md | wc -l  # Should be 9
+# Validate command file counts
+ls commands/*.md | wc -l   # 51 command files
+ls templates/stacks/*.md    # stack rule templates
 
-# Test new utility scripts
-node scripts/gsd-t-tools.js validate
-node scripts/gsd-t-tools.js git pre-commit-check
+# Test scan HTML export
+node bin/gsd-t.js scan --export=html
+# Output: scan-report.html (self-contained)
 
-# Test scan visual output
-node bin/gsd-t.js scan --export html
-# Output: scan-report.html (self-contained, no external deps)
+# Test stream feed server (loopback only, port 7842)
+node scripts/gsd-t-stream-feed-server.js --port 7842
 
-# Test dashboard server
-node scripts/gsd-t-dashboard-server.js --port 7433 --detach
-# Browser: http://localhost:7433
-node scripts/gsd-t-dashboard-server.js --stop
+# Test design review server (default port 3456)
+node scripts/gsd-t-design-review-server.js --port 3456 --target http://localhost:5173
+
+# Validate a workflow script path
+node bin/gsd-t.js workflow-path execute
+node bin/gsd-t.js workflow-path verify
 ```
 
-### Scripts
+### Scripts Reference
+
 | Script | Purpose |
 |--------|---------|
-| `scripts/gsd-t-heartbeat.js` | Claude Code hook event logger (JSONL output, secret scrubbing) |
-| `scripts/npm-update-check.js` | Background npm registry version checker (path-validated) |
+| `scripts/gsd-t-heartbeat.js` | Claude Code hook event logger - JSONL output, secret scrubbing |
+| `scripts/gsd-t-auto-route.js` | UserPromptSubmit hook - auto-routes plain text via /gsd in GSD-T projects |
+| `scripts/gsd-t-update-check.js` | SessionStart hook - fetches latest npm version, emits update banners |
 | `scripts/gsd-t-fetch-version.js` | Synchronous npm registry fetch (5s timeout, 1MB limit) |
-| `scripts/gsd-t-tools.js` | State utility CLI — state get/set, validate, list, git check, template read (M13) |
-| `scripts/gsd-t-statusline.js` | Context usage bar + project state for Claude Code statusLine setting (M13) |
-| `scripts/gsd-t-event-writer.js` | Structured JSONL event appender CLI — writes to .gsd-t/events/ (M14) |
-| `scripts/gsd-t-dashboard-server.js` | Zero-dep SSE server for real-time dashboard — port 7433 (M15) |
-| `scripts/gsd-t-auto-route.js` | UserPromptSubmit hook — auto-routes plain text via /gsd in GSD-T projects (M16) |
-| `scripts/gsd-t-update-check.js` | SessionStart hook — fetches latest npm version, auto-updates GSD-T (M16) |
-| `bin/scan-schema.js` | ORM/DB schema detector + extractor — 7 ORM types (M17) |
-| `bin/scan-diagrams.js` | Diagram orchestrator — 6 diagram types, renders to SVG or placeholder (M17) |
-| `bin/scan-report.js` | Self-contained HTML scan report generator (M17) |
-| `bin/scan-export.js` | Export subcommand — DOCX (pandoc) + PDF (md-to-pdf) stubs (M17) |
+| `scripts/gsd-t-tools.js` | State utility CLI - get/set/validate/list/git-check/template-read |
+| `scripts/gsd-t-statusline.js` | Context usage bar + project state for Claude Code statusLine |
+| `scripts/gsd-t-event-writer.js` | Structured JSONL event appender CLI - writes to `.gsd-t/events/` |
+| `scripts/gsd-t-stream-feed-server.js` | WebSocket + SSE server for real-time agent stream (port 7842) |
+| `scripts/gsd-t-dashboard-autostart.cjs` | Dashboard process management - start/stop/check |
+| `scripts/gsd-t-date-guard.js` | PreToolUse hook - blocks Write/Edit with stale timestamps (+-5 min) |
+| `scripts/gsd-t-calibration-hook.js` | Detects compaction events from transcript - updates calibration data |
+| `scripts/gsd-t-compact-detector.js` | Appends compaction JSONL rows to `.gsd-t/metrics/compactions.jsonl` |
+| `scripts/gsd-t-compaction-scanner.js` | Backfills compaction log by scanning transcript history |
+| `scripts/gsd-t-token-aggregator.js` | Aggregates stream-feed JSONL into per-task token-usage.jsonl |
+| `scripts/gsd-t-watch-state.js` | Writes/reads agent watch-state JSON files (atomic write) |
+| `scripts/gsd-t-design-review-server.js` | Design review proxy server with inject overlay (port 3456) |
+| `scripts/npm-update-check.js` | Background npm registry version checker (path-validated) |
+
+### Bin Modules Reference
+
+| Module | Purpose |
+|--------|---------|
+| `bin/gsd-t.js` | Main CLI entry point - install, update, init, status, doctor, graph, headless, etc. |
+| `bin/orchestrator.js` | Design-phase orchestrator - element inventory + build pipeline |
+| `bin/design-orchestrator.js` | Design-to-code build pipeline - elements, widgets, pages |
+| `bin/cli-preflight.cjs` | Preflight gate - branch guard, dirty tree, ports, contract stability |
+| `bin/gsd-t-context-brief.cjs` | Per-spawn context brief generator (11 kinds: execute, verify, qa, etc.) |
+| `bin/gsd-t-verify-gate.cjs` | Track 1+2 verify gate - preflight + parallel CLI substrate |
+| `bin/gsd-t-verify-gate-judge.cjs` | Synthesis judge - merges triad results into VERIFIED / VERIFY-FAILED |
+| `bin/gsd-t-build-coverage.cjs` | CI-parity gate: checks all top-level dirs appear in Dockerfile COPY |
+| `bin/gsd-t-ci-parity.cjs` | CI-parity gate: compares local build config with CI config |
+| `bin/gsd-t-parallel.cjs` | Task parallelism orchestrator - mode-aware gating, fan-out decisions |
+| `bin/parallel-cli.cjs` | Worker pool executor - failFast, SIGTERM/SIGKILL escalation, tee |
+| `bin/parallel-cli-tee.cjs` | Tee streaming helper for parallel-cli output |
+| `bin/gsd-t-task-graph.cjs` | Task dependency graph builder |
+| `bin/gsd-t-file-disjointness.cjs` | File-disjointness safety gate for parallel worker safety |
+| `bin/gsd-t-depgraph-validate.cjs` | Dependency graph validation for task ordering |
+| `bin/gsd-t-test-data-ledger.cjs` | Test data registration/purge ledger for E2E cleanup |
+| `bin/archive-progress.cjs` | Rolls old Decision Log entries out of progress.md into archives |
+| `bin/global-sync-manager.js` | Global cross-project metrics sync to `~/.claude/metrics/` |
+| `bin/patch-lifecycle.js` | Candidate/applied/measured/promoted/graduated patch state machine |
+| `bin/metrics-collector.js` | Task-metrics JSONL writer for `.gsd-t/metrics/task-metrics.jsonl` |
+| `bin/rule-engine.js` | Loads rules from `.gsd-t/metrics/rules.jsonl`, evaluates, creates candidates |
+| `bin/model-selector.js` | Declarative phase-to-model mapping (haiku/sonnet/opus) |
+| `bin/playwright-bootstrap.cjs` | Playwright install + health check library |
+| `bin/ui-detection.cjs` | Detects whether project has a UI layer |
+| `bin/journey-coverage.cjs` | Journey coverage manifest builder |
+| `bin/journey-coverage-cli.cjs` | CLI wrapper for journey-coverage |
+| `bin/graph-cgc.js` | CodeGraphContext (CGC) Neo4j adapter |
+| `bin/graph-indexer.js` | Project file indexer for code graph |
+| `bin/graph-store.js` | Graph index read/write (8 JSON files per project) |
+| `bin/graph-query.js` | Query callers/imports/surfaces via grep fallback |
+| `bin/graph-overlay.js` | Overlays domain/contract metadata onto graph |
+| `bin/graph-parsers.js` | AST parsers for JS/TS/Python call extraction |
+| `bin/advisor-integration.js` | Advisor hook integration |
+| `bin/component-registry.js` | Component registry with atomic JSONL write |
+| `bin/debug-ledger.js` | Debug cycle ledger for headless debug-loop |
+| `bin/scan-*.js` | Scan engine modules (data-collector, schema, schema-parsers, report, report-sections, renderer, export, diagrams, diagrams-generators) |
+| `bin/gsd-t-time-format.cjs` | `localIsoWithOffset()` for POSIX-correct local timestamps |
+| `bin/gsd-t-completion-check.cjs` | Completion status check for milestone gate |
+
+---
 
 ## Distribution
 
 ### npm Package
+
 - **Registry**: https://www.npmjs.com/package/@tekyzinc/gsd-t
-- **Publish**: `npm publish` (requires npm login with Tekyz account)
-- **Version**: Managed in `package.json`, synced to `.gsd-t/progress.md`
+- **Current version**: see `package.json` ("version" field) - track at `~/.claude/.gsd-t-version`
+- **Publish**: `npm publish` (requires npm login with Tekyz account; `prepublishOnly` runs `npm test`)
+- **Zero runtime dependencies** - installer uses only Node.js built-ins
+- **Dev dependency**: `@playwright/test` ^1.55.0 (E2E tests only)
 - **Files shipped**: `bin/`, `commands/`, `scripts/`, `templates/`, `examples/`, `docs/`, `CHANGELOG.md`
 
 ### Installed Locations
+
 | What | Where |
 |------|-------|
-| Slash commands (48 files) | `~/.claude/commands/` |
-| Global config | `~/.claude/CLAUDE.md` |
+| Slash commands (51 files) | `~/.claude/commands/` |
+| Global CLAUDE.md | `~/.claude/CLAUDE.md` |
 | Heartbeat script | `~/.claude/scripts/gsd-t-heartbeat.js` |
+| Update-check script | `~/.claude/scripts/gsd-t-update-check.js` |
+| Auto-route script | `~/.claude/scripts/gsd-t-auto-route.js` |
 | State utility CLI | `~/.claude/scripts/gsd-t-tools.js` |
 | Statusline script | `~/.claude/scripts/gsd-t-statusline.js` |
+| Shared templates | `~/.claude/templates/` |
 | Hook configuration | `~/.claude/settings.json` (hooks section) |
 | Version file | `~/.claude/.gsd-t-version` |
 | Update cache | `~/.claude/.gsd-t-update-check` |
 | Project registry | `~/.claude/.gsd-t-projects` |
+| Global bin tools | `~/.claude/bin/` (see list below) |
 
-## Repository Structure
+**Global bin tools** (copied to `~/.claude/bin/` on install):
 
+| Tool | Purpose |
+|------|---------|
+| `cli-preflight.cjs` | Preflight gate dispatch target |
+| `gsd-t-context-brief.cjs` | Brief generator dispatch target |
+| `gsd-t-verify-gate.cjs` | Verify gate dispatch target |
+| `gsd-t-verify-gate-judge.cjs` | Judge dispatch target |
+| `parallel-cli.cjs` | Parallel worker pool executor |
+| `gsd-t-build-coverage.cjs` | Build coverage check |
+| `gsd-t-ci-parity.cjs` | CI parity check |
+| `parallelism-report.cjs` | Parallelism report generator |
+| `live-activity-report.cjs` | Live activity report generator |
+
+### Installed Hooks (settings.json)
+
+GSD-T registers these hooks in `~/.claude/settings.json`:
+
+| Hook type | Script | Purpose |
+|-----------|--------|---------|
+| `UserPromptSubmit` | `gsd-t-auto-route.js` | Emits `[GSD-T NOW]` clock signal; routes plain text via /gsd in GSD-T project dirs |
+| `SessionStart` | `gsd-t-update-check.js` | Fetches latest npm version; emits `[GSD-T AUTO-UPDATE]` / `[GSD-T UPDATE]` / `[GSD-T]` |
+| `UserPromptSubmit` | `gsd-t-heartbeat.js` | Logs conversation events to `.gsd-t/events/YYYY-MM-DD.jsonl` |
+| `PostToolUse` (dead) | context-meter hook | Installed but non-functional - context meter was retired in M61; hook silently exits 0 |
+| `PreToolUse` | `gsd-t-date-guard.js` | Blocks Write/Edit calls with timestamps drifting >5 min from live clock |
+
+Note: The context-meter PostToolUse hook is still written to settings.json on install (known defect - finding in scan) but silently no-ops since `scripts/gsd-t-context-meter.js` does not exist.
+
+### Figma MCP
+
+Auto-configured during install via `claude mcp add`:
+
+```bash
+# Configured automatically by gsd-t install. To add manually:
+claude mcp add --transport http -s user figma https://mcp.figma.com/mcp
 ```
-get-stuff-done-teams/
-├── bin/gsd-t.js        — CLI installer (~1,438 lines, zero dependencies)
-├── commands/           — 45 slash command files (41 GSD-T + 4 utility)
-├── scripts/            — 5 hook/utility scripts (added gsd-t-tools.js, gsd-t-statusline.js in M13)
-├── templates/          — 9 document templates
-├── examples/           — Reference project structure
-├── docs/               — Methodology + living docs
-├── .gsd-t/             — GSD-T state (self-managed)
-└── package.json        — npm package config
+
+Check current status:
+```bash
+gsd-t doctor
 ```
 
-## Headless Mode (M23)
+---
 
-Headless mode enables non-interactive GSD-T execution for CI/CD pipelines and overnight builds.
+## Project Directory Structure (.gsd-t/)
+
+Each GSD-T project has a `.gsd-t/` state directory created by `gsd-t init`. Key subdirectories:
+
+| Path | Purpose | Committed? |
+|------|---------|-----------|
+| `.gsd-t/progress.md` | Milestone/phase state + decision log | Yes |
+| `.gsd-t/backlog.md` | Backlog items | Yes |
+| `.gsd-t/backlog-settings.md` | Backlog defaults (apps, types) | Yes |
+| `.gsd-t/contracts/` | Domain interface contracts (STABLE/DRAFT) | Yes |
+| `.gsd-t/domains/` | Per-domain scope/tasks/constraints | Yes |
+| `.gsd-t/milestones/` | Completed milestone archives + archive-meta.json | Yes |
+| `.gsd-t/progress-archive/` | Rolled-out decision log entries (NNN-YYYY-MM-DD.md) | Yes |
+| `.gsd-t/techdebt.md` | Tech debt register | Yes |
+| `.gsd-t/scan/` | Deep-scan output (architecture.md, security.md, quality.md, etc.) | Yes |
+| `.gsd-t/events/` | JSONL event stream (YYYY-MM-DD.jsonl, heartbeat writes) | No (gitignored) |
+| `.gsd-t/metrics/` | Task metrics, compaction log, token-usage, rollup | No (gitignored) |
+| `.gsd-t/stream-feed/` | WebSocket frame JSONL (YYYY-MM-DD.jsonl) | No (gitignored) |
+| `.gsd-t/briefs/` | Per-spawn context briefs (ephemera) | No (gitignored) |
+| `.gsd-t/.unattended/` | Supervisor state, PID, run log, stop sentinel | No (gitignored) |
+| `.gsd-t/token-log.md` | Headless exec token log rows | No (gitignored) |
+| `.gsd-t/token-metrics.jsonl` | Legacy M35-era per-spawn token records | No (gitignored) |
+| `.gsd-t/.context-meter-state.json` | Context meter state (retired, kept for compat) | No (gitignored) |
+| `.gsd-t/.last-playwright-pass` | Timestamp of last Playwright pass (pre-commit gate) | No |
+
+---
+
+## Ports and Services
+
+| Service | Default Port | Env Override | Notes |
+|---------|-------------|--------------|-------|
+| Stream Feed Server | 7842 | `GSD_T_STREAM_FEED_PORT` | Loopback only (127.0.0.1) - WebSocket + SSE |
+| Design Review Server | 3456 | `--port` arg | Proxies dev server with inject overlay |
+| Neo4j (graph engine) | 7687 (Bolt) / 7474 (HTTP) | Docker container | Container name: `gsd-t-neo4j` |
+
+---
+
+## Graph Engine (CGC + Neo4j)
+
+The code graph engine is an optional feature for deep code analysis. It requires Docker.
+
+### Setup
+
+```bash
+# Install CGC (CodeGraphContext) - requires Python
+pip install codegraphcontext
+
+# Install/start Neo4j container (done automatically by gsd-t install / gsd-t doctor)
+docker run -d --name gsd-t-neo4j \
+  -p 7474:7474 -p 7687:7687 \
+  -e NEO4J_AUTH=neo4j/gsdt-graph-2026 \
+  --restart unless-stopped \
+  neo4j:5-community
+
+# Configure CGC to point at the container
+cgc config set DEFAULT_DATABASE neo4j
+cgc config set NEO4J_URI bolt://localhost:7687
+cgc config set NEO4J_PASSWORD gsdt-graph-2026
+```
+
+**Security note**: The password `gsdt-graph-2026` is hardcoded in the installer (known defect - see techdebt.md). This is a local-only Neo4j instance but the password is publicly known. For sensitive codebases, change the password after setup:
+
+```bash
+# Change Neo4j password post-install (Neo4j browser at http://localhost:7474)
+# Then update CGC config:
+cgc config set NEO4J_PASSWORD <new-password>
+```
+
+### Container Management
+
+```bash
+# Check container status
+gsd-t doctor
+
+# Start stopped container
+docker start gsd-t-neo4j
+
+# Stop container
+docker stop gsd-t-neo4j
+
+# Check if running
+docker inspect gsd-t-neo4j --format '{{.State.Running}}'
+```
+
+### Graph CLI Usage
+
+```bash
+# Index the current project
+gsd-t graph index
+
+# Check index status
+gsd-t graph status
+
+# Query an entity
+gsd-t graph query MyClass
+
+# Show task domain assignments
+gsd-t graph tasks [table|json]
+```
+
+---
+
+## Secrets and Credentials
+
+**Names only - never store values in docs.**
+
+| Name | Purpose | Where set |
+|------|---------|-----------|
+| `ANTHROPIC_API_KEY` | Token counting / diagnostics only (NOT inference - inference uses Claude Max subscription) | Shell profile or CI secret |
+| `GSD_T_STREAM_FEED_PORT` | Override stream feed server port | Environment |
+| `GSD_T_AGENT_ID` | Agent identity for watch-state files (CLI arg `--agent-id` preferred) | Environment or CLI |
+| Neo4j password | CGC graph engine auth - see security note above | `~/.codegraphcontext/.env` |
+
+**ANTHROPIC_API_KEY** is used only for `count_tokens` diagnostics. All LLM inference uses the Claude Max subscription (local install) - never billed to the API key for build work.
+
+```bash
+# Set in shell profile (optional - only needed for token diagnostics)
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# Verify
+gsd-t doctor
+```
+
+---
+
+## Headless Execution
+
+Headless mode runs GSD-T commands non-interactively via `claude -p` with `--dangerously-skip-permissions`.
 
 ### headless exec
-
-Wraps `claude -p "/gsd-t-{command} {args}"` for unattended execution.
 
 ```bash
 gsd-t headless verify --json --timeout=1200 --log
 gsd-t headless execute --timeout=3600
 gsd-t headless wave --json
+gsd-t headless quick "add error handling to auth module"
 ```
 
 **Flags:**
+
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--json`        | off    | Output structured JSON envelope |
-| `--timeout=N`   | 300s   | Kill process after N seconds |
-| `--log`         | off    | Write output to `.gsd-t/headless-{timestamp}.log` |
+| `--json` | off | Output structured JSON envelope |
+| `--timeout=N` | 300s | Kill process after N seconds |
+| `--log` | off | Write output to `.gsd-t/headless-{timestamp}.log` |
 
 **Exit codes:**
+
 | Code | Meaning |
 |------|---------|
-| 0    | success |
-| 1    | verify-fail (tests or quality gates failed) |
-| 2    | context-budget-exceeded (split the milestone) |
-| 3    | error (claude CLI error or process failure) |
-| 4    | blocked-needs-human (requires manual intervention) |
+| 0 | Success |
+| 1 | Verify-fail (tests or quality gates failed) |
+| 2 | Context-budget-exceeded (split the milestone) |
+| 3 | Error (claude CLI error or process failure) |
+| 4 | Blocked-needs-human (requires manual intervention) |
 
-**JSON envelope shape (--json flag):**
+**JSON envelope shape:**
+
 ```json
 {
   "success": true,
@@ -156,265 +399,238 @@ gsd-t headless wave --json
   "command": "verify",
   "args": [],
   "output": "...",
-  "timestamp": "2026-03-22T10:00:00.000Z",
+  "timestamp": "2026-06-04T10:00:00.000Z",
   "duration": 42150,
-  "logFile": ".gsd-t/headless-1742641200000.log"
+  "logFile": ".gsd-t/headless-1749034800000.log"
 }
 ```
 
 ### headless query
 
-Pure Node.js file parsing — no LLM calls, <100ms response.
+Pure Node.js file parsing - no LLM calls, <100ms.
 
 ```bash
-gsd-t headless query status     # Version, milestone, phase
-gsd-t headless query domains    # Domain list with flags
-gsd-t headless query contracts  # Contract file list
-gsd-t headless query debt       # Tech debt items
-gsd-t headless query context    # Token log summary
-gsd-t headless query backlog    # Backlog items
-gsd-t headless query graph      # Graph index metadata
+gsd-t headless query status      # Version, milestone, phase
+gsd-t headless query domains     # Domain list with flags
+gsd-t headless query contracts   # Contract file list
+gsd-t headless query debt        # Tech debt items
+gsd-t headless query context     # Token log summary
+gsd-t headless query backlog     # Backlog items (note: parse bug - always empty, see techdebt)
+gsd-t headless query graph       # Graph index metadata
 ```
 
 All queries return JSON to stdout.
 
-### CI/CD Integration
+### debug-loop
 
-Example workflow files are in `docs/ci-examples/`:
-- `github-actions.yml` — GitHub Actions workflow with verify + status gate jobs
-- `gitlab-ci.yml` — GitLab CI pipeline with status/verify/report stages
+```bash
+gsd-t headless --debug-loop <command>
+```
 
-**Quick setup for GitHub Actions:**
+Runs up to 20 fix/verify cycles on a failing command. Exits code 0 (fixed), 1 (max iterations), or 4 (escalation needed).
+
+**Known defect**: `spawnClaudeSession` (used by debug-loop) is missing `--dangerously-skip-permissions`, causing all tool use to fail. See techdebt.md.
+
+---
+
+## CI/CD Integration
+
+### GitHub Actions
+
 ```yaml
 - name: GSD-T Verify
-  env:
-    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
   run: gsd-t headless verify --json --timeout=1200
 ```
 
-**Quick setup for GitLab CI:**
+Note: `ANTHROPIC_API_KEY` is optional (token diagnostics only). Inference runs via Claude Max and does not require the API key in CI.
+
+### GitLab CI
+
 ```yaml
 gsd-t-verify:
   script:
     - gsd-t headless verify --json --timeout=1200
-  variables:
-    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
 ```
 
-## Context Meter Setup (M34, v2.75.10+)
+### Pre-commit Hooks (opt-in)
 
-The Context Meter is a PostToolUse hook that measures real context consumption via the Anthropic `count_tokens` API. It is **required** for the `gsd-t-execute`, `gsd-t-wave`, `gsd-t-quick`, `gsd-t-integrate`, and `gsd-t-debug` session-stop gates to work.
+Install via `gsd-t init --install-hooks` or `gsd-t doctor --install-hooks`:
 
-**API key — required**
+| Hook | Script | Status |
+|------|--------|--------|
+| Playwright gate | `scripts/hooks/pre-commit-playwright-gate` | Active |
+| Journey coverage | `scripts/hooks/pre-commit-journey-coverage` | Active |
+| Capture lint | `scripts/hooks/pre-commit-capture-lint` | BROKEN - references retired `gsd-t capture-lint` subcommand (see techdebt) |
+
+**Do not install `pre-commit-capture-lint`** - it will block all commits unconditionally. The `gsd-t capture-lint` subcommand was removed in M61.
+
+---
+
+## Workflow Scripts
+
+Native Workflow scripts live in `templates/workflows/`. Use `gsd-t workflow-path <name>` to resolve the absolute path (required for `Workflow({scriptPath})` calls from consumer projects).
 
 ```bash
-# Shell profile (~/.zshrc, ~/.bashrc, ~/.config/fish/config.fish)
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# Verify
-echo $ANTHROPIC_API_KEY | head -c 10
+# Get absolute path to a workflow script
+gsd-t workflow-path execute
+gsd-t workflow-path verify
+gsd-t workflow-path wave
 ```
 
-Get a key at [https://console.anthropic.com](https://console.anthropic.com). Free tier is sufficient — `count_tokens` is billed per call at negligible cost.
+Available workflow scripts:
 
-**CI/CD**: set `ANTHROPIC_API_KEY` as a secret (`secrets.ANTHROPIC_API_KEY` in GitHub Actions, masked variables in GitLab CI). The existing verify workflow example above already threads the secret through.
+| Script | Purpose |
+|--------|---------|
+| `gsd-t-execute.workflow.js` | Preflight + brief + disjointness + parallel domain workers + integrate + verify-gate |
+| `gsd-t-verify.workflow.js` | Orthogonal triad (code-review + Red Team + QA) + CI-parity + test-data purge |
+| `gsd-t-wave.workflow.js` | Composes execute + verify as sub-workflows |
+| `gsd-t-integrate.workflow.js` | Cross-domain wire-up + light verify-gate |
+| `gsd-t-debug.workflow.js` | 2-cycle diagnose/fix/verify debug loop |
+| `gsd-t-quick.workflow.js` | Preflight + brief + single-task + verify-gate |
+| `gsd-t-phase.workflow.js` | Generic upper-stage runner (partition/plan/discuss/impact/milestone/prd) |
+| `gsd-t-scan.workflow.js` | Volume-scaled deep codebase analysis + dimension files + HTML report |
 
-**Per-project `.env.local` (optional)**: drop `ANTHROPIC_API_KEY=sk-ant-...` into the project's ignored env file and source it in your shell profile if you need per-project keys.
+**Known defect (M71 - CRITICAL)**: All workflow scripts except `gsd-t-scan.workflow.js` use `require('./_lib.js')` at the top level. The native Workflow sandbox does not provide `require` - these crash immediately with `ReferenceError: require is not defined`. Migration to sandbox-native patterns is pending. See techdebt.md.
 
-**Verify with doctor**:
+---
 
-```bash
-npx @tekyzinc/gsd-t doctor
-```
+## Context Meter / Calibration
 
-Expected GREEN output:
+The context meter was retired in M61. The calibration hook (`scripts/gsd-t-calibration-hook.js`) and compaction detector (`scripts/gsd-t-compact-detector.js`) remain active and write to `.gsd-t/metrics/compactions.jsonl`.
 
-```
-Context Meter
-  ✅ API key set (ANTHROPIC_API_KEY)
-  ✅ PostToolUse hook registered in ~/.claude/settings.json
-  ✅ scripts/gsd-t-context-meter.js exists
-  ✅ .gsd-t/context-meter-config.json loads cleanly
-  ✅ count_tokens dry-run: 7 tokens
-```
-
-If any check is RED, doctor exits with code 1.
-
-**Config file** — `.gsd-t/context-meter-config.json`:
+**Context window**: Opus 4.7/4.8 and Sonnet 4.5+ have 1M token context windows. The `templates/context-meter-config.json` template ships with a stale 200K `modelWindowSize` - update per-project configs to 1000000. The calibration hook uses `SAFE_DEFAULT_WINDOW = 1_000_000` correctly.
 
 ```json
 {
   "enabled": true,
-  "apiKeyEnvVar": "ANTHROPIC_API_KEY",
-  "modelWindowSize": 200000,
-  "thresholdPct": 85,
+  "modelWindowSize": 1000000,
+  "thresholdPct": 75,
   "checkFrequency": 1
 }
 ```
 
-**Threshold bands** (M35 v3.0.0 — three bands, lower-bound inclusive):
+---
 
-| Band   | Range    | Orchestrator action                                                              |
-|--------|----------|----------------------------------------------------------------------------------|
-| normal | 0–69%    | Proceed                                                                          |
-| warn   | 70–84%   | Log warning; cue for explicit pause/resume at the next clean boundary            |
-| stop   | ≥85%     | Halt cleanly with resume instruction; command refuses to start if runway crosses |
+## Model Selection
 
-**Zero silent quality degradation.** There is no `downgrade` band and no `conserve` band. Models are **never** swapped at runtime under context pressure — model choice is a plan-time decision made by `bin/model-selector.js`, and quality-critical phases (Red Team, doc-ripple, Design Verify) always run at their designated tier. See `.gsd-t/contracts/token-budget-contract.md` v3.0.0.
+`bin/model-selector.js` maps phases to inference tiers:
 
-**Structural guarantee**: because the runway estimator refuses runs that project past 85% and the stop band fires at 85%, the runtime's 95% native compact is structurally unreachable under healthy operation. `halt_type: native-compact` in `.gsd-t/token-metrics.jsonl` is a defect signal.
+| Phase | Model | Notes |
+|-------|-------|-------|
+| `execute` | sonnet | Domain workers |
+| `verify` / `qa` | sonnet | QA subagent |
+| `red-team` | opus | Adversarial analysis |
+| `design-verify` | opus | Visual comparison |
+| `plan` | sonnet | Note: contract says opus - known divergence (see techdebt) |
+| `integrate` | sonnet | Cross-domain wire-up |
+| `scan` | sonnet | Volume-scaled slices |
+| `debug` | sonnet | Fix cycles |
 
-**Upgrading from pre-M34**: `gsd-t update-all` runs a one-time task-counter retirement migration in every registered project (deletes `bin/task-counter.cjs`, `.gsd-t/task-counter-config.json`, `.gsd-t/.task-counter-state.json`, and the `.gsd-t/.task-counter` file; writes `.gsd-t/.task-counter-retired-v1` marker). After upgrade you **must** set `ANTHROPIC_API_KEY` — doctor will fail otherwise.
+Use `gsd-t doctor` to verify model-selector is loaded correctly.
 
-## Runway-Protected Execution (M35)
+---
 
-M35 adds four components on top of the Context Meter. Together they replace graduated degradation with a pre-flight gate + pause/resume model.
+## Unattended Supervisor
 
-### Per-phase model selection — `bin/model-selector.js`
-
-Declarative rules table mapping each phase (`plan`, `execute`, `red-team`, `doc-ripple`, `design-verify`, `qa`, `integrate`, ...) to a default tier (`haiku`|`sonnet`|`opus`). Complexity signals promoted from the task plan (`cross_module_refactor`, `security_boundary`, `data_loss_risk`, `contract_design`) escalate sonnet→opus. Each command file documents its assignments in a `## Model Assignment` block.
-
-Contract: `.gsd-t/contracts/model-selection-contract.md` v1.0.0
-
-### Pre-flight runway estimator — `bin/runway-estimator.js`
-
-Reads historical per-spawn consumption from `.gsd-t/token-metrics.jsonl` via a three-tier query fallback (exact match on `{command, phase, domain}` → command+phase → command) and produces a confidence-weighted projection of end-of-run `pct`. If the projection would cross `STOP_THRESHOLD_PCT = 85`, the command refuses to start — the interactive session exits cleanly and an autonomous headless continuation is auto-spawned. The user never types `/clear`.
-
-### Headless auto-spawn — `bin/headless-auto-spawn.js`
-
-Detached child-process spawn (`child_process.spawn` with `detached:true`, `stdio:['ignore', fd, fd]`, `child.unref()`). Writes `.gsd-t/headless-sessions/{session-id}.json` with session metadata, polls with `process.kill(pid, 0)` liveness probe (timer `.unref()`-ed), marks `status: completed`, and posts a macOS `osascript` notification when done (graceful no-op on non-darwin). `bin/check-headless-sessions.js` renders the read-back banner on the next `gsd-t-resume` / `gsd-t-status`.
-
-Directory: `.gsd-t/headless-sessions/` — one JSON per session, plus optional `{id}-context.json` and log files.
-
-### Per-spawn token telemetry — retired in M38
-
-Between M35 and M38 GSD-T wrote an 18-field JSONL record per subagent spawn to `.gsd-t/token-metrics.jsonl`. M38 deletes that instrumentation along with the runway estimator and the three-band meter that consumed it; the headless-by-default spawn model doesn't need pre-flight projection, and the single-band meter measures itself directly via the Anthropic count_tokens API. Historical records are preserved in milestone archives but the file is no longer written.
-
-## Metrics CLI — `gsd-t metrics`
-
-Read-only surface onto the token telemetry stream. Backward-compatible with pre-M35 `metrics` output; new flags surface M35 data.
-
-| Flag                  | Output                                                                                 |
-|-----------------------|----------------------------------------------------------------------------------------|
-| (no flag)             | Task telemetry, process ELO, domain health (pre-M35 behavior)                          |
-| `--tokens`            | Per-command / per-phase token usage summary from `.gsd-t/token-metrics.jsonl`          |
-| `--halts`             | Count + breakdown of `halt_type` values — flags any `native-compact` as a defect       |
-| `--context-window`    | Trailing 20-run window of `end_pct` with runway headroom                               |
-| `--cross-project`     | Cross-project ranking (pre-M35, unchanged)                                             |
-
-## `/advisor` escalation convention
-
-When a sonnet-default phase hits a complexity signal that warrants opus (e.g., cross-module refactor detected mid-execution), the command may emit an `/advisor` hook line in its output — a structured suggestion for the orchestrator to escalate the **next** spawn of that phase to opus. This is a plan-time signal, not a runtime swap: the current spawn completes at its assigned tier, and the escalation applies to subsequent work. See `.gsd-t/contracts/model-selection-contract.md` for the hook schema.
-
-## Unattended Supervisor Setup (M36)
-
-The unattended supervisor runs an active GSD-T milestone to completion in a detached OS process — no terminal needed, no human intervention required.
-
-### Quick Start
-
-```bash
-# From within an interactive Claude session:
-/gsd-t-unattended
-
-# From the terminal (detached — returns immediately):
-gsd-t unattended --hours=24 --milestone=M36
-
-# Watch current run status (in-session, 270s tick):
-/gsd-t-unattended-watch
-
-# Request a graceful stop:
-/gsd-t-unattended-stop
-```
-
-### CLI Flags
-
-```
-gsd-t unattended [OPTIONS]
-  --hours=24              Wall-clock cap in hours (default: 24)
-  --max-iterations=200    Worker iteration cap (default: 200)
-  --project=.             Project directory (default: cwd)
-  --branch=AUTO           Branch to run on; AUTO = current non-protected branch
-  --on-done=print         Terminal action: print | merge-commit (merge-commit is v2)
-  --dry-run               Preflight only; no spawn
-  --verbose               Extra log detail
-  --test-mode             Uses stub worker; for CI and smoke tests
-```
-
-### Config File (optional)
-
-`.gsd-t/unattended-config.json` — per-project overrides. Absence = hardcoded defaults.
-
-```json
-{
-  "hours": 24,
-  "maxIterations": 200,
-  "gutterNoProgressIters": 5,
-  "workerTimeoutMs": 3600000,
-  "protectedBranches": ["main", "master", "develop", "trunk"],
-  "dirtyTreeWhitelist": [".gsd-t/.unattended/*", ".gsd-t/events/*.jsonl"]
-}
-```
+The unattended supervisor runs a GSD-T milestone to completion in a detached process. Underlying commands were rearchitected in M61 - `/gsd-t-unattended` and `/gsd-t-unattended-watch` commands reference deleted bin modules and are currently non-functional (see techdebt.md CRITICAL finding). Use the `/loop` skill with native Workflows instead.
 
 ### State Files
 
 | File | Purpose |
 |------|---------|
-| `.gsd-t/.unattended/supervisor.pid` | Integer PID. Exists only while supervisor is alive. |
-| `.gsd-t/.unattended/state.json` | Live state snapshot — status, iter, milestone, lastTick, etc. Full schema in `unattended-supervisor-contract.md`. |
-| `.gsd-t/.unattended/run.log` | Append-only worker stdout+stderr. Never truncated during a run. |
-| `.gsd-t/.unattended/stop` | Sentinel — touching this file requests a graceful stop. |
-| `.gsd-t/.unattended/config.json` | Optional per-project config overrides (same keys as CLI flags). |
+| `.gsd-t/.unattended/supervisor.pid` | Integer PID - exists only while supervisor is alive |
+| `.gsd-t/.unattended/state.json` | Live state snapshot - status, iter, milestone, lastTick |
+| `.gsd-t/.unattended/run.log` | Append-only worker stdout+stderr |
+| `.gsd-t/.unattended/stop` | Sentinel - touching this requests graceful stop |
+| `.gsd-t/.unattended/config.json` | Optional per-project config overrides |
 
-### Required Platform Helpers
+Contract: `.gsd-t/contracts/unattended-supervisor-contract.md` v1.0.0
 
-| Platform | Sleep Prevention | Notifications |
-|----------|-----------------|---------------|
-| macOS | `caffeinate` (built-in) | `osascript` (built-in) |
-| Linux | `systemd-inhibit` or no-op | `notify-send` (install via `apt`/`dnf`) |
-| Windows | NOT supported — see `docs/unattended-windows-caveats.md` | no-op |
+---
 
-macOS and Linux work out of the box on standard installs. Windows can run the supervisor but the machine may sleep mid-run.
+## Progress Log Archival
 
-### Contract
+Old Decision Log entries are rolled out of `progress.md` into numbered archives to keep it lean.
 
-`.gsd-t/contracts/unattended-supervisor-contract.md` v1.0.0 — authoritative state schema, exit-code table, status enum, launch/resume handshakes.
-
-### Troubleshooting
-
-**Supervisor won't start**
-- Check `.gsd-t/.unattended/run.log` for error output
-- Run `gsd-t unattended --dry-run` to run pre-flight checks without spawning
-- Verify no protected branch: `git branch --show-current`
-
-**"Already running" error**
 ```bash
-# Verify supervisor is actually alive:
-kill -0 $(cat .gsd-t/.unattended/supervisor.pid) && echo "alive" || echo "stale PID"
+# Run archival (idempotent)
+node bin/archive-progress.cjs
 
-# If stale, remove PID file:
-rm .gsd-t/.unattended/supervisor.pid
+# Preview without changes
+node bin/archive-progress.cjs --dry-run
 
-# Or request a graceful stop:
-/gsd-t-unattended-stop
-# (or) touch .gsd-t/.unattended/stop
+# Override defaults (keep 5 live, 20 per archive)
+node bin/archive-progress.cjs --keep 10 --per-archive 30
+
+# Target a specific project
+node bin/archive-progress.cjs --project /path/to/project
 ```
 
-**Watch loop stopped firing**
-- Re-invoke `/gsd-t-resume` from a fresh session
-- Step 0 auto-reattach reads `supervisor.pid` — if the supervisor is still alive, it re-enters the watch loop automatically (no manual steps needed)
-
-**Supervisor crashed mid-run**
-- The watch loop detects crash via `kill -0` failure
-- Check `.gsd-t/.unattended/run.log` and final `state.json` for diagnostics
-- Resume normally with `/gsd-t-resume` — the milestone continues from its last checkpoint
+Archives land in `.gsd-t/progress-archive/NNN-YYYY-MM-DD.md`. An `index.md` is rebuilt on each run.
 
 ---
 
 ## Security Notes
 
-- Zero npm dependencies — no supply chain risk
+- Zero npm runtime dependencies - no supply chain risk
 - All file writes check for symlinks first
 - Input validation on project names, versions, session IDs, paths
 - Heartbeat stdin capped at 1MB
-- HTTP requests use HTTPS with timeouts
+- HTTP requests use HTTPS with timeouts (5s for version check)
 - Init operations use exclusive file creation (`{ flag: "wx" }`)
+- Watch-state files: `gsd-t-watch-state.js` uses `--agent-id` to construct file paths - ensure agent IDs contain only alphanumeric/hyphen/underscore characters (path traversal vulnerability in current version, see techdebt)
+- Stream feed POST `/ingest` has no body size limit (denial-of-service risk, see techdebt)
+- Neo4j password is hardcoded in installer (see techdebt) - change after install for sensitive codebases
+- Design review server: `item.id` values from queue files are used unsanitized in file paths (path traversal, see techdebt)
+
+---
+
+## Troubleshooting
+
+**`gsd-t: command not found`**
+
+```bash
+# Install globally
+npm install -g @tekyzinc/gsd-t
+# or use npx
+npx @tekyzinc/gsd-t status
+```
+
+**Hooks not firing**
+
+```bash
+gsd-t doctor
+# Check "Hooks" section output
+# Re-run install if missing:
+npx @tekyzinc/gsd-t install
+```
+
+**Workflow fails with `ReferenceError: require is not defined`**
+
+This is a known CRITICAL defect (M71 migration incomplete). All workflow scripts except `gsd-t-scan.workflow.js` crash in the native Workflow sandbox. See techdebt.md. Workaround: use `/gsd-t-execute` etc. in hand-driven mode via Claude Code slash commands, not via the native `Workflow()` tool directly.
+
+**Neo4j container stopped**
+
+```bash
+docker start gsd-t-neo4j
+# Or check status:
+gsd-t doctor
+```
+
+**Dashboard orphan processes**
+
+```bash
+gsd-t doctor --prune
+```
+
+**Journey coverage pre-commit hook blocks commits**
+
+```bash
+# Check which files are missing coverage
+gsd-t check-coverage --report
+# Or remove the hook from .git/hooks/pre-commit if not needed
+```
+
+**All commits blocked by pre-commit-capture-lint hook**
+
+Remove the hook section from `.git/hooks/pre-commit` - the `gsd-t capture-lint` subcommand was retired in M61 and no longer exists. The hook unconditionally exits 1.

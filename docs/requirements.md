@@ -813,3 +813,229 @@ Supporting contracts (to be written during D1):
 | REQ-M56-D5-02 | New lint check: extend `bin/gsd-t-capture-lint.cjs` (or sibling `bin/gsd-t-stream-json-lint.cjs`) to mechanically reject any `claude -p` / `spawn('claude', …)` invocation without `--output-format stream-json --verbose`. Allowlist (e.g. probe workers measuring envelopes, not progress) lives in lint config (`.gsd-t/lint-config.json` or inline marker comment), not tribal knowledge. Same enforcement model as M41 capture-lint. | m56-d5-stream-json-universality-lint | TBD | planned |
 | REQ-M56-D5-03 | Lint hooked into `scripts/hooks/pre-commit-capture-lint` (or sibling pre-commit hook) so violations block commits. | m56-d5-stream-json-universality-lint | TBD | planned |
 | REQ-M56-VERIFY | Full unit suite ≥ 2487 baseline + new tests for D1 (token-delta recording), D2 (5 new brief kinds), D3 (5 wire-in marker assertions), D4 (2 wire-in marker assertions), D5 (3 gap closures + lint logic + allowlist + pre-commit hook integration). All green. SC1-SC7 measured + recorded. | m56-d6-verify | TBD | planned |
+
+## M57 CI-Parity Verify Gate (complete - v3.27.10)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M57-D1-01 | `bin/gsd-t-build-coverage.cjs::checkBuildCoverage({projectDir, baseRef, headRef})` enumerates new top-level paths added in the milestone commit range; verifies each is referenced by a `COPY`/`ADD` in Dockerfile, an artifact/copy step in cloudbuild.yaml, or a path in .github/workflows/*.yml. Detection is structural (parse source-arg position-by-position), never substring. Returns `{ok, missing[]}`. | m57-d1-build-coverage | T1-T5 | complete |
+| REQ-M57-D1-02 | `gsd-t build-coverage` CLI subcommand and `GLOBAL_BIN_TOOLS` propagation. Failure returns exit 4. `cli-build-coverage-contract.md` v2.0.0 STABLE. | m57-d1-build-coverage | T2 | complete |
+| REQ-M57-D2-01 | `bin/gsd-t-ci-parity.cjs` auto-detects project CI config (cloudbuild.yaml args-positional → .github/workflows run-positional via block-scalar-aware YAML walker → Dockerfile RUN lines → fallback package.json scripts); reproduces the real CI build locally with build caches cleared; auto-runs `docker build` when a Dockerfile is present; `clearBuildCaches` routes every config-derived delete through the containment predicate `resolved.startsWith(root+path.sep) && resolved!==root` (refuses outside-AND-equal-to projectRoot). | m57-d2-ci-parity | T1-T5 | complete |
+| REQ-M57-D2-02 | Both `gsd-t build-coverage` and `gsd-t ci-parity` wired into `commands/gsd-t-verify.md` Step 2.6 as FAIL-blocking gates (failure = verify FAIL, blocks complete-milestone, never warning-only). | m57-wire-in | T6 | complete |
+| REQ-M57-VERIFY | 7 frozen falsification-corpus variants flagged; containment predicate holds; suite 2587 pass / 0 fail. Origin: TimeTracking v1.10.12 post-mortem (verify reported VERIFIED+tagged while Cloud Build failed - new hooks/ dir absent from Dockerfile COPY + noImplicitAny passed warm-cache local tsc). | both | T7 | complete |
+
+## M58 Test Data Cleanup Gate (complete - v3.28.10)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M58-D1-01 | `bin/gsd-t-test-data-ledger.cjs` ships `{appendInsert, listInserts, purgeRunInserts, registerAdapter}` against an append-only JSONL ledger at `.gsd-t/test-data-ledger.jsonl`. 3 built-in adapters under `bin/gsd-t-test-data-adapters/`: `localStorage-key-prefix`, `file-json-array` (atomic write-temp+rename), `sqlite-table-where` (parameterized DELETE with tagged-prefix LIKE guard). Each adapter refuses to delete a record whose id does not start with the ledger row's `taggedPrefix` (defense in depth). CLI `gsd-t test-data --list|--purge --run <id>` (exit 0/4/64). | m58-d1-test-data-ledger | T1-T4 | complete |
+| REQ-M58-D2-01 | `templates/test-helpers/test-data-fixture.ts` ships the Playwright `withTestData()` fixture composing `{PREFIX}_{runId}_{counter}` IDs, reads `GSD_T_VERIFY_RUN_ID`, opt-in `purgePerTest`. Contract: `test-data-tagging-contract.md` v1.0.0 STABLE. | m58-d2-verify-cleanup | T1-T2 | complete |
+| REQ-M58-D2-02 | `commands/gsd-t-verify.md` new Step 4.5 runs `gsd-t test-data --purge --run "$GSD_T_VERIFY_RUN_ID"` after E2E + before VERDICT. Adapter errors cause verify to FAIL (block-promotion semantics). Verify report gains `Test Data Cleanup` line. | m58-d2-verify-cleanup | T3 | complete |
+| REQ-M58-VERIFY | 7/7 SCs PASS. 2649/2649 unit tests (baseline 2587, zero regressions). Red Team 6/6 attacks defended (untagged-id reject, tag-prefix tamper reject, unknown-adapter structured error, SQL injection reject, no stray writes, bad-return-value caught). Contracts: `test-data-ledger-contract.md` + `test-data-tagging-contract.md` v1.0.0 STABLE. | both | T5 | complete |
+
+## M59 Timestamp Precision (complete - v3.29.10)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M59-01 | `bin/gsd-t-time-format.cjs` exports `localIsoWithOffset()` returning local-offset ISO string (`YYYY-MM-DDTHH:MM:SS+-HH:MM`) for use in archive-meta.json::completedAt. Never uses `new Date().toISOString()` (UTC Z) for local-time fields. | m59-time-format | T1 | complete |
+| REQ-M59-02 | `## Date:` frontmatter in progress.md and Completed Milestones table "Completed" cell and Session Log "Date" cell MUST be written as `YYYY-MM-DD HH:MM TZ` from v3.29.10 onward. Pre-existing date-only rows stay unchanged (readers accept both formats). | m59-time-format | T2 | complete |
+| REQ-M59-03 | `scripts/gsd-t-date-guard.js` PreToolUse hook validates timestamps in Write/Edit calls (decision-log entries, filename timestamps, banners, labeled stamps, progress.md table cells) within +-5 minutes of the live system clock. Fails open on internal error. Ignores timestamps that appear in BOTH old_string and new_string (pre-existing context). | m59-time-format | T3 | complete |
+
+## M61 Platform Reconciliation - Native-First GSD-T (complete - v4.0.10)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M61-D1-01 | Retire context-meter/runway machinery obsoleted by native 1M context window: `token-budget.cjs`, `context-meter-config.cjs`, `context-budget-audit.cjs`, `runway-estimator.cjs`, `model-windows.cjs`, context-meter PostToolUse hook, `.context-meter-state.json` plumbing. ~4,133 LOC retired. Stub: `gsd-t-calibration-hook.js` uses `SAFE_DEFAULT_WINDOW = 1_000_000` inline literal. | m61-d1-retire-context-runway | T1-T5 | complete |
+| REQ-M61-D2-01 | Retire the cross-session relay supervisor replaced by native background Workflows + `/loop`: `gsd-t-unattended.cjs`, `-safety.cjs`, `-platform.cjs`, `-heartbeat.cjs`, `supervisor-pid-fingerprint.cjs`, `handoff-lock.cjs`, `headless-auto-spawn.cjs`, `check-headless-sessions.js`, `unattended-watch-format.cjs`, `gsd-t-worker-dispatch.cjs`, `gsd-t-orchestrator-recover.cjs`, the 3 `gsd-t-unattended*` commands. ~8,800 LOC retired. | m61-d2-retire-unattended-relay | T1-T5 | complete |
+| REQ-M61-D3-01 | Retire token-capture/attribution loop: `gsd-t-token-capture.cjs`, `-token-dashboard`, `-backfill`, `-regenerate-log`, `-report-tokens`, `-tool-attribution`, `-tool-cost`, `-in-session-usage`, `-economics`, `metrics-collector`, `gsd-t-capture-lint.cjs`. ~8,840 LOC retired. Stubs: `parallel-cli` captureSpawn pass-through; `parallel.cjs` estimateTaskFootprint zero-footprint. `metrics-collector.js` KEPT (167 LOC, rule-engine consumer). | m61-d3-retire-token-telemetry | T1-T5 | complete |
+| REQ-M61-D4-01 | Retire the custom SSE viewer/dashboard replaced by native `/workflows` + Agent View: `live-activity-report.cjs`, stream-feed cluster, `scripts/gsd-t-dashboard-server.js`, viewer HTML, conversation-capture hooks. ~11,621 LOC retired. KEPT: `scripts/gsd-t-design-review-server.js` (standalone). | m61-d4-retire-viewer-dashboard | T1-T5 | complete |
+| REQ-M61-D5-01 | Retire one-time milestone-proof artifacts with zero live references: m44-proof-measure, m46-iter-proof, m46-worker-proof, m55-substrate-proof, gsd-t-benchmark-orchestrator, gsd-t-parallel-probe, gsd-t-ratelimit-probe(+worker). ~3,632 LOC retired. | m61-d5-retire-proof-scratch | T1-T3 | complete |
+| REQ-M61-D6-01 | Migrate orchestration core to native Workflow scripts. Ship `templates/workflows/_lib.js` with 8 helpers (runPreflight, generateBrief, proveFileDisjointness, runVerifyGate, loadProtocol, readDomainTasks, readScope, detectAndLoadStackRules placeholders). Ship `gsd-t-{execute,verify,wave,integrate,debug,quick,phase}.workflow.js`. Convert 14 command files from prose to thin `Workflow({scriptPath, args})` invokers. | m61-d6-migrate-orchestration | T1-T8 | complete |
+| REQ-M61-D7-01 | KEEP and reframe validation as Workflow stages: Red Team / QA / Design-Verify run as `parallel() agent()` stages, de-duped against `/code-review ultra`. KEEP unchanged: `gsd-t-verify-gate(+judge)`, `gsd-t-ci-parity`, `gsd-t-build-coverage`, `gsd-t-test-data-ledger`, `journey-coverage(+cli)`, `cli-preflight`, `gsd-t-context-brief`, `playwright-bootstrap`/`ui-detection`, scan engine, `rule-engine`, `graph-*`, `archive-progress`, `global-sync-manager`. Ship `orthogonal-validation-contract.md` v1.0.0 STABLE. | m61-d7-keep-validation | T1-T5 | complete |
+| REQ-M61-D8-01 | Doc-ripple and desktop-as-cockpit: rewrite `CLAUDE-global.md` + `CLAUDE-project.md` (drop retired-infra rules, rewrite 3 M55 sections to Workflow framing, add Orthogonal Validation Triad + Desktop as Cockpit + GSD-T Workflows sections). Ship retire-to-native map. No routine build/rebuild/debug/deliver action requires terminal hand-typing. | m61-d8-doc-ripple-cockpit | T1-T5 | complete |
+| REQ-M61-VERIFY | bin/ 37,785 → 19,855 LOC (-17,930 LOC, 47% retired). 8 SCs: SC1 67% of <=12K target, SC2 deferred to M65, SC3 zero new regressions, SC4 deferred to M65, SC5 orthogonal triad shipped, SC6 retire-to-native map written, SC7 cockpit walkthrough (user-driven), SC8 4.8 audit GRUDGING-PASS equivalent. | all | - | complete |
+
+**M61 Non-Functional Requirements:**
+- bin/ LOC target: <=12,000 (37,785 baseline, 67% achieved at M61 completion)
+- Zero new test regressions (41 expected failures from retired-convention tests do not count)
+- Desktop as cockpit: all routine workflow operations executable from the Claude Code desktop app without terminal keystrokes
+
+## M65 Orchestration-Shell Retirement (complete - v4.0.11)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M65-01 | Delete the obsolete M40/M44 orchestration shell the M61 Workflow scripts replaced: `bin/gsd-t-orchestrator.js` + `-worker/-queue/-config.cjs` + `spawn-plan-{writer,status-updater,derive}.cjs`. Inline `mapHeadlessExitCode` (5-code contract + M45 boundary-anchored regexes) into `gsd-t.js`, then delete `headless-exit-codes.cjs`. Remove `case "orchestrate"` dispatch, help line, `PROJECT_BIN_TOOLS` entries, and re-export plumbing. | m65-d1 | T1-T7 | complete |
+| REQ-M65-02 | Delete dependent tests with their subjects (`m40-orchestrator-{config,queue,worker}`, `m44-d8-{spawn-plan-writer,spawn-plan-status-updater,post-commit-hook}`) + post-commit-spawn-plan hooks. KEEP `parallel-cli.cjs` (verify-gate Track-2), `parallel-cli-tee.cjs`, `gsd-t-parallel.cjs` (disjointness prover). | m65-d1 | T5-T6 | complete |
+| REQ-M65-VERIFY | bin/ 22,051 → 20,271 LOC (-1,780). Suite 1361 pass / 23 fail (all M61 carryover) / 3 skip. Zero M65-subject failures. `gsd-t parallel --dry-run` KEEP-canary exit 0. | m65-d1 | T7 | complete |
+
+## M66 Scan Volume-Scaled Workflow Migration (complete - v4.0.13)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M66-01 | NEW `templates/workflows/gsd-t-scan.workflow.js` - volume-scaled native Workflow. Phase: preflight → volume-probe (haiku, derives per-area slice list scaling 1-3 slices tiny to 15-40 slices large) → pipeline(per-slice deep-finder "enumerate not sample" [sonnet] → single verify pass [sonnet]) → synthesis (opus, archive prior + dedup/merge/re-rank + continue TD numbering deterministically via `_parseMaxTd` + `fs.renameSync` collision-safe) → deterministic `bin/scan-*.js` render stage. Budget-aware slice depth. | m66-d1-scan-workflow-migration | T1-T5 | complete |
+| REQ-M66-02 | REWRITE `commands/gsd-t-scan.md` as a thin `Workflow({scriptPath, args})` invoker. Strip all dead references to `autoSpawnHeadless()` and `headless-default-contract v2.0.0`. Synthesis writes the 5 `.gsd-t/scan/*.md` dimension files in the renderer's exact parsed formats before the render stage. Hollow-guard: if `filesScanned===0` after synthesis, halt and report incomplete scan. | m66-d1-scan-workflow-migration | T1-T2 | complete |
+| REQ-M66-VERIFY | Red Team FAIL → GRUDGING-PASS over 2 fix cycles. Zero regressions (1267/0/4 throughout). Patch bump 4.0.12 → 4.0.13. Depth-validation confirmed comparable to 117-item Hilo reference. | m66-d1-scan-workflow-migration | T6 | complete |
+
+## M67 Scan Deep Document Phase (complete - v4.0.14)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M67-01 | Add a deterministic `Document` phase between Synthesis and Render in `gsd-t-scan.workflow.js`. One agent PER DOCUMENT fans out in parallel from the same slices + verified findings, producing: `docs/{architecture,workflows,infrastructure,requirements}.md` + `README.md` (merge, Edit-not-Write on existing files) + the five `.gsd-t/scan/*.md` dimension files (architecture/security/quality/business-rules/contract-drift) in the renderer's parsed formats. | m67-d1-scan-document-stage | T1-T3 | complete |
+| REQ-M67-02 | Before the Document phase fan-out, take a deterministic snapshot of all 5 living docs to `.gsd-t/scan/.doc-backup/` to prevent data loss if the fan-out is interrupted (Destructive Action Guard). The backup dir is gitignored. | m67-d1-scan-document-stage | T2 | complete |
+| REQ-M67-03 | The HTML report grand-total row uses the format `| Grand Total | N files | LOC |` as a table row (not inline prose) so `bin/scan-data-collector.js::parseFilesAndLoc` can correctly parse `filesScanned` without double-counting per-directory subtotals. | m67-d1-scan-document-stage | T3 | complete |
+| REQ-M67-VERIFY | Red Team FAIL (2 HIGH + 1 LOW) → GRUDGING-PASS after 1 fix cycle. Zero regressions (1267/0/4). Patch bump 4.0.13 → 4.0.14. | m67-d1-scan-document-stage | T4 | complete |
+
+## M68 Update-All Retired-Tool Prune (complete - v4.0.15)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M68-01 | `bin/gsd-t.js` adds `DEPRECATED_BIN_STRAY_SIGNATURES` - a per-tool map of VERBATIM shipped-header sentinels (recovered from git history) for the 17 tools retired in M61/M65. `update-all` prunes matching stale `.cjs` files from registered project `~/.claude/bin/` dirs by exact-header match + per-file deletion logging. A user's same-named file is never silently deleted (no substring matching, no bare-name matching). | m68-d1 | T1-T3 | complete |
+| REQ-M68-VERIFY | +5 regression tests. Suite 1267→1272 pass / 0 fail / 4 skip. 273 retired `.cjs` pruned across 21 registered projects. Patch bump 4.0.14 → 4.0.15. | m68-d1 | T4 | complete |
+
+## M69 Workflow scriptPath Resolution (complete - v4.0.16)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M69-01 | New `gsd-t workflow-path <name>` CLI subcommand resolves the absolute path to a named workflow script from the CLI's own PKG_ROOT. Works from any CWD / global install / npx invocation. Avoids relative `templates/workflows/...` paths that only resolve from the GSD-T source repo. | m69-d1-workflow-path | T1-T2 | complete |
+| REQ-M69-02 | All 13 workflow-backed command files instruct resolving the scriptPath via `gsd-t workflow-path <name>` before the Workflow call. No command file hardcodes a relative or absolute path to the workflow scripts. | m69-d1-workflow-path | T3 | complete |
+| REQ-M69-VERIFY | +6 tests (CWD-independence, aliases, all-8 workflows, exit 4/64). Suite 1272→1278 pass / 0 fail / 4 skip. Patch bump 4.0.15 → 4.0.16. | m69-d1-workflow-path | T4 | complete |
+
+## M70 Workflow Invocation Guard (complete - v4.0.17)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M70-01 | `commands/gsd-t-scan.md` must lead with a strong imperative guard: agent's ONLY job is resolve-path + call the Workflow tool. Prose describing workflow internals must be reframed as "background context, NOT a to-do list". Hand-driving the fan-out is explicitly a FAILURE mode. | m70-d1 | T1 | complete |
+| REQ-M70-02 | Equivalent (shorter) guards added to `commands/gsd-t-{execute,verify,wave,integrate,debug}.md` preventing agents from hand-driving these workflows instead of invoking the Workflow tool. The `/gsd` smart router prompt clarified to distinguish "invoke the tool" from "do the work yourself". | m70-d1 | T2-T3 | complete |
+| REQ-M70-VERIFY | +7 regression tests asserting the guard text appears near the top of every workflow-backed command file. Suite 1278→1285 pass / 0 fail / 4 skip. Patch bump 4.0.16 → 4.0.17. | m70-d1 | T4 | complete |
+
+## M71 Runtime-Native Scan Workflow (complete - v4.0.18)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M71-01 | `gsd-t-scan.workflow.js` must run correctly in the native Workflow sandbox which does NOT provide `require`, `module`, `fs`, `path`, `child_process`, `process`, or `spawnSync`. The orchestrator does ZERO I/O; all file reads/writes/git operations happen inside `agent()` subagents that have Bash/Read/Write tools. `args` is received as a JSON STRING and must be parsed with `JSON.parse()`. | m71-d1 | T1-T2 | complete |
+| REQ-M71-02 | `computeSliceCap` provides a deterministic volume-derived backstop preventing runaway fan-out: tiny repos cap at 3 slices, Hilo-scale at ~27, huge repos at 50. Slices are redefined as cohesive sub-domains (not per-file). HTML render stage removed from the workflow (data-loss risk - it overwrote the package's own report). | m71-d1 | T3-T4 | complete |
+| REQ-M71-03 | Enforcement: `test/m71-workflow-runtime-native-lint.test.js` - a lint test asserting that workflow files in the `RUNTIME_NATIVE` list contain no `require(`, `module.exports`, `child_process`, `spawnSync`, `execSync`, `execFileSync`, `process.execPath`, or `fs.*` calls. `RUNTIME_NATIVE` starts with `['gsd-t-scan.workflow.js']` and grows as additional workflows are migrated. | m71-d1 | T5 | complete |
+| REQ-M71-VERIFY | +2 tests (forbidden-globals lint, cap calibration). Acceptance: real sandbox run `wf_da75f310` - status complete, 3 slices (cap held), 22 findings (all planted caught), 11 docs + 5 dimension files + plain-english in correct target. Patch bump 4.0.17 → 4.0.18. | m71-d1 | T6 | complete |
+
+## M72 Scan Dropped-Slice Recovery + Coverage Honesty (complete - v4.0.19)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M72-01 | Each deep-finder slice is retried once on failure (`runFinder` retry). A still-failed slice is flagged `failed: true` in the result - never conflated with a genuinely-empty (clean) scan. Dropped slices are excluded from findings counts. | m72-d1 | T1-T2 | complete |
+| REQ-M72-02 | Deterministic coverage accounting: `failedSlices`, `slicesSucceeded`, `coverageComplete` fields always present. When `failedSlices > 0`, synthesis MUST write a "WARNING: PARTIAL COVERAGE" banner (deterministic, not relying on agent interpretation). Return status downgrades to `complete-partial-coverage`. | m72-d1 | T3 | complete |
+| REQ-M72-03 | Synthesis robustness: incremental section-by-section register write (avoids ~9-minute single-Write stall on large registers). Truncation cap increased from 200KB to 500KB. Resume re-scans only failed slices; cached successful slices are reused. | m72-d1 | T4 | complete |
+| REQ-M72-VERIFY | +4 tests (m72-coverage-accounting). Coverage logic verified by real sandbox diagnostic (failedSlices detected, status downgraded). Patch bump 4.0.18 → 4.0.19. | m72-d1 | T5 | complete |
+
+## M73 Scan Concurrency Throttle (complete - v4.0.20)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M73-01 | A shared 10-slot global counting semaphore (`makeSemaphore`) gates every finder + verifier agent. All slices and findings still fan out via `parallel()` but the gate caps total in-flight at 10 agents, preventing the rate-limit self-infliction caused by ~58 concurrent Sonnet agents. The lone Opus synthesis agent runs after, ungated. | m73-d1 | T1-T2 | complete |
+| REQ-M73-VERIFY | Verified by 2 real sandbox diagnostics: 30-agent and 56-agent probes both measured peakConcurrency=10, never exceeded. Patch bump 4.0.19 → 4.0.20. | m73-d1 | T3 | complete |
+
+## M74 Adaptive Rate-Limit Throttle (complete - v4.0.21)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M74-01 | `makeAdaptiveSemaphore` - a shrinkable/recoverable semaphore wrapping `gatedAgent`. On rate-limit error (detected by: "temporarily limiting requests" / 429 / overloaded / capacity), lowers the concurrency ceiling (10→9→8... floor MIN_CONCURRENT=4), backs off 2s/4s/6s (real setTimeout, not assumed), and RETRIES the same agent (<=4 attempts). Recovers +1 toward initial ceiling every 8 clean completions. Non-rate-limit errors bubble up un-retried. | m74-d1 | T1-T3 | complete |
+| REQ-M74-VERIFY | +5 unit tests (m74-adaptive-throttle). Verified by 3 real sandbox diagnostics: setTimeout resolves verified, adaptive gate lowered 10→5 under 5 injected rate limits completing all 12 items with 0 errors, peak-10 cap holds. Patch bump 4.0.20 → 4.0.21. | m74-d1 | T4 | complete |
+
+## M75 Deterministic Chunked Register Write (complete - v4.0.22)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M75-01 | Separate judgment from writing: bounded dedup agent (small input) → orchestrator deterministically merges/sorts/numbers/formats the register string (no fs, pure string-building) → `fmtChunks` splits into <=30KB chunks that never split a finding item → sequence of bounded write-agents (chunk 0 = Write, remaining chunks = Bash heredoc append). Prevents single-Write truncation on registers exceeding ~165KB. | m75-d1 | T1-T3 | complete |
+| REQ-M75-VERIFY | +4 tests (m75-chunked-register). Verified by real sandbox diagnostics: single-Write truncated to 161/322 items (the bug); chunked write produced all 322 intact with no gaps/dups/truncation across 12 chunks. Patch bump 4.0.21 → 4.0.22. | m75-d1 | T4 | complete |
+
+## M76 ASCII-Clean Register Output (complete - v4.0.24)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M76-01 | `ascii()` sanitizer in `fmtChunks` normalizes non-ASCII punctuation in all user-supplied fields: em-dash and en-dash → plain hyphen, smart/curly quotes → straight ASCII quotes, ellipsis character → `...`. Severity color bullets (🔴🟠🟡🟢) are explicitly KEPT (they render correctly and add value). Doc-phase agents receive "ASCII ONLY for dashes/quotes/ellipsis - keep severity color bullets" instruction. | m76-d1 | T1-T2 | complete |
+| REQ-M76-VERIFY | +5 tests (m76-ascii-clean-register incl. structural guard on fmtChunks literals, bullets-kept assertion, dashes-normalized assertion). Patch bump 4.0.22 → 4.0.24 (v4.0.23 over-corrected by stripping emoji, reverted in same release). | m76-d1 | T3 | complete |
+
+## M77 HTML Report Reads Deep-Scan Table Format (complete - v4.0.25)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M77-01 | `bin/scan-data-collector.js::parseDebtSummary` reads BOTH formats: the legacy prose format ("Critical items: N") AND the deep-scan severity table format (markdown table with severity and count columns). The HTML report tech-debt summary section accurately reflects deep-scan findings. | m77-d1 | T1-T2 | complete |
+| REQ-M77-VERIFY | +4 tests (m77-renderer-table-summary). Patch bump 4.0.24 → 4.0.25. | m77-d1 | T3 | complete |
+
+## M78 Plain-English Grouped + Batched (complete - v4.0.26)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M78-01 | The `techdebt_in_plain_english.md` scan output document groups findings by severity with section headers `## 🔴 Critical`, `## 🟠 High`, `## 🟡 Medium`, `## 🟢 Low`. Severity grouping is keyed by authoritative severity from the TD record (not parsed from agent phrasing). Empty severity levels are omitted. | m78-d1 | T1-T2 | complete |
+| REQ-M78-02 | The Plain-English phase uses a dedicated bounded gated generator fan-out (separate from the main document targets) to handle 300+ entry registers without stalling. Deterministic assembly: severity-sorted findings batched → `## {severity}` section headers → chunk-written by the same M75 chunked-write pattern. | m78-d1 | T3 | complete |
+| REQ-M78-VERIFY | +3 tests (grouped+complete+ordered, no mid-item split, empty-severity omission). Assembly proven in sandbox diagnostic (322 entries, all grouped correctly). Patch bump 4.0.25 → 4.0.26. | m78-d1 | T4 | complete |
+
+## M79 Scan-Report Diagram Quality (complete - v4.0.27)
+
+| REQ-ID | Requirement Summary | Domain | Tasks | Status |
+|--------|---------------------|--------|-------|--------|
+| REQ-M79-01 | `bin/scan-data-collector.js` populates `services`, `layers`, `endpoints`, and `states` from the scan's own document outputs (docs/architecture.md for services/layers/endpoints, docs/workflows.md for state transition chains). Diagram generators consume real codebase data, not hardcoded boilerplate. | m79-d1 | T1-T2 | complete |
+| REQ-M79-02 | `genSystemArchitecture` draws up to 12 real domains from scan data with rounded classDefs. All 5 diagrams rendered with shared `MERMAID_CONFIG` (dark base theme + rounded corners + node padding/spacing) applied via `mmdc -c`, plus `-b transparent`. The Database Schema diagram is suppressed by default (`SUPPRESSED_TYPES`, opt-in via `includeSchemaDiagram` option) because Drizzle schema parsing produces inaccurate results on large repos. | m79-d1 | T3 | complete |
+| REQ-M79-03 | `genSequence` uses `"validate and sanitize"` (unquoted `&` broke the Mermaid sequence parser). `scan.test.js` and `verify-gates.js` reflect the 5-diagrams-by-default contract (schema diagram excluded unless opted-in). | m79-d1 | T4 | complete |
+| REQ-M79-VERIFY | +1 regression test (m79-diagram-quality). Suite 1325/1325 pass. Hilo report regenerated: 5/5 diagrams render, 35 real services, rounded corners present, schema section gone, no placeholders. Patch bump 4.0.26 → 4.0.27. | m79-d1 | T5 | complete |
+
+## Updated Functional Requirements (scan findings - v4.0.27)
+
+The deep scan identified functional deficiencies not captured in previous requirements. These are recorded here for tracking:
+
+| REQ-ID | Requirement | Priority | Status | Finding |
+|--------|-------------|----------|--------|---------|
+| REQ-063 | Context Meter PostToolUse hook - count_tokens API call, state file, fail-open | P1 | SUPERSEDED (M61 retired) | M61 retired context-meter; 1M native window makes this obsolete |
+| REQ-064 | Context Meter config schema | P1 | SUPERSEDED (M61 retired) | M61 retired context-meter; template ships with legacy 200K modelWindowSize |
+| REQ-SCAN-01 | `model-selector.js` must assign `plan` → `opus` (not sonnet); add rules for `impact` (opus), `complete-milestone` (opus), `scan`, `backlog-promote`. Both `bin/model-selector.js` and `.gsd-t/contracts/model-selection-contract.md` must be updated atomically per the Schema Freeze Policy. | P2 | open | Scan finding: model-selection-contract.md vs model-selector.js diverge - `plan` gets sonnet instead of opus |
+| REQ-SCAN-02 | Stack Rules Engine must inject stack rules into Workflow agent() prompts. Add `detectAndLoadStackRules(projectDir)` to `templates/workflows/_lib.js` and thread it into every `agent()` prompt in the Workflow scripts. | P2 | open | Scan finding: Stack rules silently dropped from all post-M61 execute/quick/debug/wave/integrate runs |
+| REQ-SCAN-03 | `parseArgv` in `bin/gsd-t-parallel.cjs` must accumulate repeated `--domain` flags into an array (not last-wins overwrite). `proveFileDisjointness` in `_lib.js` currently passes multiple `--domain` args that are silently discarded. | P1 | open | Scan finding: Multi-domain disjointness gate checks only the last domain - primary safety invariant broken |
+| REQ-SCAN-04 | `_shapeTrack2` in `bin/gsd-t-verify-gate.cjs` must propagate the envelope-level `ok` flag: `track2Ok = !!envelope.ok && workers.every(...)`. Empty workers array (`[].every()` vacuously true) must not produce a false-pass when the parallel substrate threw or returned no results. | P1 | open | Scan finding: verify gate false-passes when runParallel throws or returns empty results |
+| REQ-SCAN-05 | `scripts/gsd-t-watch-state.js` must validate that the constructed `filePath` stays within the `.gsd-t/.watch-state/` directory before calling `_atomicWrite`. Agent-id must be validated against an allowlist regex (alphanumeric, hyphens, underscores only). | P1 | open | Scan finding: agentId path traversal via --agent-id CLI arg or GSD_T_AGENT_ID env var |
+| REQ-SCAN-06 | `bin/scan-schema-parsers.js::parseDrizzle` must scope `colRe` to the matched table block, not the full file content. Each `pgTable`/`mysqlTable`/`sqliteTable` call should be parsed in isolation to prevent cross-table column attribution. | P1 | open | Scan finding: parseDrizzle attributes all columns from all tables to every table |
+| REQ-SCAN-07 | `bin/gsd-t-verify-gate.cjs::_detectDefaultTrack2` must include `playwright.config.mjs` in the Playwright config detection check alongside `.ts`, `.js`, and `.cjs` variants. | P2 | open | Scan finding: ESM playwright configs (playwright.config.mjs) skip E2E in Track 2 |
+| REQ-SCAN-08 | `scripts/gsd-t-update-check.js::fetchLatestVersion` has a syntax error in the inline node -e script (`r.on('data',(c)=>d+=c;` missing closing `)`)- the entire auto-update from SessionStart is broken. Fix: `r.on('data',(c)=>{d+=c});`. | P1 | open | Scan finding: SessionStart auto-update hook always returns null due to syntax error |
+| REQ-SCAN-09 | `scripts/gsd-t-token-aggregator.js::updateTokenLog` column indices must match the actual 11-column token-log.md schema: `parts[10]` for task, `parts[7]` for tokens. Current hardcoded indices (parts[11], parts[8]) are based on a deprecated 12-column format. | P2 | open | Scan finding: updateTokenLog silently no-ops on every call due to column index mismatch |
+| REQ-SCAN-10 | `scripts/gsd-t-token-aggregator.js::writeTokenUsageJsonl` in `runTail()` must overwrite (not append) the JSONL file with the current snapshot. Current append pattern causes unbounded growth with duplicate entries on every group-count change. | P2 | open | Scan finding: tail mode unbounded JSONL growth via unconditional append |
+| REQ-SCAN-11 | `bin/gsd-t-context-brief-kinds/verify.cjs` regex must replace `\Z` (not a valid JS regex escape - treated as literal 'Z') with a proper end-of-string pattern. Currently the Falsifiable Success Criteria section is always empty when it appears last in the charter file (the common case). | P2 | open | Scan finding: verify.cjs \Z in regex - success criteria extraction fails at EOF |
+| REQ-SCAN-12 | `bin/parallel-cli.cjs::_killChild` must return the SIGKILL timer handle and the call sites must store it so `clearTimeout(killTimer)` in the close/exit handlers correctly cancels the pending SIGKILL when the child exits cleanly after SIGTERM. | P2 | open | Scan finding: SIGKILL timer leaks - never cancelled when child exits cleanly after SIGTERM |
+| REQ-SCAN-13 | `contracts-stable.cjs` regex must match the standard ATX heading format `## Status: ACTIVE` in addition to bare `Status: ACTIVE`. The current regex (`^\s*Status\s*:`) does not match lines starting with `##`. | P2 | open | Scan finding: contracts-stable preflight check never matches real progress.md heading format |
+| REQ-SCAN-14 | `bin/gsd-t-verify-gate.cjs` synthesis verdict must have a programmatic post-synthesis guard: if Red Team result has `verdict: 'FAIL'`, downgrade `overallVerdict` to `'VERIFY-FAILED'` unconditionally, regardless of what the synthesis agent returned. | P1 | open | Scan finding: no programmatic enforcement of Red Team FAIL -> VERIFY-FAILED invariant |
+
+## Updated Technical Requirements (v4.0.27)
+
+| ID | Requirement | Metric | Status |
+|----|-------------|--------|--------|
+| TECH-014 | Native Workflow sandbox compliance: workflow scripts in `templates/workflows/` MUST NOT use `require`, `module`, `fs`, `path`, `child_process`, `process`, or `spawnSync`. All I/O must happen inside `agent()` subagents. Enforced by `test/m71-workflow-runtime-native-lint.test.js`. | 0 forbidden globals in RUNTIME_NATIVE list | partial (gsd-t-scan migrated; 6 other workflow scripts still violate) |
+| TECH-015 | Workflow scriptPath must be resolved to absolute path via `gsd-t workflow-path <name>` before calling `Workflow({scriptPath})`. Relative paths only resolve from the GSD-T source repo, not consumer projects. | 100% of command files use workflow-path resolution | complete (M69) |
+| TECH-016 | Zero external npm runtime dependencies for installer and CLI (inherited constraint from TECH-001). All bin/*.cjs modules use only Node.js built-ins. | 0 external deps | complete |
+| TECH-017 | bin/ LOC target <=12,000 lines (from 37,785 at M61 baseline). Current: ~20,271 LOC at v4.0.11. | LOC measured by `wc -l` | in progress (M61 SC1: 67%) |
+
+## Updated Non-Functional Requirements (v4.0.27)
+
+| ID | Requirement | Metric | Status |
+|----|-------------|--------|--------|
+| NFR-010 | Scan register write handles 300+ findings without truncation. Uses chunked-write pattern (<=30KB per chunk, Write first chunk, Bash heredoc append subsequent chunks). No single-Write operation on registers exceeding 165KB. | 322/322 items intact on Hilo register | complete (M75) |
+| NFR-011 | Scan concurrent agent fan-out capped at 10 via global counting semaphore. Rate-limit errors trigger adaptive semaphore reduction (floor MIN_CONCURRENT=4) with retry (<=4 attempts) and gradual recovery. | 0 empty registers from rate-limit self-infliction | complete (M73, M74) |
+| NFR-012 | Deep scan slice count is volume-derived and deterministic (computeSliceCap): tiny repo=3, Hilo-scale=~27, huge=50. Prevents runaway fan-out on large codebases. | cap verified by lint test | complete (M71) |
+| NFR-013 | Scan HTML report renders all 5 diagram types (system architecture, application architecture, workflow, data flow, sequence) from real codebase data. Database schema diagram suppressed by default to prevent inaccurate output from imprecise Drizzle parsing. | 5/5 diagrams render from real data | complete (M79) |
+| NFR-014 | Living-doc updates from scan are non-destructive: Edit-not-Write on existing files. A deterministic snapshot of all 5 living docs is taken to `.gsd-t/scan/.doc-backup/` before the Document-phase fan-out. | 0 data-loss incidents | complete (M67) |
+
+## Test Coverage (updated v4.0.27)
+
+| Requirement / Milestone | Test File | Tests | Status |
+|-------------------------|-----------|-------|--------|
+| REQ-M57-D1, REQ-M57-D2 | test/m57-d1-build-coverage.test.js, test/m57-d2-ci-parity.test.js | 37 | passing |
+| REQ-M58-D1, REQ-M58-D2 | test/m58-d1-*.test.js, test/m58-d2-fixture-helper.test.js | 62 | passing |
+| REQ-M59 | test/m59-time-format.test.js | 8 | passing |
+| REQ-M69 | test/m69-workflow-path.test.js | 6 | passing |
+| REQ-M70 | test/m70-workflow-invocation-guard.test.js | 7 | passing |
+| REQ-M71 | test/m71-slice-cap-algorithm.test.js, test/m71-workflow-runtime-native-lint.test.js | 4 | passing |
+| REQ-M72 | test/m72-coverage-accounting.test.js | 4 | passing |
+| REQ-M73, REQ-M74 | test/m74-adaptive-throttle.test.js | 5 | passing |
+| REQ-M75 | test/m75-chunked-register.test.js | 4 | passing |
+| REQ-M76 | test/m76-ascii-clean-register.test.js | 5 | passing |
+| REQ-M77 | test/m77-renderer-table-summary.test.js | 4 | passing |
+| REQ-M78 | test/m78-plain-english-grouping.test.js | 3 | passing |
+| REQ-M79 | test/m79-diagram-quality.test.js | 1 | passing |
+
+**Total automated tests (v4.0.27)**: 1325 pass / 0 fail / 4 skip. Runner: `node --test` (zero dependencies). E2E: `playwright.config.ts` at project root, `e2e/` directory with journey, viewer, and live-journey specs.

@@ -1,12 +1,12 @@
 # Architecture — GSD-T Framework (@tekyzinc/gsd-t)
 
-## Last Updated: 2026-03-22 (M23 — Headless Mode)
+## Last Updated: 2026-06-04 (Scan #12 deep-doc pass, v4.0.12)
 
-> **Scan #11 note (2026-04-16, v3.11.11)**: this doc is partially stale relative to
-> M34 (Context Meter), M35 (Runway-Protected Execution), M36 (Unattended Supervisor),
-> M37 (Universal Auto-Pause), and the v3.11.11 switch to local token estimation.
-> See `.gsd-t/scan/architecture.md` for the current architecture snapshot and
-> `.gsd-t/techdebt.md` TD-103 for the doc-ripple milestone candidate.
+> **Scan #12 note (2026-06-04, v4.0.12)**: Added M57 CI-parity gate, M58 test-data ledger,
+> M61 Workflow engine (sandbox contract, _lib.js, orthogonal validation triad, stack rules,
+> patch lifecycle), M66/M67 codebase scan redesign, and architecture corrections for
+> critical verified findings (Workflow sandbox crashes, fan-out parallelism disabled,
+> verify-gate false-pass, design-to-code bugs, token aggregator bugs, security findings).
 
 ## System Overview
 
@@ -20,22 +20,27 @@ The framework has no runtime — it is consumed entirely by Claude Code's slash 
 
 ### CLI Installer (bin/gsd-t.js)
 - **Purpose**: Install, update, diagnose, and manage GSD-T across projects
-- **Location**: `bin/gsd-t.js` (1,798 lines, 90+ functions, all ≤ 30 lines)
+- **Location**: `bin/gsd-t.js` (4,000+ lines as of v4.0.12, well past original 200-line target — accepted deviation per zero-dep constraint)
 - **Dependencies**: Node.js built-ins only (fs, path, os, child_process, https, crypto)
-- **Subcommands**: install, update, status, doctor, init, uninstall, update-all, register, changelog, graph (index/status/query), headless (exec/query/--debug-loop)
+- **Subcommands**: install, update, status, doctor, init, uninstall, update-all, register, changelog, graph (index/status/query), headless (exec/query/--debug-loop), parallel, preflight, brief, verify-gate, verify-gate-judge, build-coverage, ci-parity, test-data, query, scan (stub — no-op), setup-playwright, check-coverage, tokens, tool-cost
 - **Organization**: Configuration → Guard section → Helpers → Heartbeat → Commands → Install/Update → Init → Status → Uninstall → Update-All → Doctor → Register → Update Check → Help → Main dispatch
-- **All functions ≤ 30 lines** (M6 refactoring). Largest: `doRegister()` at 30 lines, `summarize()` at 30 lines.
+- **Known dead code**: `installContextMeter`, `configureContextMeterHooks`, `showStatusContextMeter`, and associated constants (~200 lines) - context meter was retired in M61 D1 but these functions are still called in `doInstall`/`doStatus`. The hook silently exits 0 via a guard when script is absent.
+- **Known race**: `doInstall` calls five separate functions each reading/modifying/writing `settings.json` independently (no lock). External writers (Claude Code) can cause hook loss.
 
 ### Slash Commands (commands/*.md)
 - **Purpose**: Define the GSD-T methodology as executable workflows for Claude Code
 - **Location**: `commands/`
-- **Count**: 49 (45 GSD-T workflow + 4 utility: gsd, branch, checkin, Claude-md, global-change) — includes gsd-t-health, gsd-t-pause (M13), gsd-t-reflect (M14), gsd-t-visualize (M15), gsd-t-prd (M16), global-change (M20)
-- **Format**: Pure markdown with step-numbered instructions, team mode blocks, document ripple sections, and $ARGUMENTS terminator
+- **Count**: 51 (as of v4.0.12 — run `ls commands/ | wc -l` for current count; do not hand-maintain)
+- **Format**: Pure markdown with step-numbered instructions, thin Workflow invokers (`Workflow({scriptPath, args})`), document ripple sections, and $ARGUMENTS terminator
+- **Note**: As of M61, command files are THIN INVOKERS - they call `Workflow({scriptPath, args})`. The workflow logic lives in `templates/workflows/*.workflow.js`. The `scriptPath` MUST be resolved to an absolute path via `gsd-t workflow-path <name>` at invoke time.
 
-### Templates (templates/*.md)
-- **Purpose**: Starter files for project initialization
+### Templates (templates/)
+- **Purpose**: Starter files for project initialization + workflow orchestration scripts + subagent prompt protocols
 - **Location**: `templates/`
-- **Count**: 9 (CLAUDE-global, CLAUDE-project, requirements, architecture, workflows, infrastructure, progress, backlog, backlog-settings)
+- **Init templates**: CLAUDE-global, CLAUDE-project, requirements, architecture, workflows, infrastructure, progress, backlog, backlog-settings, design-contract, element-contract, widget-contract, page-contract, shared-services-contract, design-chart-taxonomy, context-meter-config.json
+- **Workflow scripts** (`templates/workflows/`): 9 native Workflow scripts (gsd-t-scan is correctly runtime-native; 7 others are broken pending M71 migration completion)
+- **Subagent protocols** (`templates/prompts/`): qa-subagent.md, red-team-subagent.md, design-verify-subagent.md - loaded by `_lib.loadProtocol(name)`; never inlined into Workflow scripts
+- **Stack rules** (`templates/stacks/`): stack-specific rules injected at spawn time. Universal rules prefixed `_` (e.g. `_security.md`, `_auth.md`, `_markdown.md`). Known: NOT injected into M61 Workflow agents.
 - **Tokens**: `{Project Name}` and `{Date}` replaced during init via `applyTokens()`
 
 ### Hook Scripts (scripts/)
@@ -1064,6 +1069,218 @@ post-wave), color-state thresholds, silent-fail on malformed inputs, Full
 Report markdown sections, and `/api/parallelism*` endpoint shape + 5s
 cache behaviour.
 
+## CI-Parity Gate (M57, v3.27.x+)
+
+`bin/gsd-t-build-coverage.cjs` + `bin/gsd-t-ci-parity.cjs` form the M57 FAIL-blocking gate inside `gsd-t-verify.workflow.js`. They exist because the TimeTracking v1.10.12 incident: a new `hooks/` directory was committed, absent from the Dockerfile COPY stanza, and shipped broken while local verify reported VERIFIED.
+
+**Build Coverage** (`bin/gsd-t-build-coverage.cjs`):
+- Detects new top-level paths added in a milestone commit range that no CI build artifact references.
+- Structurally parses CI config (Dockerfile COPY/ADD, cloudbuild.yaml `steps[].args`, GitHub Actions `jobs.<job>.steps[].run`). No substring matching.
+- `paths whose first segment is node_modules` are never flagged.
+- CLI: `gsd-t build-coverage [--json] [--base REF] [--head REF]`.
+- Contract: `.gsd-t/contracts/build-coverage-contract.md` v1.0.0 STABLE.
+
+**CI Parity** (`bin/gsd-t-ci-parity.cjs`):
+- Reproduces the project's actual CI build locally.
+- Auto-detects CI config in locked precedence: `cloudbuild.yaml` > `.github/workflows/*.yml` > `Dockerfile RUN` > `package.json scripts`.
+- Clears build caches before running so stale incremental artifacts cannot mask regressions (cold-build parity).
+- When a Dockerfile is present, runs `docker build` unconditionally.
+- Contract: `.gsd-t/contracts/ci-parity-contract.md` v1.0.0 STABLE.
+
+Both gates run inside `gsd-t-verify.workflow.js` as FAIL-blocking stages before the orthogonal validation triad. A failed gate produces `VERIFY-FAILED` and blocks milestone promotion.
+
+## Test-Data Ledger (M58, v3.28.x+)
+
+`bin/gsd-t-test-data-ledger.cjs` is an append-only JSONL ledger tracking test data inserted during a Verify run, plus a purge engine that removes those records after the suite completes. Origin: GSD-T-Board v0.1.10 left 2442 orphaned `E2E_*` records in production data after an unattended verify run.
+
+**Adapters** (`bin/gsd-t-test-data-adapters/`):
+- `localStorage-key-prefix.cjs` - purges localStorage keys starting with a registered prefix.
+- `file-json-array.cjs` - removes tagged items from a JSON array file.
+- `sqlite-table-where.cjs` - deletes rows from a SQLite table by id with tag-prefix guard.
+- Custom adapters: `registerAdapter(kind, { purge(...) })` at test setup time.
+
+Each adapter re-validates the tag prefix before deleting (defense in depth). An adapter that refuses or throws causes verify to FAIL (block-promotion semantics).
+
+**Playwright fixture** (`templates/test-helpers/test-data-fixture.ts`):
+```
+export const test = base.extend(withTestData());
+test('...', async ({ testData }) => {
+  const id = testData.tag('E2E_DRAG');
+  await testData.register({ kind: 'localStorage-key-prefix', store: 'app:idea:', id, taggedPrefix: 'E2E_' });
+});
+```
+
+**Purge gate**: `gsd-t-verify.workflow.js` Step 4.5 runs `gsd-t test-data --purge --run "$GSD_T_VERIFY_RUN_ID"`. Contract: `.gsd-t/contracts/test-data-ledger-contract.md` v1.0.0 STABLE.
+
+## GSD-T Workflow Engine (M61, v4.0.10+)
+
+M61 is the major architectural shift: routine GSD-T phases move from Claude-Code-inline markdown steps to native Anthropic Workflow scripts. The Workflow tool is the execution substrate; command files become thin invokers.
+
+### Sandbox Contract (M71 - critical)
+
+The native Workflow runtime exposes EXACTLY: `agent()`, `parallel()`, `pipeline()`, `log()`, `phase()`, `budget`, `args`. It does NOT provide `require`, `module`, `fs`, `path`, `child_process`, or `process`. Using any of those throws `ReferenceError: require is not defined` at runtime. `node --check` validates syntax only and cannot catch this.
+
+**The correctly-migrated workflow**: `templates/workflows/gsd-t-scan.workflow.js` - does zero file I/O in the orchestrator body; all reads/writes happen inside `agent()` stages which have Bash/Read/Write/Grep tools.
+
+**Known debt (CRITICAL)**: `gsd-t-execute.workflow.js`, `gsd-t-verify.workflow.js`, `gsd-t-wave.workflow.js`, `gsd-t-integrate.workflow.js`, `gsd-t-debug.workflow.js`, `gsd-t-quick.workflow.js`, and `gsd-t-phase.workflow.js` all call `require('./_lib.js')` at the top level and crash immediately. The M71 lint test (`test/m71-workflow-runtime-native-lint.test.js`) only guards `gsd-t-scan.workflow.js`; the other six are outside the guard.
+
+### args Normalization (M71)
+
+The Workflow runtime passes `args` as a JSON STRING (not a parsed object). Reading `args.projectDir` directly yields `undefined`. All workflow scripts must normalize first:
+```js
+const _args = (typeof args === "string")
+  ? (() => { try { return JSON.parse(args); } catch (_) { return {}; } })()
+  : (args || {});
+const projectDir = _args.projectDir || ".";
+```
+
+### Workflow Scripts (`templates/workflows/`)
+
+| Script | Status | Purpose |
+|--------|--------|---------|
+| `gsd-t-scan.workflow.js` | Runtime-native (M71 migrated) | Volume-probe + deep-finder fan-out + synthesis + document |
+| `gsd-t-execute.workflow.js` | BROKEN (require at top level) | preflight + brief + disjointness + parallel domain workers + integrate + verify-gate |
+| `gsd-t-verify.workflow.js` | BROKEN (require + child_process) | M57 CI-parity + M58 test-data purge + orthogonal triad |
+| `gsd-t-wave.workflow.js` | BROKEN (unused lib import crashes) | composes execute + verify |
+| `gsd-t-integrate.workflow.js` | BROKEN (require at top level) | cross-domain wire-up + verify-gate |
+| `gsd-t-debug.workflow.js` | BROKEN (require at top level) | 2-cycle diagnose/fix/verify |
+| `gsd-t-quick.workflow.js` | BROKEN (require at top level) | preflight + brief + single-task + verify-gate |
+| `gsd-t-phase.workflow.js` | BROKEN (require at top level) | generic upper-stage runner (partition/plan/discuss/...) |
+
+### _lib.js (`templates/workflows/_lib.js`)
+
+Shared helpers for Workflow scripts. CommonJS (uses `require`, `fs`, `path`, `spawnSync`). These helpers are called from INSIDE `agent()` stages (which are subagent processes that have full Node.js access), NOT at orchestrator top-level (which is the sandbox). Exports:
+
+- `generateBrief({kind, milestone, domain, task, spawnId, projectDir})` - invokes `gsd-t brief` or local `bin/gsd-t-context-brief.cjs`, returns `{ok, briefPath, via}`.
+- `runPreflight({projectDir, checks})` - invokes `gsd-t preflight --json` or local `bin/cli-preflight.cjs`, returns preflight envelope.
+- `proveFileDisjointness({projectDir, domains})` - invokes `gsd-t parallel --dry-run --domain X --domain Y ...` (known bug: last-wins parseArgv discards all but last `--domain`).
+- `runVerifyGate({projectDir, skipUltra, skipUltraReason})` - invokes `gsd-t verify-gate --json`.
+- `loadProtocol(name)` - reads `templates/prompts/{name}-subagent.md` from the installed GSD-T package.
+- `readDomainTasks(projectDir, domain)` - reads `.gsd-t/domains/{domain}/tasks.md`.
+- `readScope(projectDir, domain)` - reads `.gsd-t/domains/{domain}/scope.md`.
+
+Tool resolution: prefers `{projectDir}/bin/<tool>.cjs` (project-local), falls back to `gsd-t` on PATH (preserves M55-D5 project-local-bin invariant).
+
+### Orthogonal Validation Triad
+
+Three non-substitutable validators run as `parallel()` `agent()` stages in `gsd-t-verify.workflow.js`. Per `.gsd-t/contracts/orthogonal-validation-contract.md` v1.0.0 STABLE:
+
+| Validator | Model | Verdict | Skippable |
+|-----------|-------|---------|-----------|
+| `/code-review ultra` - cooperative correctness + cleanup | sonnet | important/nit/pre-existing | Yes (requires `skipUltraReason`; `skipUltra=true` is INELIGIBLE for VERIFIED) |
+| Red Team - adversarial/security/boundaries | opus | `FAIL` (any CRITICAL/HIGH) or `GRUDGING-PASS` | No |
+| QA - test mechanics + shallow-test detection + contract compliance | sonnet | pass/fail | No |
+
+Design verification (4th stage) activates when `.gsd-t/contracts/design-contract.md` or `.gsd-t/contracts/design/` exists. Synthesis merges results without category collapse. Verdict: `VERIFIED` / `VERIFIED-WITH-WARNINGS` / `VERIFY-FAILED`.
+
+**Known bug**: synthesis agent is the sole arbiter with no programmatic guard enforcing Red Team FAIL -> VERIFY-FAILED. A hallucinating synthesis agent could grant VERIFIED despite a Red Team FAIL.
+
+### Stack Rules Engine (M61 SC7)
+
+`bin/rule-engine.js` + `bin/model-selector.js` + `templates/stacks/`.
+
+- `rule-engine.js` - declarative JSONL rules in `.gsd-t/metrics/rules.jsonl`. Evaluates patterns against task-metrics data, manages activation tracking and patch lifecycle. Exports: `getActiveRules`, `evaluateRules`, `getPreMortemRules`, `getPatchTemplate`, `recordActivation`, `flagInactiveRules`, `consolidateRules`.
+- `model-selector.js` - maps GSD-T phases to model tiers (haiku/sonnet/opus). `selectModel({phase})` returns `{model, reason, escalation_hook}`. Contract: `.gsd-t/contracts/model-selection-contract.md` v1.0.0. Known drift: `plan` returns `sonnet` but contract declares `opus`; `impact`, `complete-milestone`, `scan`, `backlog-promote` fall through to sonnet default (unknown phase), contract says opus for first two.
+- `templates/stacks/` - stack-specific rules (react.md, typescript.md, etc.) + universal rules (`_security.md`, `_auth.md`, `_markdown.md`). Detection from `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`. Known: Stack rules are NOT injected into M61 Workflow `agent()` spawns. The injection path (`bin/gsd-t-task-brief.js::detectStack()`) is only called in tests, not by production Workflows.
+
+### Patch Lifecycle (`bin/patch-lifecycle.js`)
+
+Five-stage progression: `candidate` - `applied` - `measured` - `promoted` - `graduated`. Provides auto-improvement feedback loop from rule-engine findings to permanent methodology artifacts. Known bugs:
+- `applyPatch()` and `recordMeasurement()` are never called anywhere (only `createCandidate`, `checkPromotionGate`, `promote`, `graduate` exist in complete-milestone.md). No patch ever leaves `candidate`.
+- `improvement_pct` computed as `(after - before) / |before| * 100` - treats all metrics as higher-is-better. `fix_cycles` (lower is better) never promotes.
+- Graduation unreachable: `recordMeasurement` stops processing after `promote()` sets status to `promoted`; `measured_milestones.length` never grows post-promotion.
+
+### Codebase Scan Engine (M66/M67 redesign)
+
+`templates/workflows/gsd-t-scan.workflow.js` is the ONLY correctly runtime-native Workflow script. Architecture:
+
+```
+preflight(agent) -> volume-probe(agent: sonnet) -> pipeline(deep-finder per slice -> single verify)
+  -> synthesis(agent: opus, archive + write register + git)
+  -> document(parallel per-doc agents: living docs + 5 dimension files + plain-english)
+  -> render(agent: HTML report)
+```
+
+Fan-out: by codebase VOLUME (not fixed 5-teammate count). The probe decides actual slice count via cohesive sub-domain decomposition with a hard VOLUME-DERIVED CAP:
+
+| Size | Cap |
+|------|-----|
+| tiny (5 files) | 3 |
+| mid (300 files) | 10 |
+| large (1809 files / ~1M LOC) | ~27 |
+| huge (10k+ files) | 50 |
+
+`_args.maxSlicesHint` optionally overrides the cap. The orchestrator body does NO I/O - all reads/writes are inside `agent()` stages.
+
+Known bugs in support modules (do not affect scan.workflow.js which calls agents with Bash access):
+- `bin/scan-renderer.js:tryD2()` line 73 writes literal `'app -> db: query'` stub instead of `mmdContent` parameter. D2 fallback always renders wrong content.
+- `bin/scan-schema-parsers.js::parseDrizzle()` - `colRe` runs against full file content instead of per-table block; all columns attributed to every table.
+- `bin/scan-data-collector.js::parseTechDebtItems()` - parses legacy prose format, not the current `### TD-NNN` section format. Tech Debt table in HTML report always empty.
+
+### Design-to-Code Pipeline
+
+`bin/design-orchestrator.js` + `scripts/gsd-t-design-review-server.js`.
+
+- `design-orchestrator.js` - reads design contracts, spawns builder agents, manages review queue. Known bugs: (a) `buildPrompt()` and `buildSingleItemPrompt()` hardcode "Vue 3 + TypeScript" regardless of actual project framework - breaks React/Svelte/Angular; (b) `guessPaths()` hardcodes `.vue` extensions; (c) element auto-correction silently mutates design contract files without user confirmation (Destructive Action Guard violation).
+- `gsd-t-design-review-server.js` - Node.js proxy + review queue server. Known bugs: (a) `/review/api/exclude` endpoint references `reviewQueue` variable that is never declared - throws `ReferenceError` on any exclusion; (b) `proxyRequest()` does not decompress gzip/brotli before string operations - script injection silently fails; (c) `item.id` used in file paths without sanitization - path traversal vulnerability.
+
+### Unattended Mode (M61 Retirement)
+
+The M61 orchestrator-shell retirement removed `bin/headless-auto-spawn.cjs`, `bin/gsd-t-unattended-platform.cjs`, `bin/gsd-t-token-capture.cjs`, `bin/supervisor-pid-fingerprint.cjs`, `bin/event-stream.cjs`, and `bin/unattended-watch-format.cjs`. These are replaced by "Native background Workflows + /loop skill" per CHANGELOG v4.0.10.
+
+Known CRITICAL bugs from this retirement:
+- `commands/gsd-t-unattended.md` and `commands/gsd-t-unattended-watch.md` still reference all five deleted modules. Any invocation throws `MODULE_NOT_FOUND` immediately.
+- `bin/gsd-t-parallel.cjs::runDispatch` at line 553 attempts `require('./headless-auto-spawn.cjs')`, silently catches `MODULE_NOT_FOUND`, and demotes every `fan_out` decision to `sequential`. Fan-out parallelism is permanently disabled in production.
+- `scripts/hooks/pre-commit-capture-lint` invokes `gsd-t capture-lint` (also retired). Any project with this hook installed has ALL commits blocked unconditionally.
+
+### Context Brief (M55 D4 / M56 extension)
+
+`bin/gsd-t-context-brief.cjs` + `bin/gsd-t-context-brief-kinds/` (11 kind collectors).
+
+Kinds: `design-verify`, `discuss`, `execute`, `impact`, `milestone`, `partition`, `plan`, `qa`, `red-team`, `scan`, `verify`. (Contract at `.gsd-t/contracts/context-brief-contract.md` still lists only 6 kinds from M55; not yet updated to reflect M56 additions.)
+
+Fail-closed kinds (throw if required sources missing): `qa`, `red-team`, `design-verify`. `--strict` upgrades fail-open kinds to fail-closed.
+
+Known bug in `verify.cjs` kind collector: regex uses `\Z` (not valid in JS - treated as literal 'Z'). When the Falsifiable Success Criteria section is the LAST section in the charter (the typical layout), the lookahead never matches and `successCriteria` is always empty.
+
+### Real-Time Agent Dashboard (updates post-M55)
+
+Known bugs:
+- `scripts/gsd-t-dashboard-autostart.cjs` references `./gsd-t-dashboard-server.js` at line 132/145. That file does NOT exist in `scripts/`. `require()` throws `MODULE_NOT_FOUND` synchronously. Dashboard autostart feature is completely broken.
+- `scripts/gsd-t-stream-feed-server.js::ingestStream` accumulates incoming bytes with no size limit. Unbounded growth can OOM the server.
+- `encodeWsCloseFrame` encodes payload length directly into `header[1]` without checking the 125-byte RFC 6455 control-frame limit. Malformed close frames sent to clients.
+
+### Token Aggregator (updates)
+
+`scripts/gsd-t-token-aggregator.js` known bugs:
+- `updateTokenLog()` column indices are hardcoded to a 12-column format with a 'Compacted' column that no longer exists. Actual token-log.md has 11 columns. The function has never successfully updated token-log.md since the schema diverged; it is a permanent silent no-op.
+- `runTail()` calls `writeTokenUsageJsonl()` (appendFileSync) on every group-count change. Each call appends ALL current rows - triangular duplication. A session with 10 task groups produces 55 rows instead of 10.
+
+### Watch-State Path Traversal (Security)
+
+`scripts/gsd-t-watch-state.js` line 153 constructs the state file path as `path.join(_stateDir(cwd), agentId + '.json')`. `agentId` comes from `--agent-id` CLI arg or `GSD_T_AGENT_ID` env var with no containment check. An `agentId` of `../../evil` resolves outside `.gsd-t/.watch-state/`. Recommendation: validate `startsWith(path.resolve(stateDir) + path.sep)` and allowlist `[a-zA-Z0-9_-]` characters.
+
+### Update Check Hook
+
+`scripts/gsd-t-update-check.js::fetchLatestVersion()` has a syntax error in the inline `node -e` script at line 40: `r.on('data',(c)=>d+=c;` missing the closing `)` for `r.on()`. Produces `SyntaxError` - always returns `null`. SessionStart hook never emits `[GSD-T AUTO-UPDATE]` or `[GSD-T UPDATE]` signals. The `gsd-t.js` CLI path (using `scripts/gsd-t-fetch-version.js` separately) is unaffected.
+
+### Date Guard (`scripts/gsd-t-date-guard.js`)
+
+PreToolUse hook that blocks Write/Edit calls whose content contains timestamps drifting more than +/-5 minutes from the live system clock. Known false positive: on Write of progress.md containing historical decision-log entries (from `/gsd-t-log` full-reconstruction or `/gsd-t-populate`), the guard blocks writes containing entries dated more than 5 minutes ago.
+
+### Known Architecture Concerns (updated)
+
+1. **Workflow sandbox migration incomplete (CRITICAL)**: Six of seven workflow scripts crash immediately due to `require()` at top level. Only `gsd-t-scan.workflow.js` is correctly runtime-native.
+2. **Fan-out parallelism silently disabled (CRITICAL)**: `gsd-t-parallel.cjs::runDispatch` falls back to sequential on every production call because `headless-auto-spawn.cjs` was retired but the require is still present.
+3. **Multi-domain disjointness gate checks only last domain**: `parseArgv` last-wins bug means `proveFileDisjointness` only checks the last `--domain` argument when called with multiple domains.
+4. **False-pass in verify-gate on runParallel throw**: `[].every()` vacuously returns `true` making `track2.ok = true` even when all CLI tools crashed.
+5. **CLI single-file size**: `bin/gsd-t.js` well over 4,000 lines. Accepted deviation (zero-dep constraint).
+6. **Four-file synchronization**: Any command change requires updating README, GSD-T-README, CLAUDE-global template, and gsd-t-help. Manual process.
+7. **Stack rules not injected into Workflow agents**: Detection logic exists only in the legacy `bin/gsd-t-task-brief.js` path, which is not called by any production Workflow.
+8. **Hardcoded Neo4j password**: `'gsdt-graph-2026'` in `bin/gsd-t.js` lines 1312/1350. Local-only impact but predictable credential.
+9. **`spawnClaudeSession` missing `--dangerously-skip-permissions`**: debug-loop and ledger-compaction headless spawns exit on first tool use.
+10. **`queryBacklog` parses wrong format**: Looks for `| ` table rows; actual backlog.md uses `## N. title` headings. Always returns empty.
+
 ## Planned Architecture Changes (M23-M24)
 
 **M23: Headless Mode**
@@ -1072,13 +1289,6 @@ cache behaviour.
 
 **M24: Docker**
 - Dockerfile + docker-compose for containerized enterprise execution.
-
-## Known Architecture Concerns
-
-1. **CLI single-file size**: bin/gsd-t.js at 1,438 lines exceeds the 200-line convention, but splitting adds complexity for questionable benefit given zero-dependency constraint. Accepted deviation.
-2. **Four-file synchronization**: Any command change requires updating README, GSD-T-README, CLAUDE-global template, and gsd-t-help. Manual process — no automated validation.
-3. **Pre-Commit Gate unenforced**: Mental checklist in CLAUDE.md, not a git hook or CI check.
-4. **Progress.md Decision Log growth**: Unbounded append-only log. May need periodic archival strategy for long-lived projects.
 
 ## M46 Worker Sub-Dispatch
 
