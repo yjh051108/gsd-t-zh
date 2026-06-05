@@ -32,10 +32,20 @@ const FORBIDDEN = [
   /\bfs\.(readFileSync|writeFileSync|existsSync|renameSync|copyFileSync|mkdirSync|statSync|readdirSync|unlinkSync)\b/,
 ];
 
-// _lib.js is a CommonJS helper module (require/fs by design) consumed by the OLD
-// architecture; once workflows are runtime-native they no longer require it. While
-// the migration is in progress, only assert on workflows already migrated.
-const RUNTIME_NATIVE = ["gsd-t-scan.workflow.js"]; // M71: scan first; others follow.
+// M81: ALL workflows are now runtime-native (TD-113 fixed — the other 6 + quick were
+// ported off require("./_lib.js") to inline agent()-wrapped CLI helpers). _lib.js is
+// retired as a workflow dependency (kept only for any non-workflow consumer). Every
+// *.workflow.js must pass the forbidden-globals lint.
+const RUNTIME_NATIVE = [
+  "gsd-t-scan.workflow.js",
+  "gsd-t-execute.workflow.js",
+  "gsd-t-verify.workflow.js",
+  "gsd-t-wave.workflow.js",
+  "gsd-t-integrate.workflow.js",
+  "gsd-t-debug.workflow.js",
+  "gsd-t-phase.workflow.js",
+  "gsd-t-quick.workflow.js",
+];
 
 for (const f of RUNTIME_NATIVE) {
   test(`${f} contains no sandbox-forbidden Node/CommonJS calls`, () => {

@@ -26,7 +26,36 @@ export const meta = {
   ],
 };
 
-const lib = require("./_lib.js");
+// M81: runtime-native helpers (sandbox bans require/fs/child_process/process — the old
+// require("./_lib.js") crashed this workflow on first eval, TD-113). Delegate CLI calls
+// to an agent's Bash; args arrives as a JSON STRING in this runtime. See gsd-t-scan.workflow.js.
+const _args = (typeof args === "string") ? (() => { try { return JSON.parse(args); } catch { return {}; } })() : (args || {});
+const _CLI_ENVELOPE_SCHEMA = {
+  type: "object", required: ["ok", "exitCode"], additionalProperties: true,
+  properties: { ok: { type: "boolean" }, exitCode: { type: "integer" }, envelope: {}, stdout: { type: "string" }, stderr: { type: "string" }, via: { type: "string" } },
+};
+async function runCli(projectDir, subcmd, argv, localBin, label, parseJson = true, phaseNameOpt) {
+  const argStr = (argv || []).map((a) => `'${String(a).replace(/'/g, "'\\''")}'`).join(" ");
+  const prompt = [
+    `Run a GSD-T CLI command for the project at \`${projectDir}\` and report the result. Steps:`,
+    `1. If \`${projectDir}/bin/${localBin}\` exists, run: \`node ${projectDir}/bin/${localBin} ${argStr}\` (set via="local"). Otherwise run: \`gsd-t ${subcmd} ${argStr}\` (set via="global"). Use cwd \`${projectDir}\`.`,
+    `2. Capture exit code (ok = exitCode 0) and stdout/stderr.`,
+    parseJson ? `3. Parse stdout as JSON into \`envelope\` (null if not JSON). Return JSON per the schema.` : `3. Put stdout (trimmed, ≤4000 chars) in \`stdout\`. Return JSON per the schema.`,
+    `Do NOT do any other work. ONLY run this one command and report.`,
+  ].join("\n");
+  const opts = { label, schema: _CLI_ENVELOPE_SCHEMA, model: "haiku" };
+  if (phaseNameOpt) opts.phase = phaseNameOpt;
+  const r = await agent(prompt, opts).catch((e) => ({ ok: false, exitCode: -1, envelope: null, stderr: String(e && e.message), via: "error" }));
+  return r || { ok: false, exitCode: -1, envelope: null, via: "error" };
+}
+async function runPreflight(projectDir, label = "preflight", phaseNameOpt) { return runCli(projectDir, "preflight", ["--json"], "cli-preflight.cjs", label, true, phaseNameOpt); }
+async function generateBrief(projectDir, { kind = "execute", milestone, domain, id, label = "brief", phaseNameOpt } = {}) {
+  const argv = ["--kind", kind, "--spawn-id", id, "--out", `${projectDir}/.gsd-t/briefs/${id}.json`];
+  if (milestone) argv.push("--milestone", milestone);
+  if (domain) argv.push("--domain", domain);
+  const r = await runCli(projectDir, "brief", argv, "gsd-t-context-brief.cjs", label, false, phaseNameOpt);
+  return { ok: r.ok, briefPath: `${projectDir}/.gsd-t/briefs/${id}.json`, via: r.via };
+}
 
 const VALID_PHASES = [
   "partition", "plan", "discuss", "impact",
@@ -45,10 +74,10 @@ const PHASE_RESULT_SCHEMA = {
   },
 };
 
-const projectDir = (args && args.projectDir) || ".";
-const milestone  = (args && args.milestone)  || null;
-const userInput  = (args && args.userInput)  || "";
-const phaseName  = args && args.phase;
+const projectDir = _args.projectDir || ".";
+const milestone  = _args.milestone || null;
+const userInput  = _args.userInput || "";
+const phaseName  = _args.phase;
 
 if (!phaseName || !VALID_PHASES.includes(phaseName)) {
   log(`phase: args.phase must be one of: ${VALID_PHASES.join(", ")}`);
@@ -56,9 +85,9 @@ if (!phaseName || !VALID_PHASES.includes(phaseName)) {
 }
 
 phase("Preflight");
-const pre = lib.runPreflight({ projectDir });
+const pre = await runPreflight(projectDir);
 if (!pre.ok) return { status: "failed", reason: "preflight-failed", preflight: pre.envelope };
-const brief = lib.generateBrief({ kind: phaseName, milestone, projectDir });
+const brief = await generateBrief(projectDir, { kind: phaseName, milestone, id: `${phaseName}-${(milestone || "m").toLowerCase()}` });
 
 phase("Phase");
 const promptByPhase = {

@@ -331,7 +331,7 @@ Canonical scripts:
 - `gsd-t-phase.workflow.js` — generic upper-stage runner (partition / plan / discuss / impact / milestone / prd / design-decompose / doc-ripple)
 - `gsd-t-scan.workflow.js` — preflight → volume-probe → pipeline(per-slice deep finder → single verify) → synthesis → document → render (M66: fans out by codebase VOLUME, not a fixed 5-teammate dimension count; M67: deep document phase deterministically produces the full living-doc set + dimension files, per-doc fan-out)
 
-Shared helpers: `templates/workflows/_lib.js` — `runPreflight`, `generateBrief`, `proveFileDisjointness`, `runVerifyGate`, `loadProtocol`, `readDomainTasks`, `readScope`. Each prefers project-local `bin/<tool>.cjs` and falls back to global `gsd-t` PATH binary (preserves M55-D5 project-local-bin invariant).
+**Runtime-native invariant (M81 — v4.0.29+):** the Workflow sandbox provides ONLY `agent/parallel/pipeline/log/phase/budget/args` — NO `require`/`fs`/`path`/`child_process`/`process`, and `args` arrives as a JSON STRING. Each workflow is self-contained: it `JSON.parse`s `args` and delegates every CLI call (preflight, verify-gate, brief, build-coverage, ci-parity, test-data, disjointness) to inline `async` helpers that run the command via an `agent()`'s Bash (preferring project-local `bin/<tool>.cjs`, else the global `gsd-t` PATH binary) and parse the JSON envelope — preserving the M55-D5 project-local-bin invariant. The old `require("./_lib.js")` pattern threw `ReferenceError` on first eval and silently broke every workflow except scan (TD-113, fixed M81); `_lib.js` is retired as a workflow dependency.
 
 ## Preflight Gate (KEPT from M55)
 

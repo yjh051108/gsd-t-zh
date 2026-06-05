@@ -65,12 +65,47 @@ const INTEGRATE_RESULT_SCHEMA = {
 
 // ───── Script body ──────────────────────────────────────────────────────────
 
-const lib = require("./_lib.js");
-const path = require("path");
+// M81: runtime-native helpers (sandbox bans require/fs/path/child_process/process — the
+// old require("./_lib.js")+require("path") crashed this on first eval, TD-113). CLI calls
+// delegate to an agent's Bash; file reads (scope.md/tasks.md) move INTO the worker agent
+// (it has Read). args arrives as a JSON STRING in this runtime. See gsd-t-scan.workflow.js.
+const _args = (typeof args === "string") ? (() => { try { return JSON.parse(args); } catch { return {}; } })() : (args || {});
+const _CLI_ENVELOPE_SCHEMA = {
+  type: "object", required: ["ok", "exitCode"], additionalProperties: true,
+  properties: { ok: { type: "boolean" }, exitCode: { type: "integer" }, envelope: {}, stdout: { type: "string" }, stderr: { type: "string" }, via: { type: "string" } },
+};
+async function runCli(projectDir, subcmd, argv, localBin, label, parseJson = true, phaseName) {
+  const argStr = (argv || []).map((a) => `'${String(a).replace(/'/g, "'\\''")}'`).join(" ");
+  const prompt = [
+    `Run a GSD-T CLI command for the project at \`${projectDir}\` and report the result. Steps:`,
+    `1. If \`${projectDir}/bin/${localBin}\` exists, run: \`node ${projectDir}/bin/${localBin} ${argStr}\` (set via="local"). Otherwise run: \`gsd-t ${subcmd} ${argStr}\` (set via="global"). Use cwd \`${projectDir}\`.`,
+    `2. Capture exit code (ok = exitCode 0) and stdout/stderr.`,
+    parseJson ? `3. Parse stdout as JSON into \`envelope\` (null if not JSON). Return JSON per the schema.` : `3. Put stdout (trimmed, ≤4000 chars) in \`stdout\`. Return JSON per the schema.`,
+    `Do NOT do any other work. ONLY run this one command and report.`,
+  ].join("\n");
+  const opts = { label, schema: _CLI_ENVELOPE_SCHEMA, model: "haiku" };
+  if (phaseName) opts.phase = phaseName;
+  const r = await agent(prompt, opts).catch((e) => ({ ok: false, exitCode: -1, envelope: null, stderr: String(e && e.message), via: "error" }));
+  return r || { ok: false, exitCode: -1, envelope: null, via: "error" };
+}
+async function runPreflight(projectDir, label = "preflight", phaseName) { return runCli(projectDir, "preflight", ["--json"], "cli-preflight.cjs", label, true, phaseName); }
+async function runVerifyGate(projectDir, label = "verify-gate", phaseName) { return runCli(projectDir, "verify-gate", ["--json"], "gsd-t-verify-gate.cjs", label, true, phaseName); }
+async function proveFileDisjointness(projectDir, domains, label = "disjointness", phaseName) {
+  const argv = ["--dry-run"];
+  for (const d of (domains || [])) { argv.push("--domain", d); }
+  return runCli(projectDir, "parallel", argv, "gsd-t-parallel.cjs", label, false, phaseName);
+}
+async function generateBrief(projectDir, { kind = "execute", milestone, domain, id, label = "brief", phaseName } = {}) {
+  const argv = ["--kind", kind, "--spawn-id", id, "--out", `${projectDir}/.gsd-t/briefs/${id}.json`];
+  if (milestone) argv.push("--milestone", milestone);
+  if (domain) argv.push("--domain", domain);
+  const r = await runCli(projectDir, "brief", argv, "gsd-t-context-brief.cjs", label, false, phaseName);
+  return { ok: r.ok, briefPath: `${projectDir}/.gsd-t/briefs/${id}.json`, via: r.via };
+}
 
-const projectDir = (args && args.projectDir) || ".";
-const milestone  = (args && args.milestone)  || null;
-const domains    = (args && Array.isArray(args.domains) && args.domains) || [];
+const projectDir = _args.projectDir || ".";
+const milestone  = _args.milestone || null;
+const domains    = (Array.isArray(_args.domains) && _args.domains) || [];
 
 if (!milestone) {
   log("execute: no milestone provided — args.milestone is required");
@@ -83,7 +118,7 @@ if (!domains.length) {
 
 phase("Preflight");
 log(`execute: milestone=${milestone}, domains=${domains.length}`);
-const pre = lib.runPreflight({ projectDir });
+const pre = await runPreflight(projectDir);
 if (!pre.ok) {
   log(`preflight FAIL — exitCode=${pre.exitCode}: ${pre.stderr || "(no stderr)"}`);
   return { status: "failed", reason: "preflight-failed", preflight: pre.envelope };
@@ -93,7 +128,7 @@ log(`preflight OK`);
 phase("Disjointness");
 // 4.8-audit fix: scope disjointness to the requested domain set, not the whole project.
 // Without this, an unrelated DRAFT domain elsewhere in the project could flip the result.
-const disj = lib.proveFileDisjointness({ projectDir, domains });
+const disj = await proveFileDisjointness(projectDir, domains);
 if (!disj.ok) {
   log(`disjointness FAIL — exitCode=${disj.exitCode}: ${disj.stderr || disj.stdout}`);
   return { status: "failed", reason: "non-disjoint" };
@@ -105,32 +140,22 @@ const domainResults = await parallel(
   domains.map((domain) => async () => {
     // 4.8-audit fix: per-domain brief (M55-D2 brief-per-spawn semantic) — each worker
     // gets a brief scoped to its own domain so grep-the-brief is most effective.
-    const domBrief = lib.generateBrief({ kind: "execute", milestone, domain, projectDir });
-    const briefRef = domBrief.ok
-      ? domBrief.briefPath
-      : "(brief generation failed — re-walk repo)";
-
-    // 4.8-audit fix: do NOT truncate scope/tasks. The worker is being told to "execute
-    // every task" — silently dropping tail content is a correctness regression. Briefs
-    // are the compression layer; raw scope/tasks must pass whole.
-    const scope = lib.readScope({ projectDir, domain }) || "(scope.md missing)";
-    const tasks = lib.readDomainTasks({ projectDir, domain }) || "(tasks.md missing)";
+    // M81: generated via an awaited agent (sandbox-safe); the worker reads its own
+    // scope.md/tasks.md (it has Read) instead of the orchestrator pre-reading via fs.
+    const domBrief = await generateBrief(projectDir, { kind: "execute", milestone, domain, id: `execute-${(milestone || "m").toLowerCase()}-${domain}`, phaseName: "Domains", label: `brief:${domain}` });
+    const briefRef = domBrief.ok ? domBrief.briefPath : "(brief generation failed — re-walk repo)";
+    const scopePath = `${projectDir}/.gsd-t/domains/${domain}/scope.md`;
+    const tasksPath = `${projectDir}/.gsd-t/domains/${domain}/tasks.md`;
     const prompt = [
       `You are the worker agent for the GSD-T domain \`${domain}\` in milestone \`${milestone}\`.`,
       ``,
-      `Your job: execute every task listed under "## Tasks" in this domain's tasks.md, respecting the file ownership in scope.md.`,
+      `FIRST, read these two files in full (do NOT skip or truncate them):`,
+      `- Scope (your owned files): \`${scopePath}\``,
+      `- Tasks: \`${tasksPath}\``,
+      ``,
+      `Your job: execute every task listed under "## Tasks" in tasks.md, respecting the file ownership in scope.md.`,
       ``,
       `**Brief (REQUIRED READ):** ${briefRef} — if present, grep this JSON first instead of re-reading CLAUDE.md and contracts.`,
-      ``,
-      `**Scope (your owned files):**`,
-      "```",
-      scope,
-      "```",
-      ``,
-      `**Tasks:**`,
-      "```",
-      tasks,
-      "```",
       ``,
       `Constraints:`,
       `- Touch only files in your scope's "Owned Files" list.`,
@@ -194,7 +219,7 @@ if (integrate.status === "failed") {
 }
 
 phase("Verify-Gate");
-const vg = lib.runVerifyGate({ projectDir });
+const vg = await runVerifyGate(projectDir);
 log(`verify-gate exitCode=${vg.exitCode} ok=${vg.ok}`);
 
 return {

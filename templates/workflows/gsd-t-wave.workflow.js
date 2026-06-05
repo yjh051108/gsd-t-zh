@@ -14,11 +14,14 @@ export const meta = {
   ],
 };
 
-const lib = require("./_lib.js");
+// M81: this workflow only composes sub-workflows (execute + verify) — it never used
+// lib.*, but the `require("./_lib.js")` import alone crashed it on first eval in the
+// sandbox (TD-113). Removed. args arrives as a JSON STRING in this runtime, so parse it.
+const _args = (typeof args === "string") ? (() => { try { return JSON.parse(args); } catch { return {}; } })() : (args || {});
 
-const projectDir = (args && args.projectDir) || ".";
-const milestone  = (args && args.milestone)  || null;
-const domains    = (args && args.domains)    || [];
+const projectDir = _args.projectDir || ".";
+const milestone  = _args.milestone || null;
+const domains    = _args.domains || [];
 
 if (!milestone || !domains.length) {
   log("wave: args.milestone and args.domains required");

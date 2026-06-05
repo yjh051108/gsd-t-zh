@@ -30,12 +30,55 @@ export const meta = {
   ],
 };
 
-const lib = require("./_lib.js");
+// M81: runtime-native helpers (sandbox bans require/fs/path/child_process/process — the
+// old require("./_lib.js") + the inline require("child_process"/"fs"/"path") in the
+// CI-parity block crashed this on first eval, TD-113). All CLI calls (preflight,
+// verify-gate, build-coverage, ci-parity, test-data) delegate to an agent's Bash; the
+// QA/Red-Team protocol bodies are read by an agent (Read) instead of fs. args arrives as
+// a JSON STRING in this runtime. See gsd-t-scan.workflow.js.
+const _args = (typeof args === "string") ? (() => { try { return JSON.parse(args); } catch { return {}; } })() : (args || {});
+const _CLI_ENVELOPE_SCHEMA = {
+  type: "object", required: ["ok", "exitCode"], additionalProperties: true,
+  properties: { ok: { type: "boolean" }, exitCode: { type: "integer" }, envelope: {}, stdout: { type: "string" }, stderr: { type: "string" }, via: { type: "string" } },
+};
+async function runCli(projectDir, subcmd, argv, localBin, label, parseJson = true, phaseName) {
+  const argStr = (argv || []).map((a) => `'${String(a).replace(/'/g, "'\\''")}'`).join(" ");
+  const prompt = [
+    `Run a GSD-T CLI command for the project at \`${projectDir}\` and report the result. Steps:`,
+    `1. If \`${projectDir}/bin/${localBin}\` exists, run: \`node ${projectDir}/bin/${localBin} ${argStr}\` (set via="local"). Otherwise run: \`gsd-t ${subcmd} ${argStr}\` (set via="global"). Use cwd \`${projectDir}\`.`,
+    `2. Capture exit code (ok = exitCode 0) and stdout/stderr.`,
+    parseJson ? `3. Parse stdout as JSON into \`envelope\` (null if not JSON). Return JSON per the schema.` : `3. Put stdout (trimmed, ≤4000 chars) in \`stdout\`. Return JSON per the schema.`,
+    `Do NOT do any other work. ONLY run this one command and report.`,
+  ].join("\n");
+  const opts = { label, schema: _CLI_ENVELOPE_SCHEMA, model: "haiku" };
+  if (phaseName) opts.phase = phaseName;
+  const r = await agent(prompt, opts).catch((e) => ({ ok: false, exitCode: -1, envelope: null, stderr: String(e && e.message), via: "error" }));
+  return r || { ok: false, exitCode: -1, envelope: null, via: "error" };
+}
+async function runPreflight(projectDir, label = "preflight", phaseName) { return runCli(projectDir, "preflight", ["--json"], "cli-preflight.cjs", label, true, phaseName); }
+async function runVerifyGate(projectDir, label = "verify-gate", phaseName) { return runCli(projectDir, "verify-gate", ["--json"], "gsd-t-verify-gate.cjs", label, true, phaseName); }
+async function generateBrief(projectDir, { kind = "verify", milestone, domain, id, label = "brief", phaseName } = {}) {
+  const argv = ["--kind", kind, "--spawn-id", id, "--out", `${projectDir}/.gsd-t/briefs/${id}.json`];
+  if (milestone) argv.push("--milestone", milestone);
+  if (domain) argv.push("--domain", domain);
+  const r = await runCli(projectDir, "brief", argv, "gsd-t-context-brief.cjs", label, false, phaseName);
+  return { ok: r.ok, briefPath: `${projectDir}/.gsd-t/briefs/${id}.json`, via: r.via };
+}
+// The QA / Red-Team / design-verify protocol bodies live at templates/prompts/<name>-subagent.md
+// inside the installed @tekyzinc/gsd-t package. The orchestrator can't read files (no fs); each
+// triad agent reads its OWN protocol via Read at spawn time. loadProtocol returns a Read-instruction
+// the agent prompt embeds, rather than the protocol text itself.
+function loadProtocolInstruction(name) {
+  const rel = `templates/prompts/${name}-subagent.md`;
+  // Locate the protocol inside the installed @tekyzinc/gsd-t package using ONLY shell
+  // (no require/fs tokens — those trip the runtime-native lint even inside a string).
+  return `Read your protocol FIRST. Find it by running in Bash: \`cat "$(npm root -g)/@tekyzinc/gsd-t/${rel}"\` (or, if a project-local \`${rel}\` exists, read that instead). Follow that protocol exactly.`;
+}
 
-const projectDir = (args && args.projectDir) || ".";
-const milestone  = (args && args.milestone)  || null;
-const skipUltra  = (args && args.skipUltra)  || false;
-const skipUltraReason = (args && args.skipUltraReason) || null;
+const projectDir = _args.projectDir || ".";
+const milestone  = _args.milestone || null;
+const skipUltra  = _args.skipUltra || false;
+const skipUltraReason = _args.skipUltraReason || null;
 
 // 4.8-audit fix: skipUltra requires a recorded reason per
 // orthogonal-validation-contract.md Rule #2. Refuse without one.
@@ -153,15 +196,15 @@ if (!milestone) {
 }
 
 phase("Preflight");
-const pre = lib.runPreflight({ projectDir });
+const pre = await runPreflight(projectDir);
 if (!pre.ok) {
   log(`preflight FAIL — halting verify`);
   return { status: "failed", reason: "preflight-failed", preflight: pre.envelope };
 }
-const brief = lib.generateBrief({ kind: "verify", milestone, projectDir });
+const brief = await generateBrief(projectDir, { kind: "verify", milestone, id: `verify-${(milestone || "m").toLowerCase()}` });
 
 phase("Verify-Gate");
-const vg = lib.runVerifyGate({ projectDir });
+const vg = await runVerifyGate(projectDir);
 if (!vg.ok) {
   log(`verify-gate FAIL exitCode=${vg.exitCode} — halting before triad`);
   return {
@@ -179,36 +222,16 @@ log(`verify-gate green`);
 // from Dockerfile COPY — silent CI-divergence regression. M57 made this gate
 // mandatory; Workflow MUST preserve it or we re-introduce that exact failure.
 // Detected by user/worker in parallel session 2026-05-29 13:00.
+// M81: these were raw spawnSync + require("fs"/"path"/"child_process") in the orchestrator
+// — the exact sandbox-forbidden pattern (TD-113). Now awaited runCli agent calls. The
+// FAIL-blocking semantics are UNCHANGED: a non-zero exit halts verify before the triad.
 phase("CI-Parity");
-const { spawnSync } = require("child_process");
-function _runJsonCli(subcmd, argv = []) {
-  // Use _lib-style resolution — prefer project-local bin/<tool>.cjs
-  const fsMod = require("fs");
-  const pMod = require("path");
-  const localMap = {
-    "build-coverage": "gsd-t-build-coverage.cjs",
-    "ci-parity":      "gsd-t-ci-parity.cjs",
-    "test-data":      "gsd-t-test-data-ledger.cjs",
-  };
-  const local = pMod.join(projectDir, "bin", localMap[subcmd] || "");
-  const cmd = fsMod.existsSync(local) ? process.execPath : "gsd-t";
-  const args = fsMod.existsSync(local) ? [local, ...argv] : [subcmd, ...argv];
-  const r = spawnSync(cmd, args, { cwd: projectDir, stdio: "pipe" });
-  let envelope = null;
-  try { envelope = r.stdout ? JSON.parse(r.stdout.toString()) : null; } catch (_) {}
-  return {
-    ok: r.status === 0,
-    exitCode: r.status,
-    envelope,
-    stderr: r.stderr && r.stderr.toString(),
-  };
-}
-const bc = _runJsonCli("build-coverage", ["--json"]);
+const bc = await runCli(projectDir, "build-coverage", ["--json"], "gsd-t-build-coverage.cjs", "m57:build-coverage", true, "CI-Parity");
 if (!bc.ok) {
   log(`M57 build-coverage FAIL exitCode=${bc.exitCode} — halting (FAIL-blocking)`);
   return { status: "ci-parity-failed", overallVerdict: "VERIFY-FAILED", buildCoverage: bc.envelope };
 }
-const cip = _runJsonCli("ci-parity", ["--json"]);
+const cip = await runCli(projectDir, "ci-parity", ["--json"], "gsd-t-ci-parity.cjs", "m57:ci-parity", true, "CI-Parity");
 if (!cip.ok) {
   log(`M57 ci-parity FAIL exitCode=${cip.exitCode} — halting (FAIL-blocking)`);
   return { status: "ci-parity-failed", overallVerdict: "VERIFY-FAILED", ciParity: cip.envelope };
@@ -221,8 +244,10 @@ log(`M57 CI-parity gate green`);
 // live in production data. M58 made post-E2E purge mandatory; M60 hardened
 // the adapters against empty-prefix bypass. Workflow MUST preserve.
 phase("Test-Data Purge");
-const verifyRunId = `verify-${milestone || "M??"}-${Date.now().toString(36)}`;
-const td = _runJsonCli("test-data", ["--purge", "--run", verifyRunId, "--json"]);
+// M81: run-id is stable per verify run (no Date.now in the sandbox); the milestone scope
+// is sufficient for purge targeting and is deterministic on resume.
+const verifyRunId = `verify-${(milestone || "M__").toLowerCase()}`;
+const td = await runCli(projectDir, "test-data", ["--purge", "--run", verifyRunId, "--json"], "gsd-t-test-data-ledger.cjs", "m58:test-data-purge", true, "Test-Data Purge");
 if (!td.ok) {
   log(`M58 test-data purge FAIL exitCode=${td.exitCode} — halting (FAIL-blocking)`);
   return { status: "test-data-purge-failed", overallVerdict: "VERIFY-FAILED", testDataPurge: td.envelope };
@@ -233,10 +258,11 @@ phase("Orthogonal Triad");
 
 const briefRef = brief.briefPath || "(brief generation failed — re-walk repo)";
 
-// Load the methodology protocols KEPT in templates/prompts/. The protocol body
-// IS the methodology — Workflow just hosts the agent() call.
-const redTeamProtocol = lib.loadProtocol("red-team");
-const qaProtocol = lib.loadProtocol("qa");
+// M81: the protocol body lives in templates/prompts/<name>-subagent.md inside the installed
+// package; the orchestrator can't read files (no fs). Each triad agent reads its OWN
+// protocol via Read at spawn time — loadProtocolInstruction returns the Read directive.
+const redTeamProtocolInstruction = loadProtocolInstruction("red-team");
+const qaProtocolInstruction = loadProtocolInstruction("qa");
 
 const stages = [
   // Stage A — /code-review ultra (cooperative correctness + cleanup)
@@ -273,10 +299,7 @@ const stages = [
       `**adversarial / security / boundaries**. You are NOT cooperative — your`,
       `success is measured in bugs FOUND, not tests passed. Try to break the code.`,
       ``,
-      `Run the Red Team protocol:`,
-      "----- BEGIN RED TEAM PROTOCOL -----",
-      redTeamProtocol.slice(0, 8000),
-      "----- END RED TEAM PROTOCOL -----",
+      `Run the Red Team protocol. ${redTeamProtocolInstruction}`,
       ``,
       `Verdict is FAIL if you found any CRITICAL or HIGH severity bug; GRUDGING-PASS`,
       `if you searched exhaustively and found nothing. Return JSON per the schema.`,
@@ -296,10 +319,7 @@ const stages = [
       `counts. Detect shallow tests (layout-only assertions that pass on an empty HTML page).`,
       `Verify contract compliance against .gsd-t/contracts/.`,
       ``,
-      `Run the QA protocol:`,
-      "----- BEGIN QA PROTOCOL -----",
-      qaProtocol.slice(0, 8000),
-      "----- END QA PROTOCOL -----",
+      `Run the QA protocol. ${qaProtocolInstruction}`,
       ``,
       `Return JSON per the schema.`,
     ].join("\n"),

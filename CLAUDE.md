@@ -49,7 +49,7 @@ Exact command list: `ls commands/`. Exact stack rule set: `ls templates/stacks/`
 
 **CLI** — ANSI colors via escape codes, zero external deps, sync file APIs, version tracked in `package.json` and `~/.claude/.gsd-t-version`.
 
-**Command files** — pure markdown, no frontmatter, accept `$ARGUMENTS`, step-numbered, thin Workflow invokers (`Workflow({scriptPath, args})`). Include a Document Ripple section listing files the underlying Workflow expects domain workers to update. Validation protocol bodies stay in `templates/prompts/*-subagent.md`; Workflow scripts load them via `_lib.loadProtocol(name)`. Don't inline the protocol.
+**Command files** — pure markdown, no frontmatter, accept `$ARGUMENTS`, step-numbered, thin Workflow invokers (`Workflow({scriptPath, args})`). Include a Document Ripple section listing files the underlying Workflow expects domain workers to update. Validation protocol bodies stay in `templates/prompts/*-subagent.md`; each triad agent reads its own protocol via Read at spawn time (the workflow embeds a Read directive, not the protocol text — the orchestrator has no `fs`). Don't inline the protocol body into the workflow script.
 
 **Templates** — `{Project Name}`, `{Date}`, `{description}` replacement tokens; tables for structured data.
 
@@ -65,9 +65,9 @@ Phase orchestration lives in `templates/workflows/`. Each command file (`command
 - `gsd-t-verify.workflow.js` — orthogonal triad with M57 CI-parity + M58 test-data purge as FAIL-blocking gates
 - `gsd-t-wave.workflow.js`, `-integrate`, `-debug`, `-quick`, `-phase` (generic upper-stage runner)
 
-Shared helpers: `templates/workflows/_lib.js`. Each helper prefers project-local `bin/<tool>.cjs` and falls back to global `gsd-t` PATH binary.
+**Runtime-native invariant (M81 — v4.0.29+):** the Anthropic Workflow sandbox provides ONLY the globals `agent/parallel/pipeline/log/phase/budget/args` — NO `require`/`fs`/`path`/`child_process`/`process`, and `args` arrives as a JSON STRING. Every `*.workflow.js` MUST be self-contained: it `JSON.parse`s `args`, and delegates all CLI calls (preflight, verify-gate, brief, build-coverage, ci-parity, test-data, parallel/disjointness) to inline `async` helpers that run the command via an `agent()`'s Bash (preferring project-local `bin/<tool>.cjs`, falling back to the global `gsd-t` PATH binary) and parse the JSON envelope. The old `require("./_lib.js")` pattern threw `ReferenceError` on first eval — it silently broke every workflow except scan (TD-113). `_lib.js` is retired as a workflow dependency. The M71 lint (`test/m71-workflow-runtime-native-lint.test.js`) enforces this for all 8 workflows.
 
-The brains stay in `bin/`: `gsd-t-file-disjointness.cjs`, `gsd-t-task-graph.cjs`, `gsd-t-context-brief.cjs`, `cli-preflight.cjs`, `gsd-t-verify-gate.cjs`, `gsd-t-verify-gate-judge.cjs`, `gsd-t-build-coverage.cjs`, `gsd-t-ci-parity.cjs`, `gsd-t-test-data-ledger.cjs`, `journey-coverage.cjs`. Workflows invoke them via `lib.*` helpers.
+The brains stay in `bin/`: `gsd-t-file-disjointness.cjs`, `gsd-t-task-graph.cjs`, `gsd-t-context-brief.cjs`, `cli-preflight.cjs`, `gsd-t-verify-gate.cjs`, `gsd-t-verify-gate-judge.cjs`, `gsd-t-build-coverage.cjs`, `gsd-t-ci-parity.cjs`, `gsd-t-test-data-ledger.cjs`, `journey-coverage.cjs`. Workflows invoke them via an `agent()`-wrapped Bash call (the runCli inline helper), never via in-orchestrator `spawnSync`.
 
 ## Validation Protocols (KEPT — methodology layer)
 
@@ -113,7 +113,8 @@ The global gate applies first (see `~/.claude/CLAUDE.md`). Additionally for this
 - NEVER rename a command without updating all 4 reference files above.
 - NEVER modify wave phase sequence without updating wave, README, GSD-T-README in the same commit.
 - NEVER let installer's command count diverge from `commands/` directory reality.
-- NEVER inline validation-subagent protocol bodies into Workflow scripts — `_lib.loadProtocol("qa"|"red-team"|"design-verify")` reads the methodology body from `templates/prompts/`.
+- NEVER inline validation-subagent protocol bodies into Workflow scripts — each triad agent reads its own `templates/prompts/{qa,red-team,design-verify}-subagent.md` via Read at spawn time (the workflow passes a Read directive; the sandboxed orchestrator can't read files).
+- NEVER reintroduce `require`/`fs`/`path`/`child_process`/`process` into a `*.workflow.js` — the sandbox forbids them (TD-113). Delegate CLI calls to an `agent()`'s Bash via the inline runCli helper.
 
 ## Recovery After Interruption
 

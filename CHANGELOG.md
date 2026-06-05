@@ -2,6 +2,21 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.0.29] - 2026-06-05 (M81 Workflows Runtime-Native - patch)
+
+### Fixed - TD-113: 6 of 7 workflows (+ quick) crashed in the Workflow sandbox and had never run
+
+The GSD-T self-scan (Scan #12) and a live NiceNote session both confirmed it: every `*.workflow.js` except `gsd-t-scan` opened with `require("./_lib.js")`, which the Anthropic Workflow sandbox forbids (it provides only `agent/parallel/pipeline/log/phase/budget/args` — no `require`/`fs`/`path`/`child_process`/`process`). Each threw `ReferenceError` on first eval, so the entire orchestration layer — `execute`, `verify`, `wave`, `integrate`, `debug`, `phase`, `quick` — silently fell back to hand-driven runs and never actually executed as workflows.
+
+Ported all 7 to the runtime-native pattern proven on scan in M71/M80: inline `async` helpers that delegate each CLI call (preflight, verify-gate, brief, build-coverage, ci-parity, test-data, parallel/disjointness) to an `agent()`'s Bash — preferring project-local `bin/<tool>.cjs`, falling back to the global `gsd-t` PATH binary — and parse the JSON envelope. `args` is now `JSON.parse`d (it arrives stringified). File reads moved into the agents that have `Read` (worker reads its own scope.md/tasks.md; triad agents read their own protocol from `templates/prompts/`). `verify`'s raw `spawnSync`/`require` CI-parity block and `Date.now()` run-id were replaced; the M57/M58 FAIL-blocking semantics are unchanged.
+
+- `templates/workflows/gsd-t-{execute,verify,wave,integrate,debug,phase,quick}.workflow.js`: runtime-native port.
+- `test/m71-workflow-runtime-native-lint.test.js`: lint now covers all 8 workflows (was scan-only).
+- `test/m81-workflows-runtime-native.test.js`: structural invariants (no `_lib` require, args-string parse, no `spawnSync`/`Date.now`/`Math.random` in orchestrator, FAIL-blocking gates preserved).
+- `CLAUDE.md`, `~/.claude/CLAUDE.md` + `templates/CLAUDE-global.md`: documented the runtime-native invariant; retired `_lib.js` as a workflow dependency.
+
+Proven in the REAL sandbox: `quick` ran end-to-end (verify-gate PASS), `verify` evaluated through its CLI delegations returning a real verify-gate envelope, `execute` evaluated cleanly to its arg-guard — all with zero ReferenceError. Suite 1341/1341 pass.
+
 ## [4.0.28] - 2026-06-04 (M80 Scan Document-Phase Fixes - patch)
 
 ### Fixed - scan workflow crashed at the document phase, then shipped a truncated plain-English doc
