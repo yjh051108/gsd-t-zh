@@ -25,12 +25,12 @@ Capture the design reference from `$ARGUMENTS` (Figma URL / image path). If Figm
   args: {
     phase: "design-decompose",
     projectDir: ".",
-    userInput: "$ARGUMENTS",
-    // M82 Competition Mode (opt-in): `--competition N` (N 2..5) fans out N
-    // parallel decompositions; a blind, different-model, rubric judge (fidelity /
-    // completeness / reuse / simplicity) selects the winner. Useful when a design
-    // is ambiguous or the component boundaries aren't obvious.
-    competition: 1
+    userInput: "$ARGUMENTS"
+    // M84 Competition Mode is AUTOMATIC — do NOT pass `competition` by default.
+    // The workflow probes (opus) and self-decides; it competes when a design is
+    // ambiguous or the element/widget/page boundaries aren't obvious (a blind,
+    // different-model rubric judge picks the winner). Override only on explicit
+    // request: `--no-competition` → 0, `--competition N` (2-5) → N.
   }
 }
 ```

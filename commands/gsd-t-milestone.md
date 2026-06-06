@@ -25,17 +25,17 @@ Read `.gsd-t/progress.md` (current version + completed milestones), `docs/requir
   args: {
     phase: "milestone",
     projectDir: ".",
-    userInput: "$ARGUMENTS",
-    // M82 Competition Mode (opt-in): `--competition N` (N 2..5) fans out N
-    // parallel Self-MoA producers proposing different decomposition strategies
-    // (risk-first / value-first / dependency-first); a blind, different-model,
-    // rubric judge selects the winner. Coupled-thesis → pick-one (no Frankenstein).
-    competition: 1
+    userInput: "$ARGUMENTS"
+    // M84 Competition Mode is AUTOMATIC — do NOT pass `competition` by default.
+    // The workflow probes (opus) and self-decides; milestone decomposition is the
+    // highest-altitude decision, so it competes whenever ≥2 genuinely different
+    // strategies (risk-first / value-first / dependency-first) exist. Override only
+    // on explicit request: `--no-competition` → 0, `--competition N` (2-5) → N.
   }
 }
 ```
 
-**Competition Mode (`--competition N`).** Milestone decomposition is the highest-altitude decision in the system — different strategies are genuinely different. If the user invokes `/gsd-t-milestone --competition 3`, parse N (clamped 2..5) and pass `competition: N`. Because a milestone decomposition is a *coupled thesis*, the judge selects one winner whole (pick-one) and only salvages non-overlapping good line-items from the losers — it never Frankensteins. See `.gsd-t/contracts/competition-mode-contract.md`. Default off.
+**Competition Mode (automatic).** Milestone decomposition auto-competes when the probe finds ≥2 genuinely different strategies. Because a decomposition is a *coupled thesis*, the judge selects one winner whole (pick-one) and salvages only non-overlapping good line-items from the losers — it never Frankensteins. No flag needed; override with `--no-competition` / `--competition N` on explicit request. See `.gsd-t/contracts/competition-mode-contract.md`.
 
 ## Step 3: Interpret the result
 

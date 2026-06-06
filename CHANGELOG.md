@@ -2,6 +2,23 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.3.10] - 2026-06-05 (M84 Auto-Competition - minor)
+
+### Changed - Competition Mode is now AUTOMATIC (was opt-in)
+
+M82 shipped Competition Mode as opt-in (`--competition N`). M84 makes the workflow decide for itself, per the user directive: *"I want the workflow to determine when it's optimal to create a competition."* The economic case (user's): a better artifact produced upstream makes every downstream phase — pre-mortem, execute, verify — cheaper and more likely to pass first time, so the expected downstream savings usually exceed the ~3× upstream cost. Opt-in just means forgetting to use the thing that lowers total cost.
+
+- **Solution-space probe** runs at the start of each eligible phase (partition / milestone / discuss / design-decompose), after brief, before producing. It decides: ≥2 genuinely different viable approaches → compete (3 producers + judge); one obvious answer → single draft.
+- **The probe runs on OPUS, not haiku.** Deciding "are there multiple good approaches?" is high-level reasoning, not a mechanical check — and it gates the whole 3× competition, so a weak probe would forfeit the feature. (User caught this: *"Is Haiku smart enough to make this a judgment?"* — no, it isn't; the probe is opus.)
+- **Biased toward competing**: when uncertain, compete (the asymmetry favors generating options). Probe failure → compete (fail-toward-options).
+- **Partition**: an opus probe makes the pre-produce compete/skip call; the objective file-disjointness oracle still judges the produced candidates (decision = heuristic + bias; selection = objective).
+- **Producer angles are now phase-aware** (`ANGLES_BY_PHASE`) — a discuss/milestone/design producer no longer gets a partition-framed "carve file-disjoint domains" directive (Red Team MEDIUM fix; this latent M82 defect now mattered because competition is the default path).
+- **Overrides** (rarely needed): `competition: N` (2–5) forces N; `competition: 0` / `noCompetition: true` forces off; unset = auto. An unparseable override logs a warning and falls back to auto.
+- `meta.phases` now declares all 7 stages (Preflight / Probe / Compete / Judge / Phase / Finalize / Plan Hardening) — also fixes the M83 cosmetic gap where Plan Hardening wasn't pre-declared.
+- **Verification**: real-sandbox proof — the opus probe ran through the Workflow sandbox and discriminated correctly (wide collaborative-editor scenario → compete, 3 approaches named; narrow copyright-bump → single draft). Adversarial Red Team (Opus, fresh context) GRUDGING-PASS — no CRITICAL/HIGH; state-wiring, overrides, eligibility, probe-failure, cost-bound, runtime-native, and plan-hardening interaction all verified clean. Fixed the 1 MEDIUM (phase-aware angles) + 3 LOWs. Suite 1372/0/4. Minor bump 4.2.10 → 4.3.10.
+- Contract `competition-mode-contract.md` → v2.0.0 (trigger moved opt-in → automatic; judge/selection/invariants unchanged).
+- Origin: NiceNote review — the user observed that competing on the M7 plan would have produced a better plan from the start (fewer pre-mortem blocks, less downstream cost), so competition should be automatic, not a flag to remember.
+
 ## [4.2.10] - 2026-06-05 (M83 Left-Shifted Plan Hardening - minor)
 
 ### Added - Plan-phase hardening: catch dead deliverables and edge cases BEFORE execute

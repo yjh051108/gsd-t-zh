@@ -1,8 +1,26 @@
 # Competition Mode Contract
 
 **Status:** STABLE
-**Version:** 1.0.0
-**Introduced:** M82 (2026-06-05)
+**Version:** 2.0.0
+**Introduced:** M82 (2026-06-05) · **M84 (2026-06-05): competition is now AUTOMATIC, not opt-in**
+
+## M84 amendment — automatic, self-triggering competition
+
+As of M84, Competition Mode is **automatic and default-on** for eligible phases — the workflow decides per-phase whether to compete; you do not pass a flag. Rationale (user directive + the cost logic): a better artifact produced upstream makes every downstream phase (pre-mortem, execute, verify) cheaper and more likely to pass first time, so the expected downstream savings usually exceed the ~3× upstream cost. Making it opt-in just means people forget to use the thing that lowers total cost.
+
+**The decision (solution-space probe).** At the start of an eligible phase (after brief, before producing), the workflow runs a probe:
+- **It runs on OPUS, not haiku.** Deciding "are there ≥2 genuinely different viable approaches?" is high-level reasoning, not a mechanical check — a weak probe forfeits the whole feature (it gates the 3× competition). `runSolutionSpaceProbe` (subjective phases) and `runPartitionProbe` (partition) both use `model: "opus"`.
+- **It is BIASED TOWARD COMPETING.** When uncertain, or when even two plausibly-different approaches exist, it competes — the asymmetry favors generating options.
+- **Probe failure → compete** (fail-toward-options).
+- For **partition**, the opus probe makes the pre-produce compete/skip decision; the objective file-disjointness oracle still JUDGES the produced candidates (decision = heuristic + bias; selection = objective).
+
+**When it fires:** 3 producers + judge (the research elbow). **Overrides** (rarely needed): `competition: N` (2–5) forces N; `competition: 0` or `noCompetition: true` forces off; unset = the workflow decides. Producer **angles are phase-aware** (`ANGLES_BY_PHASE`) so a discuss/milestone producer isn't handed a partition-framed directive.
+
+The rest of this contract (judge, selection policy, artifact classes, invariants) is unchanged — only the *trigger* moved from opt-in to automatic.
+
+---
+
+## (original v1.0.0 — M82)
 
 ## Purpose
 

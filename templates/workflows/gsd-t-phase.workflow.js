@@ -37,8 +37,13 @@ export const meta = {
   name: "gsd-t-phase",
   description: "Generic upper-stage phase runner (partition/plan/discuss/etc.)",
   phases: [
-    { title: "Preflight", detail: "preflight + brief" },
-    { title: "Phase",     detail: "primary agent with phase-specific protocol" },
+    { title: "Preflight",      detail: "preflight + brief" },
+    { title: "Probe",          detail: "M84 auto-competition solution-space probe (opus; eligible phases only)" },
+    { title: "Compete",        detail: "M82/M84 N parallel producers (when competition fires)" },
+    { title: "Judge",          detail: "select/synthesize the winning candidate" },
+    { title: "Phase",          detail: "primary agent (or finalizer) with phase-specific protocol" },
+    { title: "Finalize",       detail: "commit the winning approach (competition path)" },
+    { title: "Plan Hardening", detail: "M83 traceability gate + adversarial pre-mortem (plan phase only)" },
   ],
 };
 
@@ -128,8 +133,76 @@ async function runCompetitionJudge(projectDir, spec, label = "judge", phaseNameO
 }
 
 // Phases where competition pays off (wide solution space, pre-contract, high blast
-// radius). A competition arg on any other phase is ignored (single producer runs).
+// radius). Competition is AUTOMATIC on these (M84) — the workflow probes the
+// solution space and self-decides; on any other phase it never runs.
 const COMPETITION_ELIGIBLE = new Set(["partition", "milestone", "discuss", "design-decompose"]);
+
+// M84: the solution-space probe. Decides AUTOMATICALLY whether a phase is
+// competition-worthy (≥2 genuinely different viable approaches). This is a
+// high-level reasoning step — NOT a mechanical check — so it runs on OPUS, not
+// haiku (a weak probe forfeits the whole point: it gates a 3× competition whose
+// upstream cost buys down far larger downstream cost). It is BIASED TOWARD
+// COMPETING: when uncertain, compete — because a better artifact upstream makes
+// every downstream phase (pre-mortem, execute, verify) cheaper and more likely to
+// pass first time, so the expected savings usually exceed the 3× probe-and-produce
+// cost. Returns { compete: bool, reason, approaches? }.
+//
+// Partition has its OWN probe (runPartitionProbe, also opus): the disjointness
+// oracle can't decide before candidates exist, so an opus probe makes the
+// compete/skip call and the oracle JUDGES the candidates afterward. This
+// (runSolutionSpaceProbe) is for the other subjective phases.
+const _PROBE_SCHEMA = {
+  type: "object", required: ["compete"], additionalProperties: true,
+  properties: {
+    compete: { type: "boolean" },
+    reason: { type: "string" },
+    approaches: { type: "array", items: { type: "string" } },
+  },
+};
+async function runSolutionSpaceProbe(projectDir, phaseName, { milestone, briefPath, userInput, phaseNameOpt } = {}) {
+  const prompt = [
+    `You are the Solution-Space Probe for the ${phaseName} phase${milestone ? ` of ${milestone}` : ""}. Decide ONE thing: should this phase generate MULTIPLE competing candidates (then a judge picks the best), or is a single draft sufficient?`,
+    `**Brief:** ${briefPath || "(none — read the relevant .gsd-t docs/contracts/requirements directly)"}`,
+    userInput ? `\nUser input:\n${userInput}\n` : "",
+    `Compete WHEN there are ≥2 genuinely DIFFERENT, viable approaches whose trade-offs matter — different architectures, decomposition strategies, data models, sequencing, or design directions that a reasonable expert could disagree about. List them in "approaches".`,
+    `Do NOT compete only when there is ONE obvious correct approach and any variation would be cosmetic.`,
+    `BIAS TOWARD COMPETING: if you are uncertain, or can name even two plausibly-different approaches, choose compete=true. A wasted competition costs ~3× this one phase; a missed-better-approach costs far more downstream (more pre-mortem blocks, more bugs, more verify cycles). Err on the side of generating options.`,
+    `Return JSON per the schema: { "compete": true|false, "reason": "<one sentence>", "approaches": ["<a>","<b>",...] }.`,
+  ].filter(Boolean).join("\n");
+  const opts = { label: "solution-space-probe", schema: _PROBE_SCHEMA, model: "opus" };
+  if (phaseNameOpt) opts.phase = phaseNameOpt;
+  const r = await agent(prompt, opts).catch(() => null);
+  // Probe failure → bias toward competing (fail-toward-options, per the cost logic).
+  if (!r || typeof r.compete !== "boolean") {
+    return { compete: true, reason: "probe unavailable — defaulting to compete (bias toward options)", approaches: [] };
+  }
+  return { compete: r.compete, reason: r.reason || "", approaches: r.approaches || [] };
+}
+
+// M84: PARTITION's pre-produce decision. The objective disjointness oracle needs
+// candidates to score, so it can't DECIDE before any exist — it runs later as the
+// JUDGE. For the pre-produce compete/skip decision we use an OPUS heuristic probe
+// (biased toward compete): partition is competition-worthy unless the milestone is
+// trivially single-domain. So: opus probe DECIDES whether to compete; the objective
+// file-disjointness oracle JUDGES the produced candidates. (Decision = heuristic +
+// bias; selection = objective.)
+async function runPartitionProbe(projectDir, { milestone, briefPath, userInput, phaseNameOpt } = {}) {
+  const prompt = [
+    `You are the Partition Solution-Space Probe${milestone ? ` for ${milestone}` : ""}. Decide: are there ≥2 genuinely different ways to CARVE this milestone into file-disjoint domains (different boundaries / groupings / parallelism), or is there one obvious single decomposition?`,
+    `**Brief:** ${briefPath || "(none — read .gsd-t docs/contracts/requirements directly)"}`,
+    userInput ? `\nUser input:\n${userInput}\n` : "",
+    `Compete=true when the work spans multiple files/areas that could be grouped more than one sensible way. Compete=false ONLY for a trivial single-file / single-domain milestone.`,
+    `BIAS TOWARD COMPETING: if ≥3 files/areas are in play or you're unsure, choose compete=true — the file-disjointness oracle will objectively pick the most-parallelizable valid carving among the candidates, so competing is low-risk and high-reward.`,
+    `Return JSON per the schema.`,
+  ].filter(Boolean).join("\n");
+  const opts = { label: "partition-probe", schema: _PROBE_SCHEMA, model: "opus" };
+  if (phaseNameOpt) opts.phase = phaseNameOpt;
+  const r = await agent(prompt, opts).catch(() => null);
+  if (!r || typeof r.compete !== "boolean") {
+    return { compete: true, reason: "probe unavailable — defaulting to compete", approaches: [] };
+  }
+  return { compete: r.compete, reason: r.reason || "", approaches: r.approaches || [] };
+}
 
 // Rubric axes for the SUBJECTIVE judge (non-partition eligible phases). Partition
 // uses the objective oracle instead and ignores these.
@@ -170,13 +243,27 @@ const milestone  = _args.milestone || null;
 const userInput  = _args.userInput || "";
 const phaseName  = _args.phase;
 
-// M82: clamp competition N to [1,5]. Evidence (Self-MoA, Large Language Monkeys):
-// gains plateau fast; N=3 captures the elbow, >5 is wasteful. N<=1 = off (single producer).
-const _rawN = Number(_args.competition) || 1;
-const competitionN = Math.max(1, Math.min(5, Math.floor(_rawN)));
-const competitionOn = competitionN > 1 && COMPETITION_ELIGIBLE.has(phaseName);
-if (competitionN > 1 && !competitionOn) {
-  log(`competition: N=${competitionN} ignored — phase "${phaseName}" is not competition-eligible (single producer runs). Eligible: ${[...COMPETITION_ELIGIBLE].join(", ")}.`);
+// M84: competition is AUTOMATIC. By default the workflow PROBES the solution space
+// (after brief) and self-decides whether to run a 3-producer + judge competition —
+// no flag needed. Optional manual OVERRIDES: `competition: N` (2-5) forces N
+// producers; `competition: 0` or `noCompetition: true` forces it off. Default
+// (`competition` unset) = let the workflow decide.
+// Evidence (Self-MoA, Large Language Monkeys): gains plateau fast; N=3 is the elbow,
+// >5 wasteful. The auto path fires 3.
+const AUTO_COMPETITION_N = 3;
+const _hasCompetitionArg = _args.competition !== undefined && _args.competition !== null;
+const _forceOff = _args.noCompetition === true || (_hasCompetitionArg && Number(_args.competition) <= 1);
+const _forcedN = _hasCompetitionArg && Number(_args.competition) >= 2
+  ? Math.max(2, Math.min(5, Math.floor(Number(_args.competition))))
+  : null;
+// competitionN/competitionOn are resolved LATER (after preflight+brief) by the
+// auto-probe, unless an override pins them now. Declared with `let` so the
+// post-brief decision block can set them.
+let competitionN = 1;
+let competitionOn = false;
+const _competitionEligible = COMPETITION_ELIGIBLE.has(phaseName);
+if (_forcedN && !_competitionEligible) {
+  log(`competition: forced N=${_forcedN} ignored — phase "${phaseName}" is not competition-eligible. Eligible: ${[...COMPETITION_ELIGIBLE].join(", ")}.`);
 }
 
 if (!phaseName || !VALID_PHASES.includes(phaseName)) {
@@ -189,7 +276,35 @@ const pre = await runPreflight(projectDir);
 if (!pre.ok) return { status: "failed", reason: "preflight-failed", preflight: pre.envelope };
 const brief = await generateBrief(projectDir, { kind: phaseName, milestone, id: `${phaseName}-${(milestone || "m").toLowerCase()}` });
 
-phase("Phase");
+// ── M84: resolve competition AUTOMATICALLY (after brief, before producing) ──
+// Default: probe the solution space and self-decide. Overrides pin it.
+if (_competitionEligible) {
+  if (_forceOff) {
+    competitionOn = false;
+    log(`competition: OFF (overridden via competition≤1 / noCompetition).`);
+  } else if (_forcedN) {
+    competitionN = _forcedN; competitionOn = true;
+    log(`competition: ON, N=${_forcedN} (overridden).`);
+  } else {
+    // M84 Red Team LOW: warn on an unparseable override so a typo (competition:"off")
+    // isn't silently swallowed into the auto path.
+    if (_hasCompetitionArg && Number.isNaN(Number(_args.competition))) {
+      log(`competition: override value ${JSON.stringify(_args.competition)} is not a number — ignoring it, using AUTO. (Use 0/noCompetition to force off, 2-5 to force N.)`);
+    }
+    // Automatic decision — the workflow probes and decides. Opus probe (or the
+    // partition-specific probe); biased toward competing.
+    phase("Probe");
+    const probe = phaseName === "partition"
+      ? await runPartitionProbe(projectDir, { milestone, briefPath: brief.briefPath, userInput, phaseNameOpt: "Probe" })
+      : await runSolutionSpaceProbe(projectDir, phaseName, { milestone, briefPath: brief.briefPath, userInput, phaseNameOpt: "Probe" });
+    competitionOn = !!probe.compete;
+    competitionN = competitionOn ? AUTO_COMPETITION_N : 1;
+    log(`competition: AUTO → ${competitionOn ? `COMPETE (${AUTO_COMPETITION_N} producers)` : "single draft"} — ${probe.reason}${probe.approaches && probe.approaches.length ? ` [approaches: ${probe.approaches.join("; ")}]` : ""}`);
+  }
+}
+
+// M84 Red Team LOW: announce "Phase" only on the single-draft path (the
+// competition path announces Compete/Judge/Finalize instead) so no empty stage shows.
 const promptByPhase = {
   partition: `Decompose the milestone into 2-5 independent domains. Write .gsd-t/domains/{domain}/{scope,constraints,tasks}.md. Cross-domain contracts in .gsd-t/contracts/.`,
   plan: `For each domain, write atomic tasks.md entries with files, contract refs, dependencies, acceptance criteria. Update .gsd-t/contracts/integration-points.md with wave groupings.
@@ -209,6 +324,7 @@ const briefLine = `**Brief (REQUIRED):** ${brief.briefPath || "(no brief — re-
 let result;
 if (!competitionOn) {
   // ── Single-producer path (default, unchanged behavior) ──
+  phase("Phase");
   result = await agent(
     [
       `You are the ${phaseName} phase agent.`,
@@ -224,15 +340,49 @@ if (!competitionOn) {
     { label: phaseName, phase: "Phase", schema: PHASE_RESULT_SCHEMA, model: "opus" }
   ).catch((e) => ({ status: "failed", artifacts: [], summary: `agent error: ${e && e.message}` }));
 } else {
-  // ── M82 Competition Mode: generate -> judge -> finalize ──
-  // Distinct "angles" so the N Self-MoA producers explore different regions of
-  // the solution space (diversity by prompt, not by model — Self-MoA > Mixed-MoA).
-  const ANGLES = [
-    "Optimize for MAXIMUM parallelism: carve the most file-disjoint domains that can run concurrently.",
-    "Optimize for SIMPLICITY: the fewest domains with the cleanest, most obvious boundaries.",
-    "Optimize for RISK ISOLATION: isolate the riskiest/most-coupled work into its own domain so the rest stays safe.",
-    "Optimize for DEPENDENCY DEPTH: minimize serial gates (waves) between domains.",
-    "Optimize for BALANCE: roughly equal-sized domains with minimal cross-talk.",
+  // ── M82/M84 Competition Mode: generate -> judge -> finalize ──
+  // Distinct "angles" so the N Self-MoA producers explore different regions of the
+  // solution space (diversity by prompt, not by model — Self-MoA > Mixed-MoA).
+  // M84 Red Team MEDIUM: angles must be PHASE-AWARE — the old partition-only set
+  // gave a discuss/milestone producer a contradictory "carve file-disjoint domains"
+  // directive, degrading 3 of 4 now-automatic phases. Each eligible phase gets its
+  // own angle set (analogous to RUBRIC_AXES_BY_PHASE).
+  const ANGLES_BY_PHASE = {
+    partition: [
+      "Optimize for MAXIMUM parallelism: carve the most file-disjoint domains that can run concurrently.",
+      "Optimize for SIMPLICITY: the fewest domains with the cleanest, most obvious boundaries.",
+      "Optimize for RISK ISOLATION: isolate the riskiest/most-coupled work into its own domain so the rest stays safe.",
+      "Optimize for DEPENDENCY DEPTH: minimize serial gates (waves) between domains.",
+      "Optimize for BALANCE: roughly equal-sized domains with minimal cross-talk.",
+    ],
+    milestone: [
+      "Optimize for FASTEST TIME-TO-VALUE: the leanest milestone sequence that ships something usable soonest.",
+      "Optimize for RISK-FIRST: front-load the riskiest/most-uncertain work so failure is cheap and early.",
+      "Optimize for DEPENDENCY ORDER: sequence strictly by what unblocks the most downstream work.",
+      "Optimize for USER-VALUE-FIRST: order milestones by the value each delivers to the end user.",
+      "Optimize for SIMPLICITY: the fewest, most self-contained milestones with minimal cross-cutting.",
+    ],
+    discuss: [
+      "Argue the SIMPLEST viable architecture, even if it sacrifices some flexibility.",
+      "Argue the most ROBUST/CORRECT architecture, accepting more upfront complexity.",
+      "Argue the most EXTENSIBLE architecture, optimizing for future change.",
+      "Argue a PRAGMATIC middle path, naming the explicit trade-offs it accepts.",
+      "Argue a CONTRARIAN approach that questions an assumption the others take for granted.",
+    ],
+    "design-decompose": [
+      "Decompose ATOMIC-FIRST: smallest reusable elements up, composed into widgets then pages.",
+      "Decompose PAGE-FIRST: whole pages down into sections, widgets, then elements.",
+      "Decompose TOKEN-DRIVEN: design tokens + primitives first, structure follows the system.",
+      "Decompose by REUSE: maximize shared components; minimize one-off bespoke pieces.",
+      "Decompose by FEATURE: group elements/widgets by the user-facing feature they serve.",
+    ],
+  };
+  const ANGLES = ANGLES_BY_PHASE[phaseName] || [
+    "Explore a materially different approach, optimizing for simplicity.",
+    "Explore a materially different approach, optimizing for robustness/correctness.",
+    "Explore a materially different approach, optimizing for extensibility.",
+    "Explore a pragmatic middle path, naming its trade-offs.",
+    "Explore a contrarian approach that questions a shared assumption.",
   ];
 
   const PRODUCER_SCHEMA = phaseName === "partition"

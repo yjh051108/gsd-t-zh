@@ -481,7 +481,7 @@ Use these when user asks for help on a specific command:
 
 ### competition-judge (M82)
 - **Summary**: The selection oracle for Competition Mode (generate-and-judge — the *generative* dual of the orthogonal validation triad). Two modes: `--kind partition` scores candidate domain decompositions via the file-disjointness oracle (parallelGroups / waveDepth / validity — a calculator, not an LLM critic, so it's immune to judge bias); `--kind generic` is a deterministic rubric selector that finalizes a winner from rubric scores an upstream blind/different-model judge supplied.
-- **Auto-invoked**: Yes — by `gsd-t-phase.workflow.js` when an eligible phase (partition / milestone / design-decompose) is run with `competition: N` (N 2–5). Opt-in per phase via `/gsd-t-partition --competition N` etc. Default off.
+- **Auto-invoked**: Yes — AUTOMATICALLY (M84). On an eligible phase (partition / milestone / discuss / design-decompose), `gsd-t-phase.workflow.js` runs an Opus solution-space probe at phase start and self-decides whether to fan out 3 producers + this judge (biased toward competing). No flag needed; override with `--competition N` (force N) or `--no-competition` (force off).
 - **Files**: `bin/gsd-t-competition-judge.cjs` (reuses `bin/gsd-t-file-disjointness.cjs`).
 - **Use when**: Upstream, pre-contract, wide-solution-space decisions where the cost of a single draft is high (partition, milestone decomposition, ambiguous design decomposition). Never on post-contract phases (execute/verify/etc.) — those are owned by the adversarial triad.
 - **CLI**: `gsd-t competition-judge [--in <spec.json>] [--project-dir <dir>]` (spec via stdin or `--in`). Exit 0 winner · 4 no valid candidate · 64 bad input.

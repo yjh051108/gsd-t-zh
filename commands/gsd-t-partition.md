@@ -30,17 +30,17 @@ Call the `Workflow` tool with:
     phase: "partition",
     milestone: "M{NN}",
     projectDir: ".",
-    userInput: "$ARGUMENTS",
-    // M82 Competition Mode (opt-in): if the user passed `--competition N` in
-    // $ARGUMENTS (N in 2..5), set competition: N. N parallel Self-MoA producers
-    // propose partitions; the OBJECTIVE oracle judge (file-disjointness scoring)
-    // picks the most-parallelizable valid decomposition. Omit / set 1 = off.
-    competition: 1
+    userInput: "$ARGUMENTS"
+    // M84 Competition Mode is AUTOMATIC — do NOT pass `competition` by default.
+    // The workflow runs a solution-space probe and self-decides whether to fan out
+    // N candidate partitions (judged by the file-disjointness oracle). Only pass an
+    // override if the user explicitly asked: `--competition 0`/`--no-competition`
+    // → competition: 0; `--competition N` (2-5) → competition: N.
   }
 }
 ```
 
-**Competition Mode (`--competition N`).** Partition is the v1 beachhead for generate-and-judge: its judge is the file-disjointness oracle, so it is a calculator, not a biased critic. If the user invokes `/gsd-t-partition --competition 3`, parse N (clamped 2..5) and pass `competition: N`. The workflow fans out N candidate partitions, scores each on measured parallelism / wave-depth / boundary-cleanliness, and finalizes the winner. See `.gsd-t/contracts/competition-mode-contract.md`. Default off (single producer).
+**Competition Mode (automatic).** Partition auto-competes when the workflow's probe finds ≥2 genuinely different ways to carve the domains; the objective file-disjointness oracle judges the candidates and picks the most-parallelizable valid one. No flag needed. Override only on explicit request: `/gsd-t-partition --no-competition` (force single draft) or `--competition N` (force N). See `.gsd-t/contracts/competition-mode-contract.md`.
 
 ## Step 3: Interpret the result
 
