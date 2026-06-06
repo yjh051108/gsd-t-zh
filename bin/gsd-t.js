@@ -1184,6 +1184,8 @@ const GLOBAL_BIN_TOOLS = [
   "gsd-t-ci-parity.cjs",
   // M82 — Competition Mode generate-and-judge selection oracle.
   "gsd-t-competition-judge.cjs",
+  // M83 — Plan-phase acceptance-traceability gate.
+  "gsd-t-traceability-gate.cjs",
 ];
 
 function installGlobalBinTools() {
@@ -2475,6 +2477,8 @@ const PROJECT_BIN_TOOLS = [
   // project's gsd-t-phase workflow can score candidate partitions via the
   // project-local bin (runCli prefers bin/<tool>.cjs over the global binary).
   "gsd-t-competition-judge.cjs", "gsd-t-file-disjointness.cjs",
+  // M83 — Plan-phase acceptance-traceability gate (runs in the plan workflow).
+  "gsd-t-traceability-gate.cjs",
 ];
 
 // Files that older versions of this installer copied into project bin/ but
@@ -4557,6 +4561,15 @@ if (require.main === module) {
       // selection oracle (objective partition judge + deterministic rubric selector).
       const { spawnSync } = require("child_process");
       const js = path.join(__dirname, "gsd-t-competition-judge.cjs");
+      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
+        stdio: "inherit",
+      });
+      process.exit(res.status == null ? 1 : res.status);
+    }
+    case "traceability-gate": {
+      // M83 D1 — `gsd-t traceability-gate` plan-phase acceptance-traceability gate.
+      const { spawnSync } = require("child_process");
+      const js = path.join(__dirname, "gsd-t-traceability-gate.cjs");
       const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
         stdio: "inherit",
       });

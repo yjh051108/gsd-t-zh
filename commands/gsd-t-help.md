@@ -487,6 +487,14 @@ Use these when user asks for help on a specific command:
 - **CLI**: `gsd-t competition-judge [--in <spec.json>] [--project-dir <dir>]` (spec via stdin or `--in`). Exit 0 winner · 4 no valid candidate · 64 bad input.
 - **Contract**: `.gsd-t/contracts/competition-mode-contract.md` v1.0.0 STABLE.
 
+### traceability-gate (M83)
+- **Summary**: Plan-phase acceptance-traceability gate — the deterministic half of Left-Shifted Plan Hardening. Parses `.gsd-t/domains/*/tasks.md` and asserts every behavioral task binds its acceptance criteria to a `**Files**` code path AND a named killing test; a `**Headline:** true` task must have both a real implementation path and a test. Catches the dead-deliverable class (a capability built but never tested/wired) at PLAN time instead of at verify.
+- **Auto-invoked**: Yes — by `gsd-t-phase.workflow.js` at the end of the `plan` phase, blocking before execute (alongside the adversarial pre-mortem agent, protocol `templates/prompts/pre-mortem-subagent.md`).
+- **Files**: `bin/gsd-t-traceability-gate.cjs`.
+- **Use when**: Every plan phase (automatic). Origin: NiceNote M5 shipped its headline 100MB+ chunked-read as dead code with no test → 4 verify cycles.
+- **CLI**: `gsd-t traceability-gate [--milestone <Mxx>] [--project-dir <dir>] [--tasks <file>]`. Exit 0 all traceable · 4 ≥1 untraceable AC (blocks execute) · 64 no tasks files.
+- **Contract**: `.gsd-t/contracts/plan-hardening-contract.md` v1.0.0 STABLE.
+
 ## Unknown Command
 
 If user asks for help on unrecognized command:

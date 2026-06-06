@@ -67,7 +67,7 @@ Phase orchestration lives in `templates/workflows/`. Each command file (`command
 
 **Runtime-native invariant (M81 — v4.0.29+):** the Anthropic Workflow sandbox provides ONLY the globals `agent/parallel/pipeline/log/phase/budget/args` — NO `require`/`fs`/`path`/`child_process`/`process`, and `args` arrives as a JSON STRING. Every `*.workflow.js` MUST be self-contained: it `JSON.parse`s `args`, and delegates all CLI calls (preflight, verify-gate, brief, build-coverage, ci-parity, test-data, parallel/disjointness) to inline `async` helpers that run the command via an `agent()`'s Bash (preferring project-local `bin/<tool>.cjs`, falling back to the global `gsd-t` PATH binary) and parse the JSON envelope. The old `require("./_lib.js")` pattern threw `ReferenceError` on first eval — it silently broke every workflow except scan (TD-113). `_lib.js` is retired as a workflow dependency. The M71 lint (`test/m71-workflow-runtime-native-lint.test.js`) enforces this for all 8 workflows.
 
-The brains stay in `bin/`: `gsd-t-file-disjointness.cjs`, `gsd-t-task-graph.cjs`, `gsd-t-context-brief.cjs`, `cli-preflight.cjs`, `gsd-t-verify-gate.cjs`, `gsd-t-verify-gate-judge.cjs`, `gsd-t-build-coverage.cjs`, `gsd-t-ci-parity.cjs`, `gsd-t-test-data-ledger.cjs`, `gsd-t-competition-judge.cjs` (M82), `journey-coverage.cjs`. Workflows invoke them via an `agent()`-wrapped Bash call (the runCli inline helper), never via in-orchestrator `spawnSync`.
+The brains stay in `bin/`: `gsd-t-file-disjointness.cjs`, `gsd-t-task-graph.cjs`, `gsd-t-context-brief.cjs`, `cli-preflight.cjs`, `gsd-t-verify-gate.cjs`, `gsd-t-verify-gate-judge.cjs`, `gsd-t-build-coverage.cjs`, `gsd-t-ci-parity.cjs`, `gsd-t-test-data-ledger.cjs`, `gsd-t-competition-judge.cjs` (M82), `gsd-t-traceability-gate.cjs` (M83), `journey-coverage.cjs`. Workflows invoke them via an `agent()`-wrapped Bash call (the runCli inline helper), never via in-orchestrator `spawnSync`.
 
 ## Validation Protocols (KEPT — methodology layer)
 
@@ -75,6 +75,7 @@ Three validation protocol bodies stay at `templates/prompts/`:
 - `qa-subagent.md` — test mechanics + shallow-test detection + contract compliance
 - `red-team-subagent.md` — adversarial / security / boundaries; verdict `FAIL` / `GRUDGING-PASS`
 - `design-verify-subagent.md` — visual MATCH/DEVIATION against the design contract
+- `pre-mortem-subagent.md` (M83) — adversarial PLAN review (pre-execute): predicts edge-case / dead-deliverable / NFR failures, each → a required test; verdict `BLOCK` / `CLEARED`. The temporal dual of the Red Team (attack the design at plan, not the code at verify). Contract: `plan-hardening-contract.md`.
 
 These are invoked as Workflow `agent()` stages with schema-validated output. The methodology body is unchanged; only the invocation context (Workflow stage vs. Task subagent) updated. Per `.gsd-t/contracts/orthogonal-validation-contract.md` v1.0.0 STABLE.
 

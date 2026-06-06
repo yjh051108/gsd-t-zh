@@ -123,7 +123,10 @@ gsd-t ci-parity --json                                  # M57: reproduce the pro
 gsd-t test-data --list [--run ID] [--json]              # M58: list test-data ledger entries
 gsd-t test-data --purge --run ID [--dry-run] [--json]   # M58: purge tagged test data after Verify (Step 4.5)
 gsd-t competition-judge --in SPEC.json [--project-dir P] # M82: generate-and-judge selection oracle (partition / generic)
+gsd-t traceability-gate --milestone Mxx [--project-dir P] # M83: plan-phase acceptance-traceability gate (AC → path → killing test)
 ```
+
+**Plan Hardening (M83).** The `plan` phase now runs two blocking gates before execute, so a plan can't ship a dead deliverable: a deterministic **acceptance-traceability gate** (`gsd-t traceability-gate` — every AC must bind to a code path + a killing test; the headline capability needs both impl and test) and an adversarial **pre-mortem** agent (opus, fresh-context, predicts edge-case/NFR/dead-deliverable failures and requires a test for each). The temporal dual of the Red Team — attack the design at plan, not just the code at verify. Origin: a build where the headline capability shipped as dead code and burned 4 verify cycles. See `.gsd-t/contracts/plan-hardening-contract.md`.
 
 **Competition Mode (M82).** Opt-in `--competition N` (N 2–5) on upstream, pre-contract phases (`/gsd-t-partition`, `/gsd-t-milestone`, `/gsd-t-design-decompose`) fans out N parallel candidate producers and a judge selects the winner — the generative dual of the orthogonal validation triad. Partition uses an *objective* file-disjointness oracle as the judge (a calculator, not a biased critic); subjective phases use a blind + different-model + rubric judge. Default off. See `.gsd-t/contracts/competition-mode-contract.md`.
 

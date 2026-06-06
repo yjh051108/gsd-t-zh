@@ -33,11 +33,13 @@ Read `.gsd-t/progress.md` and each domain's `scope.md`/`constraints.md`. The par
 
 ## Step 3: Interpret the result
 
-The Workflow returns `{ status, artifacts, summary, decisions }`.
+The Workflow returns `{ status, artifacts, summary, decisions, traceability?, preMortem? }`.
 
-- `status === "complete"`: every domain has atomic tasks; `gsd-t parallel --dry-run` validates disjointness. Auto-advance to `/gsd-t-execute`.
-- `status === "partial" | "blocked"`: read `summary` (e.g. file-overlap between domains needing re-scoping).
+- `status === "complete"`: every domain has atomic tasks; `gsd-t parallel --dry-run` validates disjointness; **M83 plan hardening passed** (acceptance-traceability gate + adversarial pre-mortem). Auto-advance to `/gsd-t-execute`.
+- `status === "partial" | "blocked"`: read `summary` (e.g. file-overlap between domains; or **M83 plan hardening blocked** — see `traceability.violations` / `preMortem.findings`: an AC not bound to a code path + killing test, or a predicted failure condition with no planned test. Fix `tasks.md` and re-run plan).
 - `status === "failed"`: read `summary`.
+
+**M83 Plan Hardening (runs automatically at the end of plan, blocking before execute).** Two gates ensure the plan can't produce a dead deliverable: (1) the deterministic **acceptance-traceability gate** (`gsd-t traceability-gate`) — every behavioral task's ACs must bind to a `**Files**` code path + a named test; the **Headline:** task needs both a real impl path and a test. (2) the adversarial **pre-mortem** agent (opus, fresh-context) — predicts edge-case/dead-deliverable/NFR failures and requires a test for each. Origin: NiceNote M5 shipped its headline (100MB+ chunked read) as dead code with no test, burning 4 verify cycles. Contract: `.gsd-t/contracts/plan-hardening-contract.md`.
 
 ## Document Ripple
 

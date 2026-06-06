@@ -67,6 +67,14 @@ async function runCli(projectDir, subcmd, argv, localBin, label, parseJson = tru
   return r || { ok: false, exitCode: -1, envelope: null, via: "error" };
 }
 async function runPreflight(projectDir, label = "preflight", phaseNameOpt) { return runCli(projectDir, "preflight", ["--json"], "cli-preflight.cjs", label, true, phaseNameOpt); }
+// M83: the deterministic plan-hardening gate. Returns the parsed envelope
+// ({ ok, exitCode, violations, ... }); ok:false means ≥1 untraceable AC.
+async function runTraceabilityGate(projectDir, milestone, label = "traceability-gate", phaseNameOpt) {
+  const argv = ["--json"];
+  if (milestone) argv.push("--milestone", milestone);
+  const r = await runCli(projectDir, "traceability-gate", argv, "gsd-t-traceability-gate.cjs", label, true, phaseNameOpt);
+  return r.envelope || { ok: r.ok, exitCode: r.exitCode, violations: [], reason: "gate-unparsed" };
+}
 async function generateBrief(projectDir, { kind = "execute", milestone, domain, id, label = "brief", phaseNameOpt } = {}) {
   const argv = ["--kind", kind, "--spawn-id", id, "--out", `${projectDir}/.gsd-t/briefs/${id}.json`];
   if (milestone) argv.push("--milestone", milestone);
@@ -184,7 +192,9 @@ const brief = await generateBrief(projectDir, { kind: phaseName, milestone, id: 
 phase("Phase");
 const promptByPhase = {
   partition: `Decompose the milestone into 2-5 independent domains. Write .gsd-t/domains/{domain}/{scope,constraints,tasks}.md. Cross-domain contracts in .gsd-t/contracts/.`,
-  plan: `For each domain, write atomic tasks.md entries with files, contract refs, dependencies, acceptance criteria. Update .gsd-t/contracts/integration-points.md with wave groupings.`,
+  plan: `For each domain, write atomic tasks.md entries with files, contract refs, dependencies, acceptance criteria. Update .gsd-t/contracts/integration-points.md with wave groupings.
+
+M83 PLAN HARDENING (mandatory — the plan is BLOCKED from execute otherwise): every task that declares acceptance criteria MUST also declare (1) **Files** = the concrete code path that implements it, and (2) a TEST that fails if that path is dead — name it in a **Test** field, a test-file path (\`*.test.*\` / \`*.spec.*\` / \`e2e/\`), or a runner (vitest/cargo test/playwright). The ONE task that delivers the milestone's HEADLINE capability MUST be tagged **Headline:** true and carry BOTH a real implementation path AND a test that exercises that capability end-to-end (e.g. for a "100MB+ file" milestone, a test that actually opens a >100MB fixture). NEVER defer a milestone's own headline capability or a core AC to a later milestone. This exists because NiceNote M5 shipped its headline (100MB+ chunked read) as DEAD CODE with no test and burned 4 verify cycles.`,
   discuss: `Multi-perspective exploration of design questions. Settle locked decisions into .gsd-t/CONTEXT.md. Do NOT implement.`,
   impact: `Analyze downstream effects of proposed changes. Identify breaking changes, affected consumers, migration paths.`,
   milestone: `Define a new milestone — origin, goal, success criteria, falsifiable acceptance. Append to .gsd-t/progress.md. Defer partition/plan.`,
@@ -432,6 +442,77 @@ if (!competitionOn) {
 
   // Thread the competition telemetry up so the caller can report measured SC#1.
   result.competition = { n: candidates.length, winner: winner.id, ranked };
+}
+
+// ── M83 Left-Shifted Plan Hardening (plan phase only) ──
+// Two blocking gates run AFTER the plan agent writes tasks.md and BEFORE the plan
+// is declared complete — so execute can never start on a plan that would produce a
+// dead deliverable or an unguarded edge case. Contract: plan-hardening-contract.md.
+//   (1) Deterministic acceptance-traceability gate — every behavioral task's ACs
+//       must bind to a code path + a killing test; the headline must be impl+test.
+//   (2) Adversarial pre-mortem agent (opus, fresh-context, assume-the-plan-is-flawed)
+//       — predicts edge-case / dead-deliverable / NFR failures; each blocking
+//       finding must become a required test before execute.
+if (phaseName === "plan" && result && result.status !== "failed") {
+  phase("Plan Hardening");
+
+  // (1) Deterministic gate. FAIL-CLOSED (Red Team MEDIUM-2): a deterministic gate
+  // that can't be evaluated (CLI error / unparsed envelope) is NOT a pass — block.
+  const trace = await runTraceabilityGate(projectDir, milestone, "traceability-gate", "Plan Hardening");
+  const traceUnparsed = trace && trace.reason === "gate-unparsed";
+  if (trace && (trace.ok === false || traceUnparsed)) {
+    const vcount = (trace.violations || []).length;
+    const why = traceUnparsed
+      ? `traceability gate could not be evaluated (CLI error / unparsed output) — failing closed; re-run plan.`
+      : `${vcount} acceptance criteria not bound to a code path + killing test (M83 traceability gate). Fix tasks.md, then re-run plan.`;
+    log(`plan-hardening: traceability gate BLOCKED — ${traceUnparsed ? "unevaluable (fail-closed)" : vcount + " untraceable AC"}.`);
+    result.status = "blocked";
+    result.summary = `plan blocked: ${why} ${result.summary || ""}`.trim();
+    result.traceability = trace;
+    return result;
+  }
+  result.traceability = trace;
+
+  // (2) Adversarial pre-mortem. The agent reads its own protocol at spawn time
+  // (the orchestrator has no fs); blocking findings convert to required tests.
+  const PRE_MORTEM_SCHEMA = {
+    type: "object", required: ["verdict", "findings"], additionalProperties: true,
+    properties: {
+      verdict: { type: "string", enum: ["BLOCK", "CLEARED"] },
+      findings: {
+        type: "array", items: {
+          type: "object", required: ["severity", "condition", "requiredTest"], additionalProperties: true,
+          properties: {
+            severity: { type: "string", enum: ["CRITICAL", "HIGH", "MEDIUM", "LOW"] },
+            category: { type: "string" }, condition: { type: "string" },
+            whyItFails: { type: "string" }, requiredTest: { type: "string" }, affectedAC: { type: "string" },
+          },
+        },
+      },
+      headlineAssessment: { type: "object", additionalProperties: true },
+      notes: { type: "string" },
+    },
+  };
+  const preMortem = await agent(
+    [
+      `You are the adversarial Pre-Mortem reviewer for milestone ${milestone || "(current)"}.`,
+      `FIRST read your protocol via the Read tool: templates/prompts/pre-mortem-subagent.md (in the installed @tekyzinc/gsd-t package, or this project's copy). Follow it exactly.`,
+      `**Brief (REQUIRED):** ${brief.briefPath || "(no brief — read plan artifacts directly)"}`,
+      `Attack the PLAN at .gsd-t/domains/*/{scope,constraints,tasks}.md + .gsd-t/contracts/ + docs/requirements.md.`,
+      `Predict, before any code is executed, how this milestone will FAIL: edge cases, dead deliverables, unguarded NFRs, shallow-test traps. Scrutinize the HEADLINE capability hardest — is it bound to a real path, reachable, and covered by a killing test?`,
+      `Every blocking finding MUST convert to a concrete requiredTest the plan must adopt. Advisory notes are forbidden.`,
+      `Verdict BLOCK if any concrete, falsifiable failure condition lacks a named required test; else CLEARED. Return JSON per the schema.`,
+    ].join("\n"),
+    { label: "pre-mortem", phase: "Plan Hardening", schema: PRE_MORTEM_SCHEMA, model: "opus" }
+  ).catch((e) => ({ verdict: "BLOCK", findings: [{ severity: "HIGH", condition: `pre-mortem agent error: ${e && e.message}`, requiredTest: "re-run pre-mortem" }], notes: "agent-error" }));
+
+  result.preMortem = preMortem;
+  if (preMortem && preMortem.verdict === "BLOCK") {
+    const n = (preMortem.findings || []).length;
+    log(`plan-hardening: pre-mortem BLOCKED — ${n} predicted failure condition(s) need required tests in the plan.`);
+    result.status = "blocked";
+    result.summary = `plan blocked: pre-mortem found ${n} falsifiable failure condition(s) not covered by a planned test (M83). Add the required tests to tasks.md, then re-run plan. ${result.summary || ""}`.trim();
+  }
 }
 
 return result;

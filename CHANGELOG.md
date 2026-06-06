@@ -2,6 +2,23 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.2.10] - 2026-06-05 (M83 Left-Shifted Plan Hardening - minor)
+
+### Added - Plan-phase hardening: catch dead deliverables and edge cases BEFORE execute
+
+Left-shifts failure detection from verify to plan. Adversarial validation (the Red Team) ran only at verify — after code exists — so a milestone whose headline capability shipped as DEAD CODE (the NiceNote M5 incident: a 100MB+ chunked reader built but never wired into `openPath`, with no test exercising it) burned **four verify cycles** re-litigating the milestone's reason to exist. The root cause was in the plan: it never bound each acceptance criterion to a code path + a killing test, and nothing adversarial reviewed the design before code was written. The `plan` phase now runs two blocking gates before execute.
+
+- **Acceptance-traceability gate** (deterministic) — `bin/gsd-t-traceability-gate.cjs`, dispatched as `gsd-t traceability-gate`. Parses `.gsd-t/domains/*/tasks.md`; every behavioral task (one declaring acceptance criteria) must bind its ACs to a `**Files**` code path AND a named killing test; a `**Headline:** true` task must have BOTH a real implementation path and a test. Exit 4 blocks execute. Field detection is emphasis-stripped + colon-position-agnostic (`**Label**:` ≡ `**Label:**`); task blocks are detected by any non-structural heading bearing an AC (descriptive headings are not dropped); the test check is tied to the Test/Files/AC fields only (an incidental runner word in a Dependencies note does not clear it); pytest `test_*.py` / `*_test.py` conventions are preserved.
+- **Adversarial pre-mortem** (generative) — `templates/prompts/pre-mortem-subagent.md`, an opus, fresh-context, assume-the-plan-is-flawed reviewer wired into the plan workflow. Predicts edge-case / dead-deliverable / NFR / shallow-test failures and converts each blocking finding into a **required test** the plan must adopt (advisory notes forbidden — that is how M5's chunk reader shipped three data-loss bugs across three cycles). Verdict `BLOCK` / `CLEARED`.
+- The two gates are the temporal dual of the Red Team: attack the design at plan, not just the code at verify. The deterministic gate runs first and fails CLOSED (an unevaluable gate blocks); the pre-mortem cannot approve a gate-blocked plan.
+- New CLI `gsd-t traceability-gate [--milestone Mxx] [--tasks FILE]` (exit 0/4/64), added to project + global bin tools. Contract `.gsd-t/contracts/plan-hardening-contract.md` v1.0.0 STABLE. `gsd-t-plan.md` + the phase-workflow plan objective updated to require traceable tasks up front.
+- **Verification**: orthogonal triad ran. Adversarial Workflow Red Team (Opus, fresh context) FAILed first pass (1 CRITICAL — colon-inside-bold markdown defeated all field detection, silently passing the literal M5 dead-code plan — + 2 HIGH + 2 MEDIUM), all fixed; re-validation found a regression the CRITICAL fix introduced (underscore-stripping broke pytest paths, HIGH), fixed; final re-validation GRUDGING-PASS (14/14 checks, no new HIGH/CRITICAL). Real-sandbox acceptance gate passed (gate fires through the Workflow sandbox and blocks the bad plan). Suite 1372/0/4 (+15 M83 tests). Self-tested against the actual NiceNote M5 dead-code plan — the gate FAILs it at plan time, which is the milestone's reason to exist.
+- Origin: review of the NiceNote 9-milestone build, where the triad caught real bugs at verify but late; the user's proposal for an adversarial risk-assessment agent at plan.
+
+### Versioning
+
+Minor bump 4.1.10 → 4.2.10 (new feature, additive; patch reset to 10).
+
 ## [4.1.10] - 2026-06-05 (M82 Competition Mode - minor)
 
 ### Added - Competition Mode: generate-and-judge for upstream, pre-contract phases
