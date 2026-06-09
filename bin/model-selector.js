@@ -16,11 +16,14 @@
  */
 
 // ── Tiers ───────────────────────────────────────────────────────────────────
+// M85: FABLE tier added alongside HAIKU/SONNET/OPUS.
+// Contract: .gsd-t/contracts/model-tier-policy-contract.md v1.0.0 § "Stage Policy"
 
 const TIERS = Object.freeze({
   HAIKU: "haiku",
   SONNET: "sonnet",
   OPUS: "opus",
+  FABLE: "fable",
 });
 
 const DEFAULT_TIER = TIERS.SONNET;
@@ -90,9 +93,16 @@ const PHASE_RULES = Object.freeze([
   { phase: "integrate",                            model: TIERS.SONNET, reason: "Integration wiring is routine coordination work" },
 
   // Phase: debug
-  { phase: "debug", task_type: "fix_apply",        model: TIERS.SONNET, reason: "Applying a known fix is routine code work" },
-  { phase: "debug", task_type: "root_cause",       model: TIERS.OPUS,   reason: "Root-cause analysis is high-stakes reasoning" },
-  { phase: "debug",                                model: TIERS.OPUS,   reason: "Debug default is high-stakes — prefer opus unless the task_type says otherwise" },
+  { phase: "debug", task_type: "fix_apply",           model: TIERS.SONNET, reason: "Applying a known fix is routine code work" },
+  { phase: "debug", task_type: "root_cause",          model: TIERS.OPUS,   reason: "Root-cause analysis is high-stakes reasoning" },
+  // M85: cycle-2 escalation — when debug cycle-1 (opus) has not resolved the issue,
+  // cycle-2 escalates to Fable. The debug DEFAULT (cycle-1/general) remains opus —
+  // no existing rule is altered (AC f, no silent degradation). This is a DOCUMENTED
+  // MIRROR for Task-based/bin/ callers; the live enforcement is in the debug workflow
+  // ternary (D3-T3); the D4 lint guards that ternary.
+  // API shape: selectModel({ phase: "debug", task_type: "cycle_2_escalation" }) → fable
+  { phase: "debug", task_type: "cycle_2_escalation",  model: TIERS.FABLE,  reason: "Cycle-2 debug escalation — Fable after opus cycle-1 has not resolved; no existing rule altered (AC f)" },
+  { phase: "debug",                                   model: TIERS.OPUS,   reason: "Debug default is high-stakes — prefer opus unless the task_type says otherwise" },
 
   // Phase: partition — high-stakes architectural decomposition
   { phase: "partition",                            model: TIERS.OPUS,   reason: "Domain partitioning is architectural reasoning — high stakes" },

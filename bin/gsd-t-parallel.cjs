@@ -36,6 +36,8 @@ const path = require("node:path");
 const { buildTaskGraph, getReadyTasks } = require(path.join(__dirname, "gsd-t-task-graph.cjs"));
 const { validateDepGraph } = require(path.join(__dirname, "gsd-t-depgraph-validate.cjs"));
 const { proveDisjointness } = require(path.join(__dirname, "gsd-t-file-disjointness.cjs"));
+// M85: single source of truth for model ids — sourced from policy module, never re-hardcoded here
+const { MODEL_IDS } = require(path.join(__dirname, "gsd-t-model-tier-policy.cjs"));
 // M61 D3: gsd-t-economics retired. estimateTaskFootprint produced a per-task
 // token+cost estimate the planner could consult for in-session-headroom
 // math. Native budget primitives (Workflow `budget` + /usage) replace it.
@@ -420,14 +422,19 @@ function _runCacheWarmProbe(opts) {
     "then reply with the single word `warm` and nothing else:\n" +
     filesRead.map((f) => `- ${f}`).join("\n");
 
+  // M85: pass model via --model flag (env var ANTHROPIC_MODEL is silently ignored
+  // by the current claude CLI — measured probe 2026-06-09 r3: env form ran opus-4-8
+  // regardless of the env value). The flag is authoritative; env may be kept for
+  // backwards compat with older CLI versions but the flag takes precedence.
   const env = Object.assign({}, process.env);
-  if (model) env.ANTHROPIC_MODEL = model;
+  const cliArgs = ["-p", prompt, "--dangerously-skip-permissions"];
+  if (model) cliArgs.push("--model", model);
 
   try {
     // GSD-T-LINT: skip stream-json (reason: cache-warm probe — single-word "warm" reply, no progress to stream)
     const r = spawnSync(
       "claude",
-      ["-p", prompt, "--dangerously-skip-permissions"],
+      cliArgs,
       {
         cwd: projectDir,
         env,
@@ -580,11 +587,15 @@ function runDispatch(opts) {
   // A task can opt back to Opus by declaring "[opus]" in its tasks.md line;
   // the planner surfaces this via per-task metadata (future; today the per-
   // subset opt-in is an all-or-nothing knob passed by the caller).
-  const DEFAULT_WORKER_MODEL = "claude-sonnet-4-6";
+  const DEFAULT_WORKER_MODEL = MODEL_IDS.sonnet;
+  // M85: alias map sources from policy module — MODEL_IDS is the single authority.
+  // No bare model-id literals here; changing a model id in the policy module alone
+  // is sufficient (single-source thesis, AC b).
   const modelAlias = {
-    opus: "claude-opus-4-7",
-    sonnet: "claude-sonnet-4-6",
-    haiku: "claude-haiku-4-5-20251001",
+    opus:   MODEL_IDS.opus,
+    fable:  MODEL_IDS.fable,
+    sonnet: MODEL_IDS.sonnet,
+    haiku:  MODEL_IDS.haiku,
   };
   const callerModel = opts && opts.workerModel;
   const workerModel = callerModel === false

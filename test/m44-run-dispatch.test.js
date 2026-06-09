@@ -236,8 +236,10 @@ test("runDispatch — workerModel alias 'opus' resolves to full model id", () =>
   });
 
   if (out.decision !== "fan_out") return;
+  // M85: alias 'opus' now resolves to claude-opus-4-8 (stale 4-7 fixed; sourced from policy module)
+  const { MODEL_IDS } = require("../bin/gsd-t-model-tier-policy.cjs");
   for (const c of spawnCalls) {
-    assert.equal(c.workerModel, "claude-opus-4-7");
+    assert.equal(c.workerModel, MODEL_IDS.opus);
   }
 });
 
