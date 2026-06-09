@@ -13,10 +13,10 @@
 | Severity | Open | Resolved |
 |----------|------|----------|
 | 🔴 CRITICAL | 3 | 1 |
-| 🟠 HIGH | 39 | 1 |
-| 🟡 MEDIUM | 76 | 1 |
+| 🟠 HIGH | 41 | 1 |
+| 🟡 MEDIUM | 77 | 1 |
 | 🟢 LOW | 58 | 2 |
-| **Total** | **176** | **5** |
+| **Total** | **179** | **5** |
 
 > 5 items resolved by M81 runtime-native workflows (v4.0.29) — see the `## ✅ Resolved` section at the bottom.
 
@@ -421,6 +421,26 @@ The only path that still injects stack rules is the legacy `bin/gsd-t-task-brief
 - **Impact:** Agents writing or validating progress.md against this contract will: miss the ACTIVE status as valid, omit the Summary column from new Completed Milestones rows, and write date-only timestamps instead of the required HH:MM TZ format. The date-guard hook (`scripts/gsd-t-date-guard.js`) enforces M59, but the contract document itself is the reference agents read first.
 - **Remediation:** Add ACTIVE to the Valid Status Values table with the note `Set By: (informal compound status for between-milestones state)`. Add the Summary column to the Completed Milestones table schema. Update `## Date:` format to `{YYYY-MM-DD HH:MM TZ}` with a note that this is mandatory from v3.29.10 (forward-only, pre-existing rows stay date-only).
 - **Found in slice:** living-document-contracts-and-state
+
+### TD-294 - M83 pre-mortem gate has no quiescence criterion — BLOCKs on ANY finding, loop may never terminate
+- **Area:** Plan-hardening gate semantics / methodology
+- **Severity:** HIGH
+- **Status:** OPEN
+- **Location:** templates/workflows/gsd-t-phase.workflow.js (plan-hardening stage), .gsd-t/contracts/plan-hardening-contract.md
+- **Description:** The pre-mortem verdict rule is binary — BLOCK on any concrete falsifiable finding lacking a test, with no severity threshold, no headline-materiality requirement, and no convergence/stop rule. A fresh-context adversarial agent pointed at a 20+ task plan can essentially always produce one more coverage-class finding, so the gate can loop indefinitely. MEASURED on M85 (2026-06-09): 4 cycles, finding counts 6 -> 3 -> 1 -> 3 (trajectory broke upward at cycle 4), ~280k subagent tokens per cycle, all 10 prior closures verified holding each round; resolved only by explicit human adjudication (user approved fold-and-proceed).
+- **Impact:** Plan phase can consume unbounded tokens/wall-clock with diminishing returns; in unattended runs (no human to adjudicate) a milestone would stall at plan forever; pressure builds to weaken findings instead of fixing the stop rule.
+- **Remediation:** Amend plan-hardening-contract.md with a quiescence criterion, e.g.: BLOCK only when a finding is CRITICAL, or HIGH AND headline-material; coverage-class MEDIUM/LOW findings convert to required tests without blocking; and/or a convergence rule — when a cycle produces no CRITICAL/HIGH-on-headline and all prior closures hold, verdict = CLEARED-WITH-NOTES (findings folded as tasks). Route the amendment through the standard contract-change process; this is also a candidate first case for the planned retro-agent governor (backlog #27).
+- **Found in slice:** m85-plan-hardening-loop (live observation, not scan)
+
+### TD-295 - gsd-t-phase plan path: agent narrative contradicts the gate verdict; workflow summary carries stale finding counts
+- **Area:** Workflow result wiring / observability integrity
+- **Severity:** HIGH
+- **Status:** OPEN
+- **Location:** templates/workflows/gsd-t-phase.workflow.js (plan-hardening result assembly)
+- **Description:** In ALL FOUR M85 plan cycles (2026-06-09, runs wf_ff3459cc-c39, wf_215a63de-871, wf_46708ed1-863, wf_da3fb0fc-139) the planning agent's summary claimed "CLEARED" / "converged" while the authoritative preMortem.verdict in the same result envelope was BLOCK. The agent writes its narrative without (or before) seeing the gate stage's output, and the workflow concatenates the two without reconciliation. Additionally the workflow's top-level blocked summary line cited finding counts that did not match the current cycle's preMortem block in at least one cycle (cycle 4 said "3 findings" in the status line, which coincidentally matched but was assembled from the gate, while the narrative said zero — the orchestrating session had to parse the raw preMortem JSON every cycle to learn the truth).
+- **Impact:** The result's human-readable summary is actively misleading on the single most important fact (did the gate pass). Any consumer that trusts result.summary over the preMortem block — including a human reading /workflows — will advance a BLOCKED plan. Violates the detached-fanout lesson (never trust narration; verify the artifact).
+- **Remediation:** Derive the result summary's verdict sentence mechanically from preMortem.verdict and findings.length in the workflow script (deterministic string assembly), and prepend it BEFORE the agent narrative; never let agent prose state a gate outcome. Optionally pass the gate result INTO a final summarizer agent instead of using the planning agent's pre-gate narrative.
+- **Found in slice:** m85-plan-hardening-loop (live observation, not scan)
 
 ## 🟡 Medium Priority
 
@@ -1153,6 +1173,16 @@ Additionally, using `process.pid` as the temp file discriminator means that if t
 - **Impact:** Any agent resuming work and reading docs/workflows.md to understand how processes flow will implement the pre-M61 manual orchestration pattern. The gap is substantial - workflows.md describes a system that evolved through 61+ milestones of changes after M17.
 - **Remediation:** Update `Last Updated` and add a `### Native Workflow Execution (M61+)` section describing the current `preflight → brief → Workflow({scriptPath}) → verify-gate` pattern. Update the Full Wave Cycle section. Add scan workflow section. This is a major doc-ripple that was not completed across M61-M79.
 - **Found in slice:** living-document-contracts-and-state
+
+### TD-296 - Plan-phase brief is stale: described M65 (not the current milestone) in four consecutive M85 runs
+- **Area:** Context-brief generation
+- **Severity:** MEDIUM
+- **Status:** OPEN
+- **Location:** bin/gsd-t-context-brief.cjs (kind=plan), templates/workflows/gsd-t-phase.workflow.js (generateBrief call)
+- **Description:** In all four M85 plan-phase runs (2026-06-09) the generated $BRIEF_PATH described M65 domains/contracts and contained zero M85 scope — both the planning agent and the pre-mortem agent independently flagged it and fell back to reading the M85 artifacts directly. The brief id/kind cache appears to serve a stale snapshot rather than regenerating against the current milestone's domains/contracts.
+- **Impact:** Brief-first rule (M55-D5) silently defeated for the plan phase: every worker re-walks the repo, paying the 30-60k context cost the brief exists to avoid; worse, an agent that TRUSTED the brief would plan against M65 state.
+- **Remediation:** Make brief generation milestone-aware (include current milestone domains/tasks/contracts for kind=plan/partition), or key the brief cache by milestone id so a stale cross-milestone snapshot can never be served; add a freshness assertion (brief must mention the requested milestone id, else regenerate).
+- **Found in slice:** m85-plan-hardening-loop (live observation, not scan)
 
 ## 🟢 Low Priority
 
