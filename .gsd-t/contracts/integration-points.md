@@ -1,6 +1,8 @@
 # Integration Points
 
-## Current State: Milestone 41 — Universal Token Capture Across GSD-T (PARTITIONED — 5 domains)
+## Current State: M85 — Model-Tier Policy (single source of truth) + Fable 5 Integration (PLANNED — 4 domains, 2 waves). See `.gsd-t/contracts/m85-integration-points.md`.
+
+## Prior State: Milestone 41 — Universal Token Capture Across GSD-T (PARTITIONED — 5 domains)
 
 ## M41 Dependency Graph
 

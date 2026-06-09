@@ -15,3 +15,8 @@ The five Fable stage assignments — edits to the `model:` literals across exact
 - `test/m85-workflow-tier-policy-lint.test.js` — owned by m85-d4-lint-shadow-docs (it READS these workflows read-only; it does not write them)
 - All docs, `model-selection-contract.md`, `.gsd-t/progress.md` — owned by m85-d4-lint-shadow-docs
 - The other 5 workflow files (`gsd-t-execute/wave/integrate/quick/scan`) — not in M85 scope; untouched.
+
+## Files Owned
+- `templates/workflows/gsd-t-phase.workflow.js`
+- `templates/workflows/gsd-t-verify.workflow.js`
+- `templates/workflows/gsd-t-debug.workflow.js`

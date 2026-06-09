@@ -17,3 +17,13 @@ Enforcement + measurement + doc ripple — fully disjoint from all source files.
 - `bin/gsd-t-model-tier-policy.cjs`, `.gsd-t/contracts/model-tier-policy-contract.md` — owned by m85-d1-tier-policy-module
 - `bin/gsd-t-parallel.cjs`, `bin/model-selector.js`, `test/model-selector.test.js` — owned by m85-d2-bin-consumers-alias-selector
 - `templates/workflows/*.workflow.js` — owned by m85-d3-workflow-fable-assignments (this domain READS them in the lint, but WRITES none)
+
+## Files Owned
+- `test/m85-workflow-tier-policy-lint.test.js`
+- `templates/CLAUDE-global.md`
+- `/Users/david/.claude/CLAUDE.md`
+- `CLAUDE.md`
+- `README.md`
+- `commands/gsd-t-help.md`
+- `.gsd-t/contracts/model-selection-contract.md`
+- `.gsd-t/progress.md`

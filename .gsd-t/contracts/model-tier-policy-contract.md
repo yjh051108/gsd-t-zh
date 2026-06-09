@@ -39,6 +39,8 @@ requiresThinkingOmitted(model) === true   iff   model === "claude-fable-5"
 
 Rationale (the single canonical home): `claude-fable-5` returns **HTTP 400** when the explicit thinking-disabled parameter is sent. The parameter must therefore be OMITTED for Fable. No other file may re-implement this predicate or re-state the rationale.
 
+**Consumption site (the predicate must be LIVE, not a dead export).** The only GSD-T-controlled spawn path that sets model/thinking params is `bin/gsd-t-parallel.cjs` (it spawns `claude -p` and sets `ANTHROPIC_MODEL`). That path is where `requiresThinkingOmitted(model)` is consulted: when the resolved worker model is `claude-fable-5`, the spawn OMITS any explicit thinking-disabled param. Workflow `agent()` `model:` aliases (e.g. `"fable"`) are translated by the Anthropic Workflow sandbox runtime, which GSD-T does NOT control — workflows therefore do not (and cannot) consult this predicate directly. (M85-D2 owns this binding.)
+
 ---
 
 ## Stage Policy (M85 Fable assignments)

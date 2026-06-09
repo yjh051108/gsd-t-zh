@@ -14,3 +14,8 @@ The two `bin/` CONSUMER files that resolve/document tiers, plus the model-select
 - `templates/workflows/*.workflow.js` — owned by m85-d3-workflow-fable-assignments
 - `test/m85-workflow-tier-policy-lint.test.js` — owned by m85-d4-lint-shadow-docs
 - All docs, `model-selection-contract.md`, `.gsd-t/progress.md` — owned by m85-d4-lint-shadow-docs
+
+## Files Owned
+- `bin/gsd-t-parallel.cjs`
+- `bin/model-selector.js`
+- `test/model-selector.test.js`

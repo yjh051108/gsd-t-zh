@@ -14,3 +14,8 @@ The dependency-graph ROOT. The single zero-dep canonical tier-policy module and 
 - `templates/workflows/*.workflow.js` — owned by m85-d3-workflow-fable-assignments
 - `test/m85-workflow-tier-policy-lint.test.js` — owned by m85-d4-lint-shadow-docs
 - All docs (`CLAUDE.md`, `README.md`, `commands/gsd-t-help.md`, `templates/CLAUDE-global.md`, `~/.claude/CLAUDE.md`), `model-selection-contract.md`, `.gsd-t/progress.md` — owned by m85-d4-lint-shadow-docs
+
+## Files Owned
+- `bin/gsd-t-model-tier-policy.cjs`
+- `test/m85-model-tier-policy.test.js`
+- `.gsd-t/contracts/model-tier-policy-contract.md`

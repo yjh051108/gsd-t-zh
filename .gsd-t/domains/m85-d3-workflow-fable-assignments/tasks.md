@@ -1,40 +1,64 @@
 # Tasks: m85-d3-workflow-fable-assignments
 
 ## Summary
-Slot Fable into the 5 designated workflow stages across 3 files, preserving the competition-producer-stays-opus / judge-moves-to-fable blindness invariant, and verify all 5 show `⚙ [fable]` in a real sandbox run.
+The five Fable stage assignments — edits to the `model:` literals across exactly the 3 affected workflow files, write-disjoint from all `bin/` and all `test`/docs. Owns the HARD INVARIANT that competition producers STAY `opus` while the judge MOVES to `fable` (M82 different-model blindness), decided inside `gsd-t-phase.workflow.js` so it lives in exactly one place. Verified by a REAL sandbox run (`⚙ [fable]` visible), not `node --check`.
 
 ## Tasks
 
-### Task 1: Fable the 4 gsd-t-phase stages + hold the producer invariant (Headline)
+### M85-D3-T1 — Fable the 4 gsd-t-phase stages; hold the producer-opus invariant
+- **Touches**: `templates/workflows/gsd-t-phase.workflow.js` (lines ~172, ~198, ~432, ~476, ~656)
 - **Files**: `templates/workflows/gsd-t-phase.workflow.js`
-- **Contract refs**: `model-tier-policy-contract.md`, `competition-mode-contract.md`
-- **Dependencies**: BLOCKED by m85-d1-tier-policy-module Task 2 (contract) and m85-d4-lint-shadow-docs Task 1 (lint exists to prove conformance)
+- **Test**: `test/m85-workflow-tier-policy-lint.test.js` (D4-owned, READS this file; asserts the 4 stages resolve to fable AND producers stay opus) + `test/m71-workflow-runtime-native-lint.test.js` (no `require`/`fs` reintroduced)
+- **Contract refs**: `.gsd-t/contracts/model-tier-policy-contract.md` v1.0.0 § "Stage Policy", `.gsd-t/contracts/competition-mode-contract.md` v2.0.0 (blindness invariant)
+- **Deps**: BLOCKED by M85-D1-T4 (contract STABLE) and M85-D4-T1 (lint exists to prove conformance)
 - **Acceptance criteria**:
-  - Solution-space probe (~172): `opus` → `fable`.
-  - Partition probe (~198): `opus` → `fable`.
-  - Competition judge (~476): `sonnet` → `fable`.
-  - Pre-mortem (~656): `opus` → `fable`.
-  - Competition producers (~432): STAY `opus` (invariant — unchanged).
-  - No `require`/`fs`/`process` reintroduced (M71 runtime-native lint stays green).
-  - **Killing test**: D4's lint asserts these 4 stages resolve to fable AND producers stay opus.
+  - Solution-space probe (~172): `model: "opus"` → `model: "fable"`. *(Falsifier: still emits opus. Test: `test/m85-workflow-tier-policy-lint.test.js` asserts `solution-space-probe → fable`.)*
+  - Partition probe (~198): `model: "opus"` → `model: "fable"`. *(Falsifier: still opus. Test: `test/m85-workflow-tier-policy-lint.test.js` asserts `partition-probe → fable`.)*
+  - Competition judge (~476): `model: "sonnet"` → `model: "fable"`. *(Falsifier: still sonnet/opus. Test: `test/m85-workflow-tier-policy-lint.test.js` asserts `competition-judge → fable`.)*
+  - Pre-mortem (~656): `model: "opus"` → `model: "fable"`. *(Falsifier: still opus. Test: `test/m85-workflow-tier-policy-lint.test.js` asserts `pre-mortem → fable`.)*
+  - Competition PRODUCERS (~432): STAY `model: "opus"` — unchanged; the judge-≠-producer blindness invariant lives here. *(Falsifier: producers move to fable, collapsing blindness to judge==producer. Test: `test/m85-workflow-tier-policy-lint.test.js` asserts `competition-producers → opus` AND judge tier ≠ producer tier.)*
+  - No `require`/`fs`/`path`/`child_process`/`process` reintroduced; `model:` is the only changed surface. *(Falsifier: sandbox-banned global appears. Test: `test/m71-workflow-runtime-native-lint.test.js`.)*
 
-### Task 2: Fable Red Team in verify
+### M85-D3-T2 — Fable the Red Team stage in verify
+- **Touches**: `templates/workflows/gsd-t-verify.workflow.js` (line ~307)
 - **Files**: `templates/workflows/gsd-t-verify.workflow.js`
-- **Contract refs**: `model-tier-policy-contract.md`, `orthogonal-validation-contract.md`
-- **Dependencies**: BLOCKED by m85-d1 Task 2, m85-d4 Task 1
+- **Test**: `test/m85-workflow-tier-policy-lint.test.js` (asserts `red-team → fable`) + `test/m71-workflow-runtime-native-lint.test.js`
+- **Contract refs**: `.gsd-t/contracts/model-tier-policy-contract.md` v1.0.0, `.gsd-t/contracts/orthogonal-validation-contract.md` v1.0.0
+- **Deps**: BLOCKED by M85-D1-T4, M85-D4-T1
 - **Acceptance criteria**:
-  - Red Team (~307): `opus` → `fable`.
-  - Red Team stays NON-SKIPPABLE (only tier changed) — AC(f).
+  - Red Team (~307): `model: "opus"` → `model: "fable"`. *(Falsifier: still opus. Test: `test/m85-workflow-tier-policy-lint.test.js` asserts `red-team → fable`.)*
+  - Red Team stays NON-SKIPPABLE — only the tier changed; no skip flag added, no schema/stage removed (AC f). *(Falsifier: Red Team becomes skippable or its stage is gated behind a flag. Test: `test/m85-workflow-tier-policy-lint.test.js` / grep asserts the Red Team `agent()` stage is unconditional, no `skip` arg.)*
 
-### Task 3: Fable debug cycle-2 escalation
+### M85-D3-T3 — Fable the debug cycle-2 escalation (per-cycle conditional)
+- **Touches**: `templates/workflows/gsd-t-debug.workflow.js` (line ~97 — the SINGLE `model:` literal inside the `for (cycle 1..2)` loop)
 - **Files**: `templates/workflows/gsd-t-debug.workflow.js`
-- **Contract refs**: `model-tier-policy-contract.md`, `debug-loop-contract.md`
-- **Dependencies**: BLOCKED by m85-d1 Task 2, m85-d4 Task 1
+- **Test**: `test/m85-workflow-tier-policy-lint.test.js` (asserts `debug-cycle-2 → fable` AND cycle-1 → opus) + `test/m71-workflow-runtime-native-lint.test.js`
+- **Contract refs**: `.gsd-t/contracts/model-tier-policy-contract.md` v1.0.0, `.gsd-t/contracts/debug-loop-contract.md` v1.0.0
+- **Deps**: BLOCKED by M85-D1-T4, M85-D4-T1
 - **Acceptance criteria**:
-  - Cycle-2 escalation (~97): → `fable` (cycle-1 stays opus, then needs-human).
+  - **WIRING (pre-mortem finding #1):** the debug loop today has ONE shared `model: "opus"` literal serving BOTH cycles (a single `agent()` call inside `for (let cycle=1; cycle<=2; cycle++)`). The edit MUST be a per-cycle CONDITIONAL — `model: cycle === 1 ? "opus" : "fable"` (or equivalent) — NOT a flat literal swap. A flat swap would make cycle-1 fable too, violating "cycle-1 stays opus." *(Falsifier: cycle-1 runs on fable, or both cycles run the same tier. Test: `test/m85-workflow-tier-policy-lint.test.js` parses the conditional and asserts cycle-1→opus, cycle-2→fable — see the lint's cycle-conditional handling in D4-T1.)*
+  - Cycle-2 escalation: → `fable`; cycle-1 stays `opus`; after cycle-2 fails → needs-human (loop bound unchanged). *(Falsifier: cycle-2 stays opus, the loop bound changes, or needs-human path is altered. Test: `test/m85-workflow-tier-policy-lint.test.js` + `node --check`.)*
+  - No `require`/`fs`/`process` reintroduced. *(Test: `test/m71-workflow-runtime-native-lint.test.js`.)*
 
-### Task 4: Real-sandbox verification (AC c/d)
-- **Files**: (none — verification run)
-- **Dependencies**: Requires Tasks 1–3 (within domain)
+### M85-D3-T4 — Real-sandbox verification of all 5 Fable stages (AC c/d)
+- **Touches**: (no source file — a verification run; evidence captured in the verify phase / progress.md by D4)
+- **Files**: `templates/workflows/gsd-t-phase.workflow.js`, `templates/workflows/gsd-t-verify.workflow.js`, `templates/workflows/gsd-t-debug.workflow.js` (the artifacts under test)
+- **Test**: real-sandbox Workflow run — observe `⚙ [fable]` in `/workflows` output for all 5 stages (per `feedback_workflow_must_run_in_real_sandbox`; `node --check` is INSUFFICIENT)
+- **Contract refs**: `.gsd-t/contracts/model-tier-policy-contract.md` v1.0.0 (AC c/d)
+- **Deps**: Requires T1, T2, T3 (within domain)
 - **Acceptance criteria**:
-  - A real Workflow run shows `⚙ [fable]` in `/workflows` for all 5 designated stages. `node --check` alone is insufficient.
+  - A real Workflow run emits `⚙ [fable] {label}` for all five designated stages (solution-space probe, partition probe, competition judge, pre-mortem, Red Team, debug cycle-2 — five distinct Fable assignments across the runs). *(Falsifier: any designated stage still emits `opus`/`sonnet` in the live sandbox. Test: real-sandbox run, captured `/workflows` model lines.)*
+  - The competition path shows judge on `fable` while producers show `opus` in the SAME run (blindness preserved live, not just by lint). *(Falsifier: judge==producer tier in the live run. Test: real-sandbox competition run, model lines compared.)*
+  - No Fable stage 400s in the live run — the run completes through every Fable stage. (The thinking-disabled-omit GUARANTEE for GSD-T-controlled spawns is bound in `bin/gsd-t-parallel.cjs` via D2-T1b, where `requiresThinkingOmitted` is actually consulted; the workflow `agent()` calls delegate thinking handling to the Anthropic Workflow sandbox runtime, which GSD-T does not control — so this AC observes the live outcome, it does not assert a workflow-side call site that does not exist.) *(Falsifier: a Fable workflow stage 400s in the live run, or a GSD-T-controlled Fable spawn sends thinking-disabled. Test: real-sandbox run completes without a thinking-disabled 400; D2's `test/model-selector.test.js` covers the spawn-config omission.)*
+
+## Execution Estimate
+- Total tasks: 4
+- Independent tasks (once D1+D4-lint land): 3 (T1, T2, T3 — different files, file-disjoint)
+- Blocked tasks (within-domain): 1 (T4 needs T1+T2+T3)
+- Estimated checkpoints: 1 (after T4 — real-sandbox proof is the AC-c/d gate)
+
+## REQ Coverage
+- AC (c) 5 Fable stages run on Fable in real sandbox → T1, T2, T3, T4
+- AC (d) Fable breaking-change handled (thinking-disabled omitted) → T4
+- AC (f) Red Team non-skippable on new tier → T2
+- M82 blindness invariant (judge ≠ producer) → T1, T4
