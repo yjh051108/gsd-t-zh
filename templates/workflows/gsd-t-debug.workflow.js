@@ -94,7 +94,7 @@ for (let cycle = 1; cycle <= 2; cycle++) {
     label: `debug-cycle-${cycle}`,
     phase: `Cycle ${cycle}`,
     schema: DEBUG_CYCLE_SCHEMA,
-    model: "opus",
+    model: cycle === 1 ? "opus" : "fable",
   }).catch((e) => ({
     resolved: false,
     rootCause: `agent error: ${e && e.message}`,
