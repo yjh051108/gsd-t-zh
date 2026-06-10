@@ -1186,6 +1186,8 @@ const GLOBAL_BIN_TOOLS = [
   "gsd-t-competition-judge.cjs",
   // M83 — Plan-phase acceptance-traceability gate.
   "gsd-t-traceability-gate.cjs",
+  // M85 — Model-tier policy single source of truth (resolver + predicate).
+  "gsd-t-model-tier-policy.cjs",
 ];
 
 function installGlobalBinTools() {
@@ -2479,6 +2481,9 @@ const PROJECT_BIN_TOOLS = [
   "gsd-t-competition-judge.cjs", "gsd-t-file-disjointness.cjs",
   // M83 — Plan-phase acceptance-traceability gate (runs in the plan workflow).
   "gsd-t-traceability-gate.cjs",
+  // M85 — Model-tier policy resolver, so command invokers in consumer projects
+  // can resolve stage tiers at invoke time (M69 injection pattern).
+  "gsd-t-model-tier-policy.cjs",
 ];
 
 // Files that older versions of this installer copied into project bin/ but
@@ -4570,6 +4575,16 @@ if (require.main === module) {
       // M83 D1 — `gsd-t traceability-gate` plan-phase acceptance-traceability gate.
       const { spawnSync } = require("child_process");
       const js = path.join(__dirname, "gsd-t-traceability-gate.cjs");
+      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
+        stdio: "inherit",
+      });
+      process.exit(res.status == null ? 1 : res.status);
+    }
+    case "model-tier-policy": {
+      // M85 — `gsd-t model-tier-policy` thin dispatcher to the tier-policy
+      // resolver (single source of truth for model-tier assignments).
+      const { spawnSync } = require("child_process");
+      const js = path.join(__dirname, "gsd-t-model-tier-policy.cjs");
       const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
         stdio: "inherit",
       });

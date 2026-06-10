@@ -304,7 +304,7 @@ const stages = [
       `Verdict is FAIL if you found any CRITICAL or HIGH severity bug; GRUDGING-PASS`,
       `if you searched exhaustively and found nothing. Return JSON per the schema.`,
     ].join("\n"),
-    { label: "red-team", phase: "Orthogonal Triad", schema: RED_TEAM_SCHEMA, model: "opus" }
+    { label: "red-team", phase: "Orthogonal Triad", schema: RED_TEAM_SCHEMA, model: "fable" }
   ),
 
   // Stage C — QA (test execution + shallow-test detection + contract compliance)

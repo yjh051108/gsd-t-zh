@@ -1,6 +1,6 @@
 # GSD-T: Contract-Driven Development for Claude Code
 
-**v4.0.27** - A methodology for reliable, parallelizable development using Claude Code with optional Agent Teams support.
+**v4.4.10** - A methodology for reliable, parallelizable development using Claude Code with optional Agent Teams support.
 
 **Eliminates context rot** — task-level fresh dispatch (one subagent per task, ~10-20% context each) means compaction never triggers.
 **Compaction-proof debug loops** — `gsd-t headless --debug-loop` runs test-fix-retest cycles as separate `claude -p` sessions. A JSONL debug ledger persists all hypothesis/fix/learning history across fresh sessions. Anti-repetition preamble injection prevents retrying failed hypotheses. Escalation tiers (sonnet → opus → human) and a hard iteration ceiling enforced externally.
@@ -18,7 +18,7 @@
 **Rigorous User-Journey Coverage + Anti-Drift Test Quality** — `bin/journey-coverage.cjs` regex listener detector + `gsd-t check-coverage` CLI + `scripts/hooks/pre-commit-journey-coverage` commit gate blocks viewer-source commits when uncovered listeners exist. Journey specs in `e2e/journeys/` use functional assertions (zero `toBeVisible`-only tests) per the E2E Test Quality Standard in CLAUDE.md.
 **Universal Playwright Bootstrap + Deterministic UI Enforcement (M50)** — three executable enforcement layers: (1) `bin/playwright-bootstrap.cjs` + `bin/ui-detection.cjs` - idempotent installer detects package manager, installs `@playwright/test` + chromium, scaffolds `e2e/`; (2) Workflow runtime runs `playwright-bootstrap.cjs::installPlaywright()` before any E2E stage when `hasUI && !hasPlaywright`; install failure halts with `blocked-needs-human`; (3) `scripts/hooks/pre-commit-playwright-gate` (opt-in via `gsd-t doctor --install-hooks`) blocks viewer-source commits when staged files are newer than `.gsd-t/.last-playwright-pass`. The `gsd-t setup-playwright [path]` subcommand handles manual install.
 **Visualizer (`/gsd-t-visualize`)** — launches a real-time browser dashboard with dual-pane view: top pane streams the main session, bottom pane streams whichever spawn the user clicks. Left rail shows Live Spawns and Completed (last 100 spawns, status-badged, collapsible). Right rail shows Spawn Plan / Parallelism / Tool Cost. Powered by `gsd-t-stream-feed-server.js` + `gsd-t-dashboard.html`.
-**Surgical model selection** — `bin/model-selector.js` assigns haiku/sonnet/opus per phase via a declarative rules table; `/advisor` escalation path with convention-based fallback.
+**Surgical model selection** — `bin/model-selector.js` assigns haiku/sonnet/opus/fable per phase via a declarative rules table; `/advisor` escalation path with convention-based fallback. **M85 single-source tier policy:** `bin/gsd-t-model-tier-policy.cjs` is the SINGLE source of truth for model-tier assignments; the 5 highest-leverage stages (solution-space probe, partition probe, competition judge, pre-mortem, Red Team) run on `fable` (Claude Fable 5, tier above Opus); competition producers stay `opus` (M82 blindness); debug escalates cycle-1→opus, cycle-2→fable. Drift is mechanically enforced by the M71-family lint (`test/m85-workflow-tier-policy-lint.test.js`).
 **Token Telemetry** — `gsd-t-calibration-hook.js` records token usage per spawn to `.gsd-t/token-metrics.jsonl` (18-field rows). `gsd-t-token-aggregator.js` aggregates across tasks for the `/gsd-t-metrics` view. Use the native Claude Code `/context` command for live in-session context percentage.
 **Quality North Star** — projects define a `## Quality North Star` section in CLAUDE.md (1–3 sentences, e.g., "This is a published npm library. Every public API must be intuitive and backward-compatible."). `gsd-t-init` auto-detects preset (library/web-app/cli) from package.json signals; `gsd-t-setup` configures it for existing projects. Subagents read it as a quality lens; absent = silent skip (backward compatible).
 **Design Brief Artifact** — during partition, UI/frontend projects (React, Vue, Svelte, Flutter, Tailwind) automatically get `.gsd-t/contracts/design-brief.md` with color palette, typography, spacing system, component patterns, and tone/voice. Non-UI projects skip silently. User-customized briefs are preserved. Referenced in plan phase for visual consistency.
@@ -391,7 +391,7 @@ Verify with: `/gsd-t-help`
 ```
 get-stuff-done-teams/
 ├── README.md
-├── package.json                       # @tekyzinc/gsd-t v4.0.27
+├── package.json                       # @tekyzinc/gsd-t v4.4.10
 ├── LICENSE
 ├── bin/                               # CLI entry + orchestrators + support modules (52 modules)
 │   ├── gsd-t.js                       # CLI installer + all subcommands
@@ -407,7 +407,8 @@ get-stuff-done-teams/
 │   ├── graph-*.js                     # Code graph engine (CGC/Neo4j integration)
 │   ├── journey-coverage.cjs           # Listener detector + coverage gap reporting
 │   ├── playwright-bootstrap.cjs       # Idempotent Playwright installer
-│   ├── model-selector.js              # Phase-to-model assignment (haiku/sonnet/opus)
+│   ├── model-selector.js              # Phase-to-model assignment (haiku/sonnet/opus/fable)
+│   ├── gsd-t-model-tier-policy.cjs    # M85: single-source tier policy (haiku/sonnet/opus/fable), resolver CLI
 │   ├── rule-engine.js                 # Declarative failure-pattern rules
 │   ├── patch-lifecycle.js             # 5-stage patch candidate→graduated lifecycle
 │   └── metrics-collector.js           # Task telemetry + ELO tracking

@@ -1,0 +1,8 @@
+{
+  "milestone": "M85",
+  "name": "Model-Tier Policy + Fable 5 Integration",
+  "version": "4.4.10",
+  "completedAt": "2026-06-09T18:02:57-07:00",
+  "verdict": "VERIFIED-WITH-WARNINGS (warnings closed 0203b10)",
+  "branch": "m85-model-tier-policy-fable"
+}

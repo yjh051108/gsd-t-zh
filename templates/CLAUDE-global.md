@@ -295,7 +295,7 @@ After the E2E suite, `gsd-t-verify` Step 4.5 runs `gsd-t test-data --purge --run
 Every code-producing phase ends with `gsd-t-verify.workflow.js`, which runs three orthogonal validators as `parallel()` `agent()` stages with schema-validated output. Per `.gsd-t/contracts/orthogonal-validation-contract.md` v1.0.0 STABLE, they are declared orthogonal objective functions — no collapse, no substitution, no transitive trust.
 
 - **`/code-review ultra`** — cooperative correctness + cleanup. Severity: `important` / `nit` / `pre-existing`. Skippable via `args.skipUltra=true` + `args.skipUltraReason`. `skipUltra=true` is INELIGIBLE for `VERIFIED`.
-- **Red Team** — adversarial / security / boundaries. Non-skippable. Protocol: `templates/prompts/red-team-subagent.md`. Verdict: `FAIL` (any CRITICAL or HIGH bug — blocks completion) or `GRUDGING-PASS` (exhaustive search, nothing found). CRITICAL/HIGH bugs get up to 2 fix cycles before deferral. Runs on `model: "opus"`.
+- **Red Team** — adversarial / security / boundaries. Non-skippable. Protocol: `templates/prompts/red-team-subagent.md`. Verdict: `FAIL` (any CRITICAL or HIGH bug — blocks completion) or `GRUDGING-PASS` (exhaustive search, nothing found). CRITICAL/HIGH bugs get up to 2 fix cycles before deferral. Runs on `model: "fable"` (M85).
 - **QA** — test execution + shallow-test detection + contract compliance. Non-skippable. Protocol: `templates/prompts/qa-subagent.md`. Writes ZERO feature code. Any shallow E2E test blocks phase completion. Runs on `model: "sonnet"`.
 
 When `.gsd-t/contracts/design-contract.md` or `.gsd-t/contracts/design/` exists, a fourth stage runs Design Verification (protocol: `templates/prompts/design-verify-subagent.md`) — opens a browser, compares the build against the design, returns a structured element-by-element MATCH/DEVIATION schema. Deviations block completion.
@@ -304,12 +304,13 @@ Synthesis stage merges results without category collapse. Verdict: `VERIFIED` / 
 
 ## Model Display (MANDATORY)
 
-**Each Workflow `agent()` call declares its model explicitly** via the `model:` option (`"haiku"` / `"sonnet"` / `"opus"`). The Workflow runtime emits a `⚙ [{model}] {label}` line per stage in `/workflows`, giving the user real-time visibility into which model handles each operation.
+**Each Workflow `agent()` call declares its model explicitly** via the `model:` option (`"haiku"` / `"sonnet"` / `"opus"` / `"fable"`). The Workflow runtime emits a `⚙ [{model}] {label}` line per stage in `/workflows`, giving the user real-time visibility into which model handles each operation.
 
 **Model assignments:**
 - `model: "haiku"` — strictly mechanical tasks: run test suites and report counts, check file existence, validate JSON structure, branch guard checks
 - `model: "sonnet"` — mid-tier reasoning: routine code changes, standard refactors, test writing, QA evaluation, straightforward synthesis
-- `model: "opus"` — high-stakes reasoning: architecture decisions, security analysis, complex debugging, cross-module refactors, Red Team adversarial QA, quality judgment on critical paths
+- `model: "opus"` — high-stakes reasoning: architecture decisions, security analysis, complex debugging, cross-module refactors, quality judgment on critical paths
+- `model: "fable"` — highest-stakes calls where one judgment gates the most downstream spend (M85): solution-space probe, partition probe, competition judge, pre-mortem, Red Team. Competition producers STAY `opus` (M82 blindness invariant — judge must differ from producers). Debug cycle-1 → `opus`, cycle-2 → `fable` (escalation). **Single source of truth for tier assignments:** `bin/gsd-t-model-tier-policy.cjs` + `.gsd-t/contracts/model-tier-policy-contract.md` v1.0.0 STABLE. The M71-family lint (`test/m85-workflow-tier-policy-lint.test.js`) proves every workflow `model:` literal matches the policy and a drifted literal FAILS the lint (mandatory negative test).
 
 **Context budget:** Workflow scripts receive a `budget` global (`budget.total`, `budget.spent()`, `budget.remaining()`) tied to the user's per-turn token target. Use it for dynamic loops (`while (budget.total && budget.remaining() > 50_000) { ... }`) or to scale fleet size. Opus 4.7/4.8 ship 1M context windows; the legacy meter at `bin/token-budget.cjs` was retired in M61 — use native `/context` for live in-session usage.
 

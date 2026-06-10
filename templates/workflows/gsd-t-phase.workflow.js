@@ -169,7 +169,7 @@ async function runSolutionSpaceProbe(projectDir, phaseName, { milestone, briefPa
     `BIAS TOWARD COMPETING: if you are uncertain, or can name even two plausibly-different approaches, choose compete=true. A wasted competition costs ~3× this one phase; a missed-better-approach costs far more downstream (more pre-mortem blocks, more bugs, more verify cycles). Err on the side of generating options.`,
     `Return JSON per the schema: { "compete": true|false, "reason": "<one sentence>", "approaches": ["<a>","<b>",...] }.`,
   ].filter(Boolean).join("\n");
-  const opts = { label: "solution-space-probe", schema: _PROBE_SCHEMA, model: "opus" };
+  const opts = { label: "solution-space-probe", schema: _PROBE_SCHEMA, model: "fable" };
   if (phaseNameOpt) opts.phase = phaseNameOpt;
   const r = await agent(prompt, opts).catch(() => null);
   // Probe failure → bias toward competing (fail-toward-options, per the cost logic).
@@ -195,7 +195,7 @@ async function runPartitionProbe(projectDir, { milestone, briefPath, userInput, 
     `BIAS TOWARD COMPETING: if ≥3 files/areas are in play or you're unsure, choose compete=true — the file-disjointness oracle will objectively pick the most-parallelizable valid carving among the candidates, so competing is low-risk and high-reward.`,
     `Return JSON per the schema.`,
   ].filter(Boolean).join("\n");
-  const opts = { label: "partition-probe", schema: _PROBE_SCHEMA, model: "opus" };
+  const opts = { label: "partition-probe", schema: _PROBE_SCHEMA, model: "fable" };
   if (phaseNameOpt) opts.phase = phaseNameOpt;
   const r = await agent(prompt, opts).catch(() => null);
   if (!r || typeof r.compete !== "boolean") {
@@ -473,7 +473,7 @@ if (!competitionOn) {
         `IMPORTANT: use the CANDIDATE LABEL (A, B, C…) shown above as the "id" in your scores.`,
       ].join("\n"),
       {
-        label: "judge:rubric", phase: "Judge", model: "sonnet",
+        label: "judge:rubric", phase: "Judge", model: "fable",
         schema: {
           type: "object", required: ["scores"], additionalProperties: true,
           properties: { scores: { type: "array", items: { type: "object", additionalProperties: true } } },
@@ -653,7 +653,7 @@ if (phaseName === "plan" && result && result.status !== "failed") {
       `Every blocking finding MUST convert to a concrete requiredTest the plan must adopt. Advisory notes are forbidden.`,
       `Verdict BLOCK if any concrete, falsifiable failure condition lacks a named required test; else CLEARED. Return JSON per the schema.`,
     ].join("\n"),
-    { label: "pre-mortem", phase: "Plan Hardening", schema: PRE_MORTEM_SCHEMA, model: "opus" }
+    { label: "pre-mortem", phase: "Plan Hardening", schema: PRE_MORTEM_SCHEMA, model: "fable" }
   ).catch((e) => ({ verdict: "BLOCK", findings: [{ severity: "HIGH", condition: `pre-mortem agent error: ${e && e.message}`, requiredTest: "re-run pre-mortem" }], notes: "agent-error" }));
 
   result.preMortem = preMortem;

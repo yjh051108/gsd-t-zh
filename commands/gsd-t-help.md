@@ -495,6 +495,13 @@ Use these when user asks for help on a specific command:
 - **CLI**: `gsd-t traceability-gate [--milestone <Mxx>] [--project-dir <dir>] [--tasks <file>]`. Exit 0 all traceable · 4 ≥1 untraceable AC (blocks execute) · 64 no tasks files.
 - **Contract**: `.gsd-t/contracts/plan-hardening-contract.md` v1.0.0 STABLE.
 
+### model-tier-policy (M85)
+- **Summary**: SINGLE source of truth for GSD-T model-tier assignments. Publishes the authoritative tier set (haiku/sonnet/opus/fable), the 7 designated stage→tier mappings, and the `requiresThinkingOmitted(model)` predicate (encoding Fable's HTTP-400 breaking change ONCE). M85 slots the Fable tier into the 5 highest-leverage stages (solution-space probe, partition probe, competition judge, pre-mortem, Red Team) where one call's judgment gates the most downstream spend; competition producers STAY opus (M82 blindness invariant); debug cycle-1→opus, cycle-2→fable. A M71-family lint (`test/m85-workflow-tier-policy-lint.test.js`) proves every workflow `model:` literal matches the policy — a drifted literal FAILS the lint (mandatory negative test).
+- **Files**: `bin/gsd-t-model-tier-policy.cjs` (zero external deps — installer invariant).
+- **Use when**: Any phase that needs to resolve a concrete model id from a stage key at invoke time (M69 pattern). Workflows NEVER `require` this module (sandbox ban) — they use hard-coded tier alias literals the lint proves match the policy.
+- **CLI**: `gsd-t model-tier-policy resolve <stageKey> [--json]`. Emits `{ok, stageKey, tier, model, requiresThinkingOmitted}`. Exit 0 resolved · 1 unknown stage key.
+- **Contract**: `.gsd-t/contracts/model-tier-policy-contract.md` v1.0.0 STABLE.
+
 ## Unknown Command
 
 If user asks for help on unrecognized command:
