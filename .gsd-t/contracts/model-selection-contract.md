@@ -87,7 +87,7 @@ Canonical `fable` stages (authoritative mapping in `.gsd-t/contracts/model-tier-
 - Red Team (`gsd-t-verify.workflow.js`, `label: "red-team"`) — adversarial QA; stays NON-SKIPPABLE on fable tier
 - Debug cycle-2 (`gsd-t-debug.workflow.js`, conditional: `cycle === 1 ? "opus" : "fable"`) — escalation before needs-human
 
-**Drift enforcement**: `test/m85-workflow-tier-policy-lint.test.js` (M71-family) proves every workflow `model:` literal matches the tier set AND designated stages have the correct tier. A deliberately-drifted literal FAILS the lint (mandatory negative test). Shadow A/B verdict (M85-D4-T2): PENDING (blocked on real-sandbox Fable verification runs, see progress.md).
+**Drift enforcement**: `test/m85-workflow-tier-policy-lint.test.js` (M71-family) proves every workflow `model:` literal matches the tier set AND designated stages have the correct tier. A deliberately-drifted literal FAILS the lint (mandatory negative test). Shadow A/B verdict (M85-D4-T2, MEASURED 2026-06-09): quality TIE within judge noise (blind order-reversed sonnet referees SPLIT; mean A 4.50 vs B 4.58) at 2.37× cost for competition — Fable single-draft $4.74 vs 3-Opus-competition + Fable-judge $11.24, runs `wf_d6b75c28-7d4` / `wf_5d8bc13a-293` (n=1, discuss-class; full provenance + caveats in progress.md).
 
 **Escalation hooks**: N/A. `fable` is the top of the escalation ladder.
 
