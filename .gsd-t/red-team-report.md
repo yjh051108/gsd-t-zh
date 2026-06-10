@@ -1,3 +1,55 @@
+# Red Team Report — M85 (Model-Tier Policy + Fable 5)
+
+Date: 2026-06-09 17:41 PDT
+Branch: m85-model-tier-policy-fable
+Scope: bin/gsd-t-model-tier-policy.cjs, bin/gsd-t-parallel.cjs, bin/model-selector.js, 3 workflows (phase/verify/debug), m85 lint + tests, doc ripple
+
+## Bugs
+
+### BUG-1: severity HIGH — Documented CLI surface `gsd-t model-tier-policy` does not exist (no dispatcher case, no bin propagation)
+- **Reproduction**: `node bin/gsd-t.js model-tier-policy resolve red-team --json`
+- **Expected**: JSON envelope `{ok, stageKey, tier, model, requiresThinkingOmitted}` per `commands/gsd-t-help.md` § "model-tier-policy (M85)" ("**CLI**: `gsd-t model-tier-policy resolve <stageKey> [--json]`") and the contract's "Resolver Surface (M69 invoke-time injection)" ("Command invokers call the resolver at invoke time").
+- **Actual**: `✗ Unknown command: model-tier-policy` + generic help. `bin/gsd-t.js` has NO `case "model-tier-policy"` — every sibling tool does (`parallel`, `preflight`, `brief`, `verify-gate`, `build-coverage`, `ci-parity`, `test-data`, `competition-judge`, `traceability-gate` at bin/gsd-t.js:4452–4569). Additionally `gsd-t-model-tier-policy.cjs` appears in NEITHER `GLOBAL_BIN_TOOLS` (bin/gsd-t.js:~1172) nor `PROJECT_BIN_TOOLS` (bin/gsd-t.js:~2468) — `grep -c gsd-t-model-tier-policy bin/gsd-t.js` → 0.
+- **Consequence**: in every consumer project the M69 invoke-time resolver path is dead on BOTH arms of the canonical runCli fallback (no project-local `bin/gsd-t-model-tier-policy.cjs`, no `gsd-t` PATH subcommand). The `requiresThinkingOmitted` predicate's declared LIVE surface (AC d-i: "consumed by command invokers at invoke time") is unreachable outside the GSD-T source repo. Repeat of the registered incident class "~/.claude/bin/ has no installer path — silent breakage" (project_global_bin_propagation_gap) and a Pre-Commit-Gate item (dispatch logic in bin/gsd-t.js must track new tool surfaces).
+- **Proof**: commands above. Mitigation note: nothing crashes at runtime *today* — no command file invokes the resolver yet, and workflows use lint-guarded alias literals. The breakage is a shipped-broken documented interface + dead contract surface, not a live-path fault.
+
+### BUG-2: severity LOW — Stale comment in `_runCacheWarmProbe` claims env-var backward compat that no longer exists
+- bin/gsd-t-parallel.cjs:425-429 says "env may be kept for backwards compat with older CLI versions but the flag takes precedence" — but the M85 edit removed the `env.ANTHROPIC_MODEL` assignment entirely; only `--model` is passed. Comment misstates the code.
+
+### BUG-3: severity LOW — `requiresThinkingOmitted` duplicates the fable id literal instead of referencing `MODEL_IDS.fable`
+- bin/gsd-t-model-tier-policy.cjs:66 hardcodes `'claude-fable-5'`; line 25 holds the same string in `MODEL_IDS`. A future fable id bump (e.g. dated snapshot) silently desyncs the predicate inside the very module that claims single-source. Mitigated: m85-model-tier-policy.test.js:28 pins `MODEL_IDS.fable`, and the contract pins the literal. Also note: predicate returns `false` for suffixed live ids (`claude-fable-5[1m]`) — consistent with the contract's exact-equality definition, but a footgun if a spawn site ever feeds back a transcript-reported model string.
+
+### BUG-4: severity LOW — Schema Freeze Policy self-violation in model-selection-contract.md
+- v1.0.0 froze: "The tier union 'haiku' | 'sonnet' | 'opus' is frozen for v1.x. Adding a fourth tier requires a v2.0.0 bump." M85 added `fable` at v1.1.0 by rewriting the freeze clause in the same edit. Verified no code consumer asserts the 3-tier union (only model-selector.test.js, which was updated) — process violation only, disclosed in the changelog row.
+
+## Coverage Gaps
+- AC(c) partition-probe live `⚙ [fable]` evidence: DOCUMENTED gap (a5c2423), lint-covered, deferred to next natural partition run (M86). Honest deferral.
+- `selectModel({phase:"debug", task_type:"cycle_2_escalation"})` is a documented mirror with no live caller (stated in-code); live enforcement is the workflow ternary + lint.
+
+## Shallow Tests Rewritten
+- 0. The m85 lint was attacked for evasion: non-literal `model: someVar` escapes the membership scan, but every DESIGNATED stage fails closed ("no model: found near label"); ternary extractor verified on both operands; 7 negative fixtures + real-file drifted-copy meta-tests genuinely fail the checker. Not decorative.
+
+## Contracts Verified
+- model-tier-policy-contract.md v1.0.0: STAGE_TIERS ↔ workflow literals ↔ contract table agree (6 fable rows + producers held opus); blindness invariant live (judge fable @ phase:476 vs producers opus @ phase:432, finalizer opus @ phase:566); zero-dep invariant holds; resolver envelope shape correct. VIOLATED only at the Resolver Surface / help-doc CLI claim (BUG-1).
+- model-selection-contract.md v1.1.0: phase map matches PHASE_RULES; freeze-policy issue (BUG-4).
+- Doc ripple verified: CLAUDE.md, README.md, templates/CLAUDE-global.md AND live ~/.claude/CLAUDE.md all updated (fable tier + Red Team model line).
+
+## Attack Vectors Tried
+1. Contract violations — BUG-1, BUG-4 found; stage map/blindness/zero-dep verified clean.
+2. Boundary inputs — resolver CLI fuzzed with `constructor`/`__proto__`/`toString`/`hasOwnProperty`/empty/missing stageKey: all rejected, exit 1, no prototype-chain leak (MODEL_IDS[Function] → undefined → null). Predicate truth table incl. null/undefined/aliases/suffixed ids verified.
+3. State transitions — maps Object.freeze'd, module stateless; `workerModel === false` opt-out → null handled by `if (model)` guard; cache-warm probe ordering safe.
+4. Error paths — resolve() never throws; missing `headless-auto-spawn.cjs` (TD-114) degrades gracefully to `decision:"sequential"` with `spawn_load:` error recorded.
+5. Missing flows — partition-probe live evidence gap (documented); resolver has no live invoker (folded into BUG-1).
+6. Regression — FULL suite: 1461 tests, 1457 pass, 0 fail, 4 skipped. M85-focused files: 138/138.
+7. E2E — Playwright suite run: 3 passed, 1 skipped (placeholder). M85 diff touches zero viewer source, so the M52 journey pass-through patch exercise does not bind to this milestone's diff. No orphan servers; port 7488 free post-run.
+8. Design fidelity — no design contract relevant; skipped per protocol.
+
+## Summary
+- BUGS FOUND: 4 (1 HIGH, 3 LOW)
+- VERDICT: **FAIL** (1 HIGH — BUG-1)
+
+---
+
 # Red Team Report — M57 CI-Parity Verify Gate (CYCLE 4 — FINAL VERIFICATION of the BUG-9 fix)
 
 **Date**: 2026-05-18 16:07

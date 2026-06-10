@@ -2,6 +2,22 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.4.10] - 2026-06-09 (M85 Model-Tier Policy + Fable 5 — minor)
+
+### Added — single source of truth for model-tier assignments + the Fable 5 tier
+
+Model-tier policy previously lived in 4 unsynced authorities with zero drift enforcement, and the parallel alias map was provably stale (`opus → claude-opus-4-7`). M85 centralizes the policy, fixes the live bug, and slots Claude Fable 5 (tier above Opus, $10/$50 per MTok) into the highest-leverage stages — gated by a lint so drift is impossible. The cost tradeoff was MEASURED, not asserted: a Fable single-draft tied a judged 3-Opus competition at 42% of the cost (n=1, discuss-class).
+
+- `bin/gsd-t-model-tier-policy.cjs`: NEW — frozen `MODEL_IDS` + `STAGE_TIERS` (6 fable stage keys; competition producers HELD at opus per the M82 blindness invariant), `requiresThinkingOmitted()` (Fable's thinking-disabled-400 breaking change encoded once; accepts the runtime bracket-suffix form), `resolve()` + CLI resolver emitting the M69 JSON envelope; `gsd-t model-tier-policy` dispatcher + registered in both bin-propagation lists.
+- `bin/gsd-t-parallel.cjs`: alias map now `require()`s the policy module (zero bare model-id literals; stale opus-4-7 gone); cache-warm probe passes `--model` explicitly (the `ANTHROPIC_MODEL` env pin was measured silently ignored by the current CLI).
+- `bin/model-selector.js`: FABLE tier + `cycle_2_escalation` rule via the existing `selectModel` signature; debug default byte-identical.
+- `templates/workflows/gsd-t-{phase,verify,debug}.workflow.js`: 5 Fable assignments — M84 solution-space/partition probes, competition judge (`judge:rubric`), M83 pre-mortem, Red Team (stays non-skippable), debug `cycle === 1 ? "opus" : "fable"` ternary.
+- `test/m85-workflow-tier-policy-lint.test.js`: NEW M71-family drift enforcer — 8-file discovery, stage-key→label mapping with per-stage non-empty-match, negative drift fixtures, real-file + debug-ternary meta-tests.
+- `test/m85-model-tier-policy.test.js` + `test/model-selector.test.js`: 25 + 57 tests incl. dispatcher/propagation killing tests.
+- Contracts: `model-tier-policy-contract.md` v1.0.0 STABLE (new); `model-selection-contract.md` → v1.1.0.
+
+No migration needed for consumer projects: workflows keep using tier aliases; `gsd-t update-all` propagates the new module. Suite 1462/0.
+
 ## [4.3.10] - 2026-06-05 (M84 Auto-Competition - minor)
 
 ### Changed - Competition Mode is now AUTOMATIC (was opt-in)
