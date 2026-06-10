@@ -441,3 +441,25 @@ M44 cross-domain parallelism is integrated (competition leans on the `parallel()
 - `templates/workflows/gsd-t-phase.workflow.js` (the generic upper-stage runner to extend)
 - memory: `feedback_native_workflow_redteam_catches_more.md` (perspective-diverse Workflow stages catch more), `feedback_measure_dont_claim.md` (success = measured), `feedback_deterministic_orchestration.md` (gates in JS, not prose — the oracle judge embodies this)
 - Deep-research transcripts (2026-06-05): tasks `wkcnmqw8u` (best-of-N / judge / debate) + `wt4z2eqcp` (synthesis vs pick-one / MoA / Frankenstein)
+
+## 27. Session Retrospective Agent (self-improving loop)
+- **Type:** feature | **App:** gsd-t | **Category:** templates
+- **Added:** 2026-06-09
+- Scheduled + event-triggered review of session transcripts across projects (`~/.claude/projects/*`), detecting recurring problems and architectural thrash, proposing methodology improvements through a governed pipeline. The third loop in GSD-T's dual structure: within-run (validation triad + competition), **across-run (this)**, across-model (manual reassessment). **DESIGN SETTLED 2026-06-09**: see `.gsd-t/CONTEXT.md` (m85(discuss) commit 271e5a9) for the locked L1–L5 architecture — 4 LLM agents + 3 deterministic CLI gates; append-only `.gsd-t/retro/ledger.jsonl` with closed 4-verb edge set (OBSERVES/PROPOSES/REJECTS/ADOPTS), supersede/prediction as fields; two-layer silence bar (deterministic recurrence gate R=3 era-fenced + Fable coherence judge biased SILENT, CRITICAL escape R=1); 3 lens-paired red-team adversaries (Regression/Goodhart/Evidence); weekly cron + sentinel event triggers (debug needs-human ×2, VERIFY-FAILED ×2, red-team non-convergence ×1), out-of-band ONLY.
+
+### Governor rules (unchanged from original spec)
+- Propose, never apply — blast radius is a markdown/JSONL file
+- Evidence-ladder proposal schema: cited session/message refs (required) → quantified cost → shadow-test result when feasible → falsifiable post-adoption prediction, checked later
+- Structural changes shadow-tested via `gsd-t-audit` before adoption
+- Model-release re-baseline: pre-release sessions fenced out of recurrence thresholds; pre-release ledger rejections marked eligible-for-reexamination
+
+### Acceptance criterion (known-answer test)
+Run against binvoice session `692fe9fc-2e09-490c-bb1d-3ae54f865c41`: must cluster the three symptom descriptions (count-shows-zero, purple-banner-replacing, Gnomie-leak) to ONE virtualized-DOM root cause and flag architecture-rethink by ~message 12. Plus the negative fixture: unrelated symptoms must stay SILENT. Both as executable CI fixtures (`templates/test-fixtures/retro/`). Prototype the symptom-clusterer FIRST.
+
+### Scope / dependencies
+3–4 domains. M85 (tier policy + Fable) SHIPPED — `model_era` stamps from `bin/gsd-t-model-tier-policy.cjs`.
+
+## 28. Vestigial component elimination + headless reconciliation
+- **Type:** improvement | **App:** gsd-t | **Category:** cli
+- **Added:** 2026-06-09
+- Remove confirmed-dead components and fix-or-remove the broken headless arm (deep-dive audit 2026-06-09). Targets: `bin/orchestrator.js` + `bin/design-orchestrator.js` (zero callers since M61/M65), `bin/gsd-t-task-brief*.{js,cjs}` (abandoned M40 infra, test-only refs), `bin/gsd-t-context-brief-kinds/` (M56, never wired), compaction-pressure machinery (compactions.jsonl stale) + context-meter remnants (config loader at gsd-t.js:3023 loads for nothing). Headless arm: TD-114 (gsd-t-parallel.cjs runDispatch requires deleted headless-auto-spawn.cjs → SILENT fan-out demotion to sequential — violates no-silent-degradation) and TD-116 (gsd-t-unattended* commands MODULE_NOT_FOUND) — rewrite on native Workflows + /loop, or delete and de-register. RULE: every deletion target gets a requirer-grep before removal (M65 KEEP-list rule — deletion lists are hypotheses). Doc ripple: README headless section, command tables, CHANGELOG. Largely promotable from techdebt (TD-114, TD-116, TD-123 overlap). Scope: 1–2 domains, 1 wave.
