@@ -469,9 +469,9 @@ Run against binvoice session `692fe9fc-2e09-490c-bb1d-3ae54f865c41`: must cluste
 - **Added:** 2026-06-09
 - Fable 5 promotional access ends **2026-06-22 23:59 PT** (support article 15424964). After that, Fable is NOT in plan limits — every Fable token bills usage credits (~API rates $10/$50 per MTok). Decisions due by then: (1) flip the SESSION default back to opus (`/model`) — the dominant cost (~$20-60/heavy day if left on fable); (2) re-decide the 5 GSD-T Fable stages — measured estimate ~$15-25/typical milestone at credit rates; suggested posture: keep Red Team + pre-mortem on fable (~$8-10/milestone), revert probes + judge to opus unless M86-era measurements show a quality delta. Thanks to M85 this is a ONE-FILE edit (`bin/gsd-t-model-tier-policy.cjs` + lint ripple). Counter-consideration: the measured A/B showed a fable single-draft TIED 3-opus competition at 42% cost — on some phases fable may REDUCE cost; re-measure with real billing. (3) M86 retro-agent silence-judge tier — same decision, same file.
 
-## 30. Model profiles — standard/pro/premium tier-spend switch with per-stage overrides
+## 30. Model profiles — standard/pro/premium tier-spend switch with per-stage overrides — **PROMOTED → DEFINED as M86 (2026-06-10)**
 - **Type:** feature | **App:** gsd-t | **Category:** cli
-- **Added:** 2026-06-10
+- **Added:** 2026-06-10 | **Status:** DEFINED — see `.gsd-t/progress.md` § Current Milestone M86 (branch `m86-model-profiles`)
 - **HARD DEADLINE: must ship before 2026-06-22** (Fable promo end, backlog #29) — it converts the June-22 checklist into one command per project. Origin: user cadence is 10–20+ milestones/week; even the pro posture ($8–10/milestone in usage credits post-promo) is $300–800+/month, so Fable spend needs a selectable control surface, not a code edit.
 
 ### Design (settled in discussion 2026-06-10)

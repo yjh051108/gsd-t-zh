@@ -1,13 +1,70 @@
 # GSD-T Progress
 
 ## Project: GSD-T Framework (@tekyzinc/gsd-t)
-## Status: ACTIVE — M85 COMPLETED (Model-Tier Policy + Fable 5 Integration, v4.4.10); M84 COMPLETED (Auto-Competition, v4.3.10); M83 COMPLETED (Left-Shifted Plan Hardening, v4.2.10); M82 COMPLETED (Competition Mode, v4.1.10)
-## Date: 2026-06-09 18:04 PDT
+## Status: ACTIVE — M86 DEFINED (Model Profiles: standard/pro/premium tier-spend switch); M85 COMPLETED (Model-Tier Policy + Fable 5 Integration, v4.4.10); M84 COMPLETED (Auto-Competition, v4.3.10); M83 COMPLETED (Left-Shifted Plan Hardening, v4.2.10); M82 COMPLETED (Competition Mode, v4.1.10)
+## Date: 2026-06-10 08:37 PDT
 ## Version: 4.4.10
 
 ## Current Milestone
 
-None — ready for next milestone. (M85 archived at `.gsd-t/milestones/m85-model-tier-policy-fable-2026-06-09/` — full definition, domain artifacts, contracts snapshot, summary.)
+### M86 — Model Profiles: standard/pro/premium tier-spend switch — **DEFINED (2026-06-10 08:37 PDT)**
+
+**Status: DEFINED — partition/plan deferred.** Origin: backlog #30 (design settled in discussion 2026-06-10). **HARD DEADLINE: must ship before 2026-06-22 23:59 PT** — the Fable 5 promo end (backlog #29). After that date every Fable token bills usage credits (~$10/$50 per MTok); at the user's cadence of 10–20+ milestones/week, even the *pro* posture ($8–10/milestone) runs $300–800+/month. This milestone converts the June-22 re-decide-everything checklist into **one command per project** — a selectable spend control surface instead of a code edit.
+
+#### Origin / Problem
+
+M85 made tier policy a single source of truth (`bin/gsd-t-model-tier-policy.cjs`: frozen `STAGE_TIERS` mapping 6 designated stages → fable, producers held opus) and a single-file edit to re-decide. But "edit a tracked file and re-publish" is the wrong control surface for a fleet of projects that each want a *different* spend posture, and for a single high-stakes milestone that wants a one-off bump. The user needs a **switch**, per-project, with per-stage overrides, that does NOT mutate tracked files on flip.
+
+#### Goal (what gets delivered)
+
+Three named **profiles** as a SECOND dimension on the M85 policy module, selected per-project with a global default + per-stage overrides, injected at invoke time via the existing M85 resolver (M69 path) — NO tracked-file rewriting on switch. Workflow stages become `model: overrides["<stage>"] ?? "<premium-literal>"`: the premium literal stays as the fallback (so the M85 drift lint keeps guarding it), and the resolved override wins when present.
+
+**The three profiles** (a second dimension on `STAGE_TIERS`):
+
+| Profile | Fable stages | Cost/milestone (post-promo credit rates) | Definition |
+|---------|--------------|------------------------------------------|------------|
+| `standard` | ZERO fable | $0 fable | pre-M85 tiers: probes→opus, judge→sonnet, pre-mortem→opus, red-team→opus, debug both cycles→opus; producers→opus (unchanged) |
+| `pro` | red-team + pre-mortem + debug-cycle-2 | ≈ $8–10 | the 3 highest-value fable stages; everything else reverts to standard |
+| `premium` | all 6 (M85 full set) | ≈ $15–25 | solution-space-probe + partition-probe + competition-judge + pre-mortem + red-team + debug-cycle-2 on fable; producers HELD opus |
+
+**Mechanism (invoke-time injection — M69 path, NOT file rewriting):** command invokers call the resolver (`gsd-t model-tier-policy resolve --profile <p> [stage]` / a profile-aware resolve surface), receive per-stage concrete model ids, and inject them into the workflow via `args` (`overrides[stage]`). Each designated workflow stage reads `model: overrides["<stage>"] ?? "<premium-literal>"` — premium literal = fallback (lint-guarded), resolved override = winner. This makes the resolver envelope **LIVE at invoke time** (closes the M85 pre-mortem dead-export concern for real, including `requiresThinkingOmitted` consumption). No tracked file mutates when the user flips a profile.
+
+**Per-project config:** `.gsd-t/model-profile.json` (or a field in existing project config) — `{ "profile": "pro", "stageOverrides": { "competition-judge": "fable" } }`. Global default applies when absent; per-stage overrides win over profile. Projects diverge: a consumer project runs `standard` while the GSD-T repo runs `pro`, from the **same installed package**.
+
+**CLI:** `gsd-t model-profile [standard|pro|premium]` (set/show), `gsd-t model-profile set-stage <stage> <tier>` (per-stage override), `gsd-t model-profile --json` (status). Active profile surfaced in `gsd-t status` + the session banner.
+
+**Scope guard:** profiles govern GSD-T workflow STAGES ONLY. The session default model (`/model`) is explicitly OUT OF SCOPE (documented).
+
+#### Success Criteria (falsifiable, measured per `feedback_measure_dont_claim`)
+
+- **(a) Profile→spend, real-sandbox:** `gsd-t model-profile standard` then a real-sandbox phase run shows **ZERO** `⚙ [fable]` lines; `pro` shows **exactly** red-team + pre-mortem + debug-cycle-2 fable; `premium` shows all 6 fable stages. Verified by extracting the model from live workflow usage frames, not by reading config.
+- **(b) Override beats profile (live):** with `profile=pro`, a per-stage override `{ "competition-judge": "fable" }` makes that stage run on fable in a live run while the rest of the pro posture holds — demonstrated in an actual workflow run, override resolved at invoke time.
+- **(c) Lint still bites both forms:** the M85 drift lint (`test/m85-workflow-tier-policy-lint.test.js`) still **FAILS** on a drifted bare premium literal AND on a `??` form whose fallback literal drifts (the lint is updated to UNWRAP the `model: overrides["x"] ?? "<literal>"` form and validate the fallback). A deliberately-drifted fallback fixture is a mandatory negative test.
+- **(d) Per-project divergence proven:** two projects, two different profiles, the SAME installed `@tekyzinc/gsd-t` package — each resolves its own profile's per-stage models. Proven by running the resolver in two project dirs and asserting divergent envelopes.
+- **(e) Resolver envelope consumed at invoke time:** the M69 path is LIVE — injection is visible in the workflow `args` (the resolved `overrides` map appears in the args the invoker passes), and the workflow consumes it. Not a dead export.
+- **(f) No silent degradation:** `standard` is a **DOCUMENTED, surfaced choice** (appears in `gsd-t status` + banner), never an implicit fallback. If config is absent the global default applies and is *named* in status — the system never silently drops to a cheaper tier without showing it. (Mirrors `feedback_no_silent_degradation.md`.)
+- **(g) M85 AC(c) banked:** the outstanding M85 partition-probe live `⚙ [fable]` line is captured during THIS milestone's partition run — run partition with competition UNSET (auto) and premium active so the partition-probe fires on fable. Closes the single documented M85 evidence gap.
+
+#### Out of Scope / Non-Goals
+
+- The session default model (`/model`) — profiles govern workflow stages only.
+- Rewriting tracked files on profile switch — the entire point is invoke-time injection (M69), zero tracked-file mutation.
+- New model tiers or new stages — profiles are a re-mapping dimension over the existing M85 `STAGE_TIERS` set.
+- Billing/measurement infrastructure — cost figures are documented estimates at credit rates; this milestone ships the switch, not a meter.
+- A model zoo — tiers remain {opus, fable, sonnet, haiku} from M85.
+
+#### Pre-Partition Assessment (GSD-T-native units)
+
+- **Domain count:** ~2 (medium). **D1 — policy-module profiles + config + CLI**: extend `bin/gsd-t-model-tier-policy.cjs` with the profile dimension (`PROFILE_STAGE_TIERS` or equivalent) + profile-aware resolve; `.gsd-t/model-profile.json` read/write; `gsd-t model-profile` CLI (set/show/set-stage/--json) + dispatcher + dual bin-propagation; status + banner surfacing. **D2 — invoker wiring + workflow `??` forms + lint update + docs**: command invokers call the profile-aware resolver and inject `overrides` via `args`; designated workflow stages become `model: overrides["<stage>"] ?? "<premium-literal>"`; M85 lint updated to unwrap the `??` form (+ negative fixture); doc-ripple (contract → v1.1.0, README, gsd-t-help, CLAUDE-global + live `~/.claude/CLAUDE.md`, project CLAUDE.md, package.json minor bump).
+- **Wave count:** 1 (D1 publishes the profile-aware resolve surface as the seam; D2 consumes it — but file-disjoint, so likely 1 wave with D1's published config/resolver contract as the brief seam, mirroring M85's contract-first pattern).
+- **Parallel-domain count:** 2 (file-disjoint: D1 owns `bin/gsd-t-model-tier-policy.cjs` + new CLI + config; D2 owns the workflows + lint + docs).
+- **Spawn count:** modest — ~2 domain workers + the verify triad (code-review ultra ∥ red-team ∥ QA).
+- **Token-spend range:** N/A — Max-funded build work, zero marginal $ (per `feedback_no_human_hour_estimates.md`). The dollar figures in this definition are about the *runtime model spend the feature controls*, not the cost to build it.
+- **Rate-limit-window count:** 1 (single-session build expected, mirroring M82–M85).
+
+**Contract:** `model-tier-policy-contract.md` → **v1.1.0** (additive: the profile dimension + profile-aware resolver surface + the `??` workflow-form lint obligation; the M85 v1.0.0 STABLE constants are unchanged).
+
+**Recommended flow:** partition → plan → execute → verify. No discussion phase needed — the design is settled (backlog #30). The first partition run does double duty: it banks M85 AC(c) (g above) by running with competition unset + premium active.
 
 ## Previously Current Milestone
 
@@ -292,7 +349,7 @@ Older milestones (M33 and earlier) archived under `.gsd-t/milestones/` — see d
 
 > Prior decision log entries preserved in `.gsd-t/milestones/*/progress.md` — the m85-model-tier-policy-fable-2026-06-09 snapshot holds the full pre-M85 history.
 
-- 2026-06-10 08:36 PDT: [backlog][add] Added #30 Model Profiles (standard/pro/premium tier-spend switch, per-stage overrides, per-project config, invoke-time injection via the M85 resolver — NOT file rewriting). HARD DEADLINE before 2026-06-22 promo end. Origin: user cadence 10–20+ milestones/week makes even the pro posture $300–800+/month post-promo; needs a switch, not a code edit. Defining as next milestone (M86) ahead of the retro agent. Files: backlog.md (#30), this entry.
+- 2026-06-10 08:37 PDT: [m86][milestone][DEFINED] M86 DEFINED — Model Profiles: standard/pro/premium tier-spend switch (promoted from backlog #30, design settled in discussion 2026-06-10). HARD DEADLINE before 2026-06-22 23:59 PT (Fable promo end, #29) — converts the June-22 re-decide checklist into one command per project. Goal: 3 profiles as a 2nd dimension on M85 STAGE_TIERS (standard=zero fable; pro=red-team+pre-mortem+debug-cycle-2; premium=all 6), per-project config (.gsd-t/model-profile.json) + global default + per-stage overrides, invoke-time injection via the M85 resolver (M69 path — workflow stages become `model: overrides["x"] ?? "<premium-literal>"`, literals stay the lint-guarded fallback, NO tracked-file rewriting on switch). CLI `gsd-t model-profile [standard|pro|premium]` + set-stage + --json, surfaced in status/banner. 7 falsifiable ACs (a–g) incl. real-sandbox zero-fable proof, override-beats-profile live, lint-bites-both-forms, per-project divergence, live invoke-time injection, no-silent-degradation, AND banks M85's outstanding partition-probe live fable line (g). Out of scope: session default model. Pre-partition: ~2 file-disjoint domains (D1 policy-module profiles+config+CLI; D2 invoker wiring+workflow ?? forms+lint update+docs), 1 wave. Contract model-tier-policy-contract.md → v1.1.0 (additive). On branch m86-model-profiles. Partition/plan deferred. Files: progress.md (status line, Current Milestone, this entry), backlog.md (#30 status). Origin: user cadence 10–20+ milestones/week makes even the pro posture $300–800+/month post-promo; needs a switch, not a code edit. Defining as next milestone (M86) ahead of the retro agent. Files: backlog.md (#30), this entry.
 - 2026-06-09 18:21 PDT: [release] CPUA v4.4.10 — published @tekyzinc/gsd-t@4.4.10 to npm, pushed main + tag, propagated via update-all. CHANGELOG 4.4.10 entry added; M85 verify artifacts (red-team-report.md, qa-issues.md) committed; backlog #29 added (June 22 Fable-promo end: flip session default to opus, re-decide the 5 fable stages — one-file edit per M85; measured basis: ~$15-25/milestone for the stages, lead-seat the dominant cost; promo terms verified from support article 15424964: ends 2026-06-22 23:59 PT, post-promo Fable bills usage credits only).
 - 2026-06-09 18:04 PDT: [m85][COMPLETE] M85 COMPLETED — Model-Tier Policy + Fable 5 Integration, v4.4.10, tag v4.4.10. VERIFIED-WITH-WARNINGS (round 2; warnings closed 0203b10). Archived to .gsd-t/milestones/m85-model-tier-policy-fable-2026-06-09/ (full definition + domains + contracts + summary + verify report). Version bumps: progress.md/README (already 4.4.10 via D4-T3), package.json 4.3.10→4.4.10 in the completion commit. Goal-backward: PASS by construction — every AC (a–g) carries measured/test-asserted evidence (no placeholders; resolver wired + smoke-tested live; lint cannot pass on drift). Smoke gate: N/A (no audio/GPU/ML/native surface). Gap analysis: all 7 ACs satisfied, partition-probe live-line is the single documented deferral (banks at first M86 partition run). Scan checkpoint: DEFERRED with reasoning — register is 179-open-items fresh from Scan #12 era and M85 touched a narrow surface; full volume-scaled re-scan scheduled alongside backlog #28 cleanup rather than burning ~500k tokens here. Distillation: the milestone's distilled lessons were captured in-flight as TD-294/295/296 + the evidence-ledger pattern; no CLAUDE.md rule changes proposed without user approval. Metrics rollup: skipped (bin/metrics-rollup.js absent). Decision Log trimmed to the 2026-06-09 M85 arc — full pre-M85 history preserved in the archive snapshot.
 - 2026-06-09 18:02 PDT: [m85][verify][VERIFIED-WITH-WARNINGS] Verify round 2 PASSED — Red Team GRUDGING-PASS (verdict from a fresh-context agent running ON fable: the round-2 triad's agent models, extracted from wf_e22b44a1-9bc usage frames, were 1× claude-fable-5 [Red Team — the FINAL AC(c) capture], 2× opus [ultra + synthesis], 1× sonnet [QA], 6× haiku [gates]); /code-review ultra: 0 important, 2 nits; QA: suite 1462/0, E2E 3/4 (+1 intentional placeholder skip), ZERO shallow tests. Round-1 HIGH confirmed genuinely closed on disk. Warnings resolved post-verdict in this commit: module doc-comment + contract Stage Policy + Drift Enforcement counts corrected 5→6 fable stage keys (the '5 highest-leverage stages' milestone framing stands — the two M84 probes are one conceptual stage); contract 'iff' clause updated to document the bracket-suffix form the predicate accepts (claude-fable-5[1m], measured live). AC(c) FINAL LEDGER: 5 of 6 fable lines banked live (solution-space-probe, competition-judge+producers-opus same-run, pre-mortem, debug-cycle-2-with-cycle-1-opus, red-team); partition-probe = documented evidence gap, lint-covered, banks at the first M86 partition run. ALL milestone ACs satisfied: (a) lint 44/44 incl. negative+meta+non-empty-match, (b) alias via require() test-asserted, (c) per ledger, (d) predicate live via resolver envelope + CLI surface measured no-400 + sandbox runs no-400, (e) measured verdict d337bc9 with full provenance, (f) Red Team non-skippable on fable + bottom ladder untouched + debug default byte-identical, (g) D1 was independently mergeable (shipped alone in W1, suite green). Proceeding to complete-milestone: minor bump 4.3.10 → 4.4.10, tag v4.4.10.
