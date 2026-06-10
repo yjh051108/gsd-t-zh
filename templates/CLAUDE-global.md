@@ -210,6 +210,29 @@ Operator overrides:
 
 You no longer need to run a check yourself before testing commands — the Workflow stage runs the readiness gate before E2E.
 
+### Playwright No-Focus-Steal Invariant (MANDATORY — all projects)
+
+**E2E tests must NEVER steal keyboard focus or pop visible windows during a normal run.** The developer keeps typing in their terminal while tests run. This is non-negotiable on every project.
+
+```
+RULES:
+  ├── Headless is the DEFAULT everywhere. A visible browser is opt-in only (HEADED=1).
+  ├── Specs/configs MUST NOT hardcode `headless: false` — visibility is decided in ONE
+  │     launch helper (or the config), controlled by env var, never per-spec.
+  ├── MV3 Chrome extensions are NOT an exception: Chrome's NEW headless loads
+  │     extensions. The load-bearing invocation is `channel: 'chromium'` + `headless: true`
+  │     (Playwright ≥1.49). PITFALL: `headless: true` alone launches the
+  │     chromium_headless_shell (OLD headless — silently cannot load extensions), and
+  │     passing `--headless=new` as a raw arg fights that binary. Template:
+  │     `templates/test-helpers/launch-extension.ts`.
+  └── Off-screen windows (`--window-position=-2400,-2400`) are NOT a focus fix on
+        macOS — a headed launch ACTIVATES the app and steals the cursor regardless of
+        window position. Off-screen is a screen-takeover mitigation only; use it solely
+        as a fallback if new-headless regresses extension support.
+```
+
+Origin: binvoice 2026-06-10 — extension specs forced `headless: false`, commandeering the cursor on every spec; the prior "off-screen" mitigation stopped the window takeover but not the focus theft. Fixed permanently by the channel-selected new headless (21/21 in 9.8s, zero windows).
+
 ### Playwright Cleanup
 
 After Playwright tests finish (pass or fail), **kill any app/server processes that were started for the tests**. Playwright often launches a dev server (via `webServer` config or manually). These processes must not be left running:

@@ -2,6 +2,17 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.4.11] - 2026-06-10 (Playwright No-Focus-Steal — patch)
+
+### Added — E2E tests must never steal keyboard focus (all projects)
+
+Headed Playwright runs on macOS ACTIVATE the browser app and yank keyboard focus from the terminal — regardless of window position, so the old "off-screen window" mitigation stopped screen takeover but not focus theft (reported live from binvoice: extension specs commandeered the cursor on every spec). Root cause of the prior "new-headless can't load MV3 extensions" verdict was a binary mix-up: `headless: true` alone launches the chromium_headless_shell (OLD headless, silently no extensions) and a raw `--headless=new` arg fights it. The fix: `channel: 'chromium'` + `headless: true` selects the FULL build's new headless — extensions load, service workers register, zero windows (binvoice: 21/21 in 9.8s).
+
+- `templates/CLAUDE-global.md`: new "Playwright No-Focus-Steal Invariant" section — headless default everywhere, one launch helper owns visibility, `HEADED=1` opt-in only, the channel pitfall documented; mirrored to the live `~/.claude/CLAUDE.md`.
+- `templates/test-helpers/launch-extension.ts`: NEW generalized MV3-extension launch helper (newheadless default / offscreen fallback / HEADED=1), proven in binvoice (commit 87e3233 there).
+
+No code-path changes; propagates via `gsd-t update-all` (CLAUDE-global section sync).
+
 ## [4.4.10] - 2026-06-09 (M85 Model-Tier Policy + Fable 5 — minor)
 
 ### Added — single source of truth for model-tier assignments + the Fable 5 tier
