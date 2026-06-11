@@ -1188,6 +1188,8 @@ const GLOBAL_BIN_TOOLS = [
   "gsd-t-traceability-gate.cjs",
   // M85 — Model-tier policy single source of truth (resolver + predicate).
   "gsd-t-model-tier-policy.cjs",
+  // M86 — Model-profile config + resolver CLI (standard/pro/premium tier-spend switch).
+  "gsd-t-model-profile.cjs",
 ];
 
 function installGlobalBinTools() {
@@ -2484,6 +2486,8 @@ const PROJECT_BIN_TOOLS = [
   // M85 — Model-tier policy resolver, so command invokers in consumer projects
   // can resolve stage tiers at invoke time (M69 injection pattern).
   "gsd-t-model-tier-policy.cjs",
+  // M86 — Model-profile config + resolver CLI (standard/pro/premium tier-spend switch).
+  "gsd-t-model-profile.cjs",
 ];
 
 // Files that older versions of this installer copied into project bin/ but
@@ -4585,6 +4589,16 @@ if (require.main === module) {
       // resolver (single source of truth for model-tier assignments).
       const { spawnSync } = require("child_process");
       const js = path.join(__dirname, "gsd-t-model-tier-policy.cjs");
+      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
+        stdio: "inherit",
+      });
+      process.exit(res.status == null ? 1 : res.status);
+    }
+    case "model-profile": {
+      // M86 — `gsd-t model-profile` thin dispatcher to the profile config +
+      // resolver (standard/pro/premium tier-spend switch, per-project config).
+      const { spawnSync } = require("child_process");
+      const js = path.join(__dirname, "gsd-t-model-profile.cjs");
       const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
         stdio: "inherit",
       });

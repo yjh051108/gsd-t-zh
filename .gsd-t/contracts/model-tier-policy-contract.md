@@ -1,10 +1,11 @@
 # Contract: Model-Tier Policy
 
-## Version: 1.0.0
+## Version: 1.1.0
 ## Status: STABLE
 ## Owner: m85-d1-tier-policy-module
-## Consumers: `bin/gsd-t-parallel.cjs`, `bin/model-selector.js`, `templates/workflows/gsd-t-phase.workflow.js`, `templates/workflows/gsd-t-verify.workflow.js`, `templates/workflows/gsd-t-debug.workflow.js`, `test/m85-workflow-tier-policy-lint.test.js`
+## Consumers: `bin/gsd-t-parallel.cjs`, `bin/model-selector.js`, `bin/gsd-t-model-profile.cjs`, `templates/workflows/gsd-t-phase.workflow.js`, `templates/workflows/gsd-t-verify.workflow.js`, `templates/workflows/gsd-t-debug.workflow.js`, `test/m85-workflow-tier-policy-lint.test.js`, `test/m86-policy-profiles.test.js`
 ## Created: 2026-06-09 14:42 PDT
+## Updated: 2026-06-10 (M86 — v1.1.0 additive: profile dimension + profile-aware resolve surface)
 
 ---
 
@@ -85,3 +86,71 @@ Command invokers call the resolver at invoke time and inject the concrete model 
 ## Zero-Dep Invariant
 
 `bin/gsd-t-model-tier-policy.cjs` has zero external runtime deps (installer-package invariant). Pure Node built-ins.
+
+---
+
+## Profile Dimension (M86 — additive over the frozen M85 STAGE_TIERS)
+
+M86 adds three named profiles as a SECOND dimension over the frozen `STAGE_TIERS`. The M85 v1.0.0 constants (`MODEL_IDS`, `STAGE_TIERS`, `requiresThinkingOmitted`, `resolve`) are byte-functionally unchanged.
+
+| Profile | Fable stages | Stage-tier assignments |
+|---------|--------------|------------------------|
+| `standard` | ZERO fable | probes→opus, judge→sonnet, pre-mortem→opus, red-team→opus, debug-cycle-2→opus; producers→opus |
+| `pro` | red-team + pre-mortem + debug-cycle-2 | those 3 → fable; probes→opus, judge→sonnet; producers→opus |
+| `premium` | all 6 (M85 full set) | all 6 designated stages → fable; producers→opus |
+
+`competition-producers` is **HELD at opus in ALL profiles** (M82 blindness invariant). It is never injectable — the resolver enforces this at resolve time (blindness clamps at write + resolve for defense in depth).
+
+Global default profile: `premium` (the M85 full posture). Absent `.gsd-t/model-profile.json` → named default returned, never blank (SC(f)).
+
+---
+
+## Profile-Aware Resolve Surface (M86 additive)
+
+`bin/gsd-t-model-tier-policy.cjs` exports:
+- `PROFILE_STAGE_TIERS` — frozen `{ standard, pro, premium } → { stageKey → tier }` map.
+- `INJECTABLE_STAGES` — frozen list of the 6 overridable stage keys (producers excluded).
+- `resolveProfile(stageKey, { profile, stageOverrides })` — returns `{ model, tier, requiresThinkingOmitted, configError? }`.
+
+Precedence: `stageOverrides[stage] ?? profile-tier ?? global-default`.
+
+**Blindness clamps** (enforced at RESOLVE — config is hand-editable so clamps cannot rely on write-path alone):
+- `competition-producers` in stageOverrides: silently dropped; producers always resolve to `claude-opus-4-8`.
+- `stageOverrides["competition-judge"]` resolving to `claude-opus-4-8` (producers' model): override dropped, profile tier used instead + `configError` marker.
+
+**Malformed-config behavior**: corrupt JSON, wrong-typed `profile`, wrong-typed `stageOverrides` or values → `{ ok:false, configError }` envelope or named-default + explicit `configError` marker. Never a silent clean-premium envelope.
+
+---
+
+## Workflow `??`-Form Lint Obligation (M86 — D3 validates)
+
+Each designated workflow stage MUST use exactly this form:
+```
+model: overrides["<stage>"] ?? "<premium-literal>"
+```
+Rules:
+- The bracket key `overrides["<stage>"]` MUST equal the designated `stageKey` (bracket-key validation — pre-mortem r1 #2).
+- The premium literal `"<premium-literal>"` is the lint-guarded fallback; D3 unwraps + validates it against the tier set and designated-stage policy.
+- Producers stay a BARE `model: "opus"` (M82 — NOT wrapped in `??` form).
+- Designated stages + their premium fallback literal: `solution-space-probe→"fable"`, `partition-probe→"fable"`, `competition-judge→"fable"`, `pre-mortem→"fable"`, `red-team→"fable"`, `debug-cycle-2→"fable"` (cycle-1 stays `"opus"`).
+
+---
+
+## Blindness-Clamp Validation Rules (M86)
+
+1. `set-stage competition-producers <any>`: REJECTED — not an overridable stage.
+2. `set-stage competition-judge <tier>` where `MODEL_IDS[tier] === "claude-opus-4-8"`: REJECTED — judge model must differ from producers'.
+3. At resolve time: if a hand-edited config carries `stageOverrides["competition-judge"]` resolving to `claude-opus-4-8`, the override is dropped and a `configError` marker is emitted.
+4. `competition-producers` key in stageOverrides: silently excluded from the output `overrides` map at resolve time.
+
+---
+
+## Malformed-Config Defined-Behavior Rule (M86)
+
+`.gsd-t/model-profile.json` is hand-editable. Any of the following MUST produce a DEFINED envelope — never a silent clean-premium fall-through (which would silently upgrade spend on a typo):
+- Syntactically corrupt JSON
+- `profile` of wrong type (e.g. `42`, `null`)
+- `stageOverrides` wrong-typed (array, string, null)
+- `stageOverrides` values that are non-strings
+
+In each case: `{ ok:false, error/configError }` or named-default + explicit `configError` marker.
