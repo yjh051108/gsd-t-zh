@@ -1,6 +1,6 @@
 # Integration Points
 
-## Current State: M86 — Model Profiles (standard/pro/premium tier-spend switch) (PLANNED — 4 domains, 1 wave, all file-disjoint).
+## Current State: M86 — Model Profiles (standard/pro/premium tier-spend switch) (EXECUTED + INTEGRATED — 4/4 domains complete, 1 wave; checkpoints CP1–CP4 verified at integrate; full suite 1572/0; verify next).
 
 ### M86 Wave Plan
 

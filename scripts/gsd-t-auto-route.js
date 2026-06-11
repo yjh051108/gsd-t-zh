@@ -101,6 +101,12 @@ function liveTimestamp(now = new Date()) {
   return `${date} ${time}${tzShort ? " " + tzShort : ""}`;
 }
 
+// Hook runtime — guarded so require()-ing this module for unit tests
+// (test/m86-surfacing.test.js) does NOT attach stdin listeners. An unguarded
+// stdin listener holds the requiring test process's event loop open forever
+// (npm test runner children get a never-EOF stdin pipe → suite hang), and the
+// "end" handler's process.exit(0) would kill the test process on stdin EOF.
+if (require.main === module) {
 let input = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => { input += chunk; });
@@ -145,5 +151,6 @@ process.stdin.on("end", () => {
   }
   process.exit(0);
 });
+}
 
 module.exports = { liveTimestamp, resolveActiveProfile, profileToken };
