@@ -45,6 +45,9 @@ const ORANGE = '\x1b[38;5;208m'; // 256-color orange
  * @returns {{ profile: string, isDefault: boolean, configError?: string }|null}
  *   null when projectRoot is null (non-GSD-T directory — omit segment).
  */
+// NOTE: duplicates the read/validate logic of readConfig() in bin/gsd-t-model-profile.cjs
+// (the canonical copy) — kept inline because the statusline must be zero-dep and runs from
+// ~/.claude/scripts where the package module may be absent. Keep the copies in sync.
 function readActiveProfile(projectRoot) {
   if (!projectRoot) return null;
   const GLOBAL_DEFAULT = 'premium';

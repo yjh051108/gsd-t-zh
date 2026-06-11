@@ -9,10 +9,18 @@
  *   - [GSD-T NOW] {Day: Mon DD, YYYY HH:MM:SS TZ} — live system clock for the
  *     dated banner at the top of Claude's response. Fresh per turn so multi-day
  *     sessions and date-rollovers are reflected accurately.
- *   - [GSD-T PROFILE] {profile} — active model profile (M86).
  *
- * Conditionally emits (GSD-T projects only, plain text prompts only):
- *   - [GSD-T AUTO-ROUTE] signal so Claude routes via /gsd
+ * Conditionally emits (GSD-T projects only — dirs with .gsd-t/):
+ *   - [GSD-T PROFILE] {profile} — active model profile (M86). Gated like the
+ *     statusline segment: a model profile is a GSD-T concept; announcing
+ *     "premium (default)" in unrelated directories is noise (Red Team M86 LOW).
+ *   - [GSD-T AUTO-ROUTE] signal so Claude routes via /gsd (plain text prompts
+ *     in projects with .gsd-t/progress.md only)
+ *
+ * NOTE: resolveActiveProfile duplicates the read/validate logic of
+ * readConfig() in bin/gsd-t-model-profile.cjs (the canonical copy) — kept
+ * inline because this hook must be zero-dep and runs from ~/.claude/scripts
+ * where the package module may be absent. Keep the two in sync.
  */
 
 const fs = require("fs");
@@ -115,28 +123,27 @@ process.stdin.on("end", () => {
   // [GSD-T NOW] format is date-guard-invariant: NEVER alter it.
   process.stdout.write(`[GSD-T NOW] ${liveTimestamp()}\n`);
 
-  // Resolve cwd from parsed input (with fallback), then emit the profile token.
-  // Both [GSD-T NOW] and [GSD-T PROFILE] are emitted on every turn — resilient.
-  let cwd = process.cwd();
-  try {
-    const data = JSON.parse(input);
-    if (typeof data.cwd === "string" && data.cwd) cwd = data.cwd;
-  } catch (_) { /* parse error below will handle the rest */ }
+  // Parse stdin ONCE; both the profile token and auto-route reuse it.
+  let data = null;
+  try { data = JSON.parse(input); } catch (_) { /* tolerated — gates below skip */ }
+  const cwd = (data && typeof data.cwd === "string" && data.cwd) ? data.cwd : process.cwd();
 
-  // Always emit active model profile — SC(f): named, never blank, never a crash.
+  // Emit the active model profile — GSD-T projects only (dirs with .gsd-t/),
+  // matching the statusline gate. SC(f): named, never blank, never a crash.
   try {
-    const profileResult = resolveActiveProfile(cwd);
-    process.stdout.write(`[GSD-T PROFILE] ${profileToken(profileResult)}\n`);
+    if (fs.existsSync(path.join(cwd, ".gsd-t"))) {
+      const profileResult = resolveActiveProfile(cwd);
+      process.stdout.write(`[GSD-T PROFILE] ${profileToken(profileResult)}\n`);
+    }
   } catch (_) {
-    // Belt-and-suspenders: if profileToken itself throws, emit the unknown marker.
+    // Belt-and-suspenders: if the gate or profileToken throws, emit the unknown marker.
     process.stdout.write(`[GSD-T PROFILE] profile: unknown\n`);
   }
 
   try {
-    const data = JSON.parse(input);
     // Auto-route is GSD-T-project-only.
-    const cwdFinal = typeof data.cwd === "string" ? data.cwd : process.cwd();
-    if (!fs.existsSync(path.join(cwdFinal, ".gsd-t", "progress.md"))) process.exit(0);
+    if (!data) process.exit(0);
+    if (!fs.existsSync(path.join(cwd, ".gsd-t", "progress.md"))) process.exit(0);
     const prompt = (typeof data.prompt === "string" ? data.prompt : "").trimStart();
     if (prompt.startsWith("/")) process.exit(0); // slash command — pass through
     if (!prompt) process.exit(0);                // empty prompt — pass through

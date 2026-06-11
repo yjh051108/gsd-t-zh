@@ -65,6 +65,12 @@ Emits:
 - **Precedence:** `stageOverrides[stage] ?? profile-tier ?? global-default`.
 - `overrides` maps designated stage key → concrete model id (from M85 `MODEL_IDS`).
 - The CLI: `show` / `set <profile>` / `set-stage <stage> <tier>` / `resolve` / `--json`.
+- **`requiresThinkingOmitted` is INFORMATIONAL** (verify fix-cycle 1): no workflow or invoker
+  consumes it at the `agent()` call site. The Workflow sandbox runtime handles thinking-param
+  stripping for fable itself — proven empirically for the concrete-id injection path by probe
+  run `wf_c9faf817-373` (`model: "claude-fable-5"` via args completed with no HTTP 400). The
+  flag stays in the envelope for diagnostic display and for any future spawn surface
+  (`claude -p`-class) that must strip the thinking param itself.
 
 ---
 
@@ -99,7 +105,7 @@ literal FAILS, drifted fallback FAILS, out-of-tier fallback FAILS. Fail-closed o
 
 **10 invoking command files:**
 1. `commands/gsd-t-partition.md` — invokes `gsd-t-phase.workflow.js` (phase: partition)
-2. `commands/gsd-t-discuss.md` — invokes `gsd-t-phase.workflow.js` (phase: discuss)
+2. `commands/gsd-t-doc-ripple.md` — invokes `gsd-t-phase.workflow.js` (phase: doc-ripple)
 3. `commands/gsd-t-plan.md` — invokes `gsd-t-phase.workflow.js` (phase: plan)
 4. `commands/gsd-t-impact.md` — invokes `gsd-t-phase.workflow.js` (phase: impact)
 5. `commands/gsd-t-milestone.md` — invokes `gsd-t-phase.workflow.js` (phase: milestone)
@@ -108,6 +114,14 @@ literal FAILS, drifted fallback FAILS, out-of-tier fallback FAILS. Fail-closed o
 8. `commands/gsd-t-verify.md` — invokes `gsd-t-verify.workflow.js`
 9. `commands/gsd-t-debug.md` — invokes `gsd-t-debug.workflow.js`
 10. `commands/gsd-t-wave.md` — invokes `gsd-t-wave.workflow.js` (MUST forward `overrides` to sub-workflows it composes)
+
+> **`discuss` has NO command invoker** (`commands/gsd-t-discuss.md` was deleted at M38; the
+> earlier draft of this list named it in error — verify fix-cycle 1). The `discuss` phase is
+> competition-eligible inside `gsd-t-phase.workflow.js`, so a hypothetical discuss launch
+> without an injecting invoker would run the solution-space-probe on the premium fallback
+> literal regardless of profile. This is ACCEPTED as out of reach (no repo entry point invokes
+> phase: discuss); if a discuss invoker is ever recreated, `test/m86-invoker-injection.test.js`
+> discovers it structurally and FAILS until it carries the injection block.
 
 **Wave forwarding obligation:** `gsd-t-wave.workflow.js` composes execute + verify as sub-workflows. It MUST read the `overrides` from its own `args` (injected by `gsd-t-wave.md`) and forward them into the sub-workflow invocations. An `overrides`-forwarding test in D2 asserts this.
 
@@ -139,7 +153,7 @@ literal FAILS, drifted fallback FAILS, out-of-tier fallback FAILS. Fail-closed o
 | Domain | Owns |
 |--------|------|
 | D1 (15 files) | `bin/gsd-t-model-tier-policy.cjs`, `bin/gsd-t-model-profile.cjs`, `bin/gsd-t.js`, `.gsd-t/contracts/model-tier-policy-contract.md`, `.gsd-t/contracts/model-profile-config-contract.md`, `test/m86-policy-profiles.test.js` |
-| D2 (15 files) | `templates/workflows/gsd-t-phase.workflow.js`, `templates/workflows/gsd-t-verify.workflow.js`, `templates/workflows/gsd-t-debug.workflow.js`, `templates/workflows/gsd-t-wave.workflow.js`, `commands/gsd-t-partition.md`, `commands/gsd-t-discuss.md`, `commands/gsd-t-plan.md`, `commands/gsd-t-impact.md`, `commands/gsd-t-milestone.md`, `commands/gsd-t-prd.md`, `commands/gsd-t-design-decompose.md`, `commands/gsd-t-verify.md`, `commands/gsd-t-debug.md`, `commands/gsd-t-wave.md`, `commands/gsd-t-execute.md` |
+| D2 (15 files) | `templates/workflows/gsd-t-phase.workflow.js`, `templates/workflows/gsd-t-verify.workflow.js`, `templates/workflows/gsd-t-debug.workflow.js`, `templates/workflows/gsd-t-wave.workflow.js`, `commands/gsd-t-partition.md`, `commands/gsd-t-doc-ripple.md`, `commands/gsd-t-plan.md`, `commands/gsd-t-impact.md`, `commands/gsd-t-milestone.md`, `commands/gsd-t-prd.md`, `commands/gsd-t-design-decompose.md`, `commands/gsd-t-verify.md`, `commands/gsd-t-debug.md`, `commands/gsd-t-wave.md`, `test/m86-invoker-injection.test.js` |
 | D3 | `test/m85-workflow-tier-policy-lint.test.js`, `test/m86-lint-unwrap-fallback.test.js` |
 | D4 | `scripts/gsd-t-auto-route.js`, `scripts/gsd-t-statusline.js`, `commands/gsd-t-status.md`, `commands/gsd-t-help.md`, `README.md`, `GSD-T-README.md`, `templates/CLAUDE-global.md`, `CLAUDE.md`, `package.json`, `test/m86-surfacing.test.js` |
 

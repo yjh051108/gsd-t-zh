@@ -41,6 +41,11 @@ binary), do NOT silently proceed on the premium fallback. Either:
 A configured-standard project silently billing premium fable post-promo is the exact inverse of
 the spend-switch goal. Never silently fall through.
 
+Also surface a SUCCESSFUL resolve that carries a `configError` field (the resolver returns a
+named default + `configError` for malformed/hand-edited configs — Red Team M86): print the
+`configError` as a visible warning naming the effective profile before proceeding. A clean-looking
+run on a posture the user did not configure is the same silent-spend failure class.
+
 ## Step 3: Invoke the phase Workflow
 
 Call the `Workflow` tool with:

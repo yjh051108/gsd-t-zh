@@ -166,9 +166,19 @@ const PRODUCERS_MODEL_ID = MODEL_IDS.opus; // claude-opus-4-8
  * @returns {{ model: string, tier: string, requiresThinkingOmitted: boolean,
  *             configError?: string }}
  */
+// Own-property lookup guard. Validation-by-truthiness (`!MODEL_IDS[x]`) is a
+// validation BYPASS for Object.prototype keys ("constructor", "toString", …):
+// the inherited value is truthy, the resolved "model" is a function, and
+// JSON.stringify silently DROPS the key from the envelope — the workflow's
+// `?? "fable"` fallback then bills premium on a cost-control profile
+// (Red Team M86 HIGH). Every tier/profile/stage map lookup goes through this.
+function hasOwn(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
 function resolveProfile(stageKey, opts) {
   opts = opts || {};
-  const profile = (typeof opts.profile === 'string' && PROFILE_STAGE_TIERS[opts.profile])
+  const profile = (typeof opts.profile === 'string' && hasOwn(PROFILE_STAGE_TIERS, opts.profile))
     ? opts.profile
     : 'premium'; // named global default
 
@@ -194,27 +204,29 @@ function resolveProfile(stageKey, opts) {
   let configError;
   let resolvedTier;
 
-  const rawOverrideTier = stageOverrides[stageKey];
+  const rawOverrideTier = hasOwn(stageOverrides, stageKey) ? stageOverrides[stageKey] : undefined;
   if (rawOverrideTier !== undefined) {
-    if (typeof rawOverrideTier !== 'string' || !MODEL_IDS[rawOverrideTier]) {
+    if (typeof rawOverrideTier !== 'string' || !hasOwn(MODEL_IDS, rawOverrideTier)) {
       // Invalid tier in override — fall back to profile tier, record configError
       configError = `stageOverrides["${stageKey}"] has invalid tier "${rawOverrideTier}"; falling back to profile tier`;
-      resolvedTier = profileTierMap ? profileTierMap[stageKey] : 'fable';
+      resolvedTier = (profileTierMap && hasOwn(profileTierMap, stageKey)) ? profileTierMap[stageKey] : 'fable';
     } else if (stageKey === 'competition-judge' && MODEL_IDS[rawOverrideTier] === PRODUCERS_MODEL_ID) {
       // Blindness clamp: competition-judge must not equal producers' model
       configError = `stageOverrides["competition-judge"] resolves to "${MODEL_IDS[rawOverrideTier]}" (=producers' model); blindness clamp rejected — falling back to profile tier`;
-      resolvedTier = profileTierMap ? profileTierMap[stageKey] : 'fable';
+      resolvedTier = (profileTierMap && hasOwn(profileTierMap, stageKey)) ? profileTierMap[stageKey] : 'fable';
     } else {
       resolvedTier = rawOverrideTier;
     }
+  } else if (profileTierMap && hasOwn(profileTierMap, stageKey)) {
+    resolvedTier = profileTierMap[stageKey];
   } else {
-    // No override — use profile tier
-    resolvedTier = profileTierMap
-      ? (profileTierMap[stageKey] || 'sonnet') // unknown stage falls back to sonnet
-      : 'fable';
+    // Unknown stage key — defensive sonnet, but NEVER silently (Red Team M86 MEDIUM:
+    // a typo'd stage returning ok:true sonnet regressed the M85 explicit unknown-stage error)
+    configError = configError || `unknown stage "${stageKey}" — not a designated stage; defensive sonnet fallback`;
+    resolvedTier = 'sonnet';
   }
 
-  const modelId = MODEL_IDS[resolvedTier] || MODEL_IDS.sonnet;
+  const modelId = hasOwn(MODEL_IDS, resolvedTier) ? MODEL_IDS[resolvedTier] : MODEL_IDS.sonnet;
   const result = {
     model: modelId,
     tier: resolvedTier,

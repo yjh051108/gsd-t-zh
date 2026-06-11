@@ -585,3 +585,87 @@ describe('Contract doc-assertion: model-profile-config-contract.md', () => {
       'seam contract must document combined-form lint obligations');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Verify fix-cycle 1 (Red Team M86) — killing tests for the validation bypass
+// and the silent-acceptance regressions. Each of these FAILED before the fix.
+// ---------------------------------------------------------------------------
+
+describe('Red Team fix: prototype-key validation bypass (HIGH)', () => {
+  const PROTO_KEYS = ['constructor', 'toString', '__proto__', 'hasOwnProperty'];
+
+  for (const key of PROTO_KEYS) {
+    it(`resolveProfile: tier "${key}" in stageOverrides → configError + profile-tier fallback, model stays a STRING`, () => {
+      const r = resolveProfile('red-team', { profile: 'standard', stageOverrides: { 'red-team': key } });
+      assert.equal(typeof r.model, 'string', `model must be a string, got ${typeof r.model}`);
+      assert.equal(r.model, MODEL_IDS.opus, 'standard profile red-team must fall back to opus, NOT premium fable');
+      assert.ok(r.configError, 'prototype-key tier must surface a configError (never silent)');
+    });
+  }
+
+  it('resolveProfile: profile "constructor" → premium named default, model a string', () => {
+    const r = resolveProfile('red-team', { profile: 'constructor', stageOverrides: {} });
+    assert.equal(typeof r.model, 'string');
+    assert.equal(r.model, MODEL_IDS.fable, 'unknown profile falls back to the named premium default');
+  });
+
+  it('envelope: prototype-key tier never yields a clean envelope with the stage MISSING (the JSON.stringify drop)', () => {
+    const env = profile.buildResolveEnvelope('standard', { 'red-team': 'constructor' });
+    assert.equal(env.ok, true);
+    assert.ok(Object.prototype.hasOwnProperty.call(env.overrides, 'red-team'),
+      'red-team key must be PRESENT in overrides (missing key = workflow ?? falls back to premium fable)');
+    assert.equal(env.overrides['red-team'], MODEL_IDS.opus, 'standard red-team resolves opus');
+    assert.ok(env.configError, 'envelope must carry configError — never a silent clean envelope');
+    const json = JSON.parse(JSON.stringify(env));
+    assert.equal(json.overrides['red-team'], MODEL_IDS.opus, 'key survives JSON round-trip');
+  });
+
+  it('readConfig: prototype-key tier value in config file → entry ignored + configError (CLI repro)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'm86-proto-'));
+    fs.mkdirSync(path.join(dir, '.gsd-t'));
+    fs.writeFileSync(path.join(dir, '.gsd-t', 'model-profile.json'),
+      '{"profile":"standard","stageOverrides":{"red-team":"constructor"}}');
+    const cfg = profile.readConfig(dir);
+    assert.equal(cfg.ok, false, 'config with invalid tier must be ok:false');
+    assert.ok(cfg.configError, 'must carry configError');
+    assert.ok(!('red-team' in cfg.stageOverrides), 'invalid entry must not persist into stageOverrides');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('Red Team fix: unknown stage keys rejected (MEDIUM x2)', () => {
+  it('validateSetStage: unknown stage "red-tem" → rejected with the injectable list', () => {
+    const v = profile.validateSetStage('red-tem', 'fable');
+    assert.equal(v.ok, false, 'unknown stage must be rejected, not persisted');
+    assert.ok(/Unknown stage/.test(v.error));
+  });
+
+  it('buildResolveEnvelope: single-stage resolve of unknown stage → ok:false (M85 explicit-error behavior restored)', () => {
+    const env = profile.buildResolveEnvelope('pro', {}, 'red-tem');
+    assert.equal(env.ok, false, 'unknown single-stage resolve must be an explicit error, not silent sonnet');
+    assert.ok(/Unknown stage/.test(env.error));
+  });
+
+  it('readConfig: unknown stage key in config → flagged + ignored', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'm86-unkstage-'));
+    fs.mkdirSync(path.join(dir, '.gsd-t'));
+    fs.writeFileSync(path.join(dir, '.gsd-t', 'model-profile.json'),
+      '{"profile":"pro","stageOverrides":{"red-tem":"fable"}}');
+    const cfg = profile.readConfig(dir);
+    assert.equal(cfg.ok, false);
+    assert.ok(/unknown stage/.test(cfg.configError));
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('readConfig: competition-producers key in config → explicit M82 marker + ignored (c2 #4 letter)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'm86-prodkey-'));
+    fs.mkdirSync(path.join(dir, '.gsd-t'));
+    fs.writeFileSync(path.join(dir, '.gsd-t', 'model-profile.json'),
+      '{"profile":"pro","stageOverrides":{"competition-producers":"fable"}}');
+    const cfg = profile.readConfig(dir);
+    assert.equal(cfg.ok, false);
+    assert.ok(/not overridable/.test(cfg.configError), 'producers entry must carry the M82 marker');
+    assert.ok(!('competition-producers' in cfg.stageOverrides));
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});

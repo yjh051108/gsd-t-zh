@@ -41,6 +41,11 @@ ONLY with a loud, surfaced warning:
   (configured profile unknown; stale global binary may lack model-profile subcommand)
 ```
 
+Also surface a SUCCESSFUL resolve that carries a `configError` field (the resolver returns a
+named default + `configError` for malformed/hand-edited configs — Red Team M86): print the
+`configError` as a visible warning naming the effective profile before proceeding. A clean-looking
+run on a posture the user did not configure is the same silent-spend failure class.
+
 The wave workflow forwards `overrides` to BOTH its `gsd-t-execute` and `gsd-t-verify`
 sub-workflow calls, so the spend switch is active across the full cycle (execute + verify).
 

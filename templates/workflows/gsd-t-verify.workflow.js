@@ -39,6 +39,9 @@ export const meta = {
 const _args = (typeof args === "string") ? (() => { try { return JSON.parse(args); } catch { return {}; } })() : (args || {});
 // M86: resolved overrides map injected by the invoker (invoke-time injection, M69).
 // Default to {} so the premium fallback literals apply when no invoker injects overrides.
+// overrides values are CONCRETE model ids (resolver envelope); the bare literals below
+// are tier ALIASES. The sandbox runtime accepts BOTH forms in model: — proven live for
+// the concrete-id fable path by probe wf_c9faf817-373 (no HTTP 400).
 const overrides = (_args.overrides && typeof _args.overrides === "object") ? _args.overrides : {};
 const _CLI_ENVELOPE_SCHEMA = {
   type: "object", required: ["ok", "exitCode"], additionalProperties: true,

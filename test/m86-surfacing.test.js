@@ -341,3 +341,29 @@ describe('resolveActiveProfile / profileToken unit tests', () => {
     assert.equal(tok, 'profile: unknown');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Verify fix-cycle 1 (Red Team M86 LOW): [GSD-T PROFILE] is GSD-T-project-gated
+// — a model profile is a GSD-T concept; announcing "premium (default)" in
+// unrelated directories is noise. Mirrors the statusline gate.
+// ---------------------------------------------------------------------------
+
+describe('[GSD-T PROFILE] gating: GSD-T projects only', () => {
+  it('non-GSD-T directory (no .gsd-t/) → NO [GSD-T PROFILE] line, [GSD-T NOW] still present', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'm86-nongsdt-'));
+    const out = spawnAutoRoute({ cwd: dir, prompt: 'hello' });
+    assert.ok(out.includes('[GSD-T NOW]'), 'NOW line must always emit');
+    assert.ok(!out.includes('[GSD-T PROFILE]'),
+      'profile token must NOT emit outside GSD-T projects (Red Team M86 LOW)');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('GSD-T directory (.gsd-t/ present, no config) → [GSD-T PROFILE] named default emits', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'm86-gsdt-'));
+    fs.mkdirSync(path.join(dir, '.gsd-t'));
+    const out = spawnAutoRoute({ cwd: dir, prompt: 'hello' });
+    assert.ok(out.includes('[GSD-T PROFILE] profile: premium (default)'),
+      `gated emission must still fire inside GSD-T projects, got: ${out}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});

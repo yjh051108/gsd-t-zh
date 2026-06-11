@@ -103,15 +103,23 @@ function readConfig(projectDir) {
     }
   }
 
-  // Validate stageOverrides field
+  // Validate stageOverrides field. Per-entry validation is OWN-PROPERTY and
+  // membership-based — a string that merely indexes something truthy (e.g.
+  // "constructor") is NOT a valid tier (Red Team M86 HIGH: prototype-key tier
+  // values produced a clean envelope with the stage silently dropped → the
+  // workflow fallback billed premium on a cost-control profile).
   let stageOverrides = {};
   if ('stageOverrides' in parsed) {
     if (parsed.stageOverrides === null || typeof parsed.stageOverrides !== 'object' || Array.isArray(parsed.stageOverrides)) {
       configError = configError || `model-profile.json "stageOverrides" must be an object`;
     } else {
       for (const [k, v] of Object.entries(parsed.stageOverrides)) {
-        if (typeof v !== 'string') {
-          configError = configError || `model-profile.json stageOverrides["${k}"] must be a string`;
+        if (NON_INJECTABLE_STAGES.includes(k)) {
+          configError = configError || `model-profile.json stageOverrides["${k}"]: competition-producers is not overridable (M82); entry ignored`;
+        } else if (!INJECTABLE_STAGES.includes(k)) {
+          configError = configError || `model-profile.json stageOverrides has unknown stage "${k}"; entry ignored`;
+        } else if (typeof v !== 'string' || !VALID_TIERS.includes(v)) {
+          configError = configError || `model-profile.json stageOverrides["${k}"] has invalid tier ${JSON.stringify(v)}; entry ignored`;
         } else {
           stageOverrides[k] = v;
         }
@@ -170,10 +178,13 @@ function validateSetStage(stageKey, tier) {
     };
   }
 
-  if (stageKey === 'competition-judge' && MODEL_IDS[tier] === MODEL_IDS.opus) {
+  // Unknown stage keys are rejected, not persisted (Red Team M86 MEDIUM: a typo'd
+  // stage got a success message + a persisted override that never takes effect,
+  // and `show` silently hid it).
+  if (!INJECTABLE_STAGES.includes(stageKey)) {
     return {
       ok: false,
-      error: `competition-judge cannot be set to "${tier}" (resolves to "${MODEL_IDS[tier]}") — judge model must differ from producers' model (M82 blindness invariant)`,
+      error: `Unknown stage "${stageKey}". Injectable stages: ${INJECTABLE_STAGES.join(', ')}`,
     };
   }
 
@@ -181,6 +192,13 @@ function validateSetStage(stageKey, tier) {
     return {
       ok: false,
       error: `Unknown tier "${tier}". Valid tiers: ${VALID_TIERS.join(', ')}`,
+    };
+  }
+
+  if (stageKey === 'competition-judge' && MODEL_IDS[tier] === MODEL_IDS.opus) {
+    return {
+      ok: false,
+      error: `competition-judge cannot be set to "${tier}" (resolves to "${MODEL_IDS[tier]}") — judge model must differ from producers' model (M82 blindness invariant)`,
     };
   }
 
@@ -209,6 +227,14 @@ function buildResolveEnvelope(profile, stageOverrides, specificStage, configErro
 
   // If a specific stage is requested
   if (specificStage !== undefined) {
+    // Unknown stage → explicit error (Red Team M86 MEDIUM: silently returning
+    // ok:true sonnet for a typo'd stage regressed the M85 explicit unknown-stage error).
+    if (specificStage !== 'competition-producers' && !INJECTABLE_STAGES.includes(specificStage)) {
+      return {
+        ok: false,
+        error: `Unknown stage "${specificStage}". Valid stages: ${INJECTABLE_STAGES.join(', ')}, competition-producers`,
+      };
+    }
     if (specificStage === 'competition-producers') {
       const modelId = MODEL_IDS.opus;
       const result = { ok: true, profile, stage: specificStage, model: modelId, requiresThinkingOmitted: requiresThinkingOmitted(modelId) };
@@ -304,9 +330,12 @@ if (require.main === module) {
     const newProfile = positional[1];
     if (!newProfile) {
       emit({ ok: false, error: 'Usage: gsd-t model-profile set <profile>' }, 1);
+      return;
+      return;
     }
     if (!VALID_PROFILES.includes(newProfile)) {
       emit({ ok: false, error: `Unknown profile "${newProfile}". Valid profiles: ${VALID_PROFILES.join(', ')}` }, 1);
+      return;
     }
     const cfg = readConfig(projectDir);
     const newData = { profile: newProfile, stageOverrides: cfg.stageOverrides || {} };
@@ -321,10 +350,12 @@ if (require.main === module) {
     const tier  = positional[2];
     if (!stage || !tier) {
       emit({ ok: false, error: 'Usage: gsd-t model-profile set-stage <stage> <tier>' }, 1);
+      return;
     }
     const valid = validateSetStage(stage, tier);
     if (!valid.ok) {
       emit({ ok: false, error: valid.error }, 1);
+      return;
     }
     const cfg = readConfig(projectDir);
     const newOverrides = Object.assign({}, cfg.stageOverrides || {}, { [stage]: tier });
@@ -348,6 +379,7 @@ if (require.main === module) {
     if (profileArg) {
       if (!VALID_PROFILES.includes(profileArg)) {
         emit({ ok: false, error: `Unknown profile "${profileArg}". Valid profiles: ${VALID_PROFILES.join(', ')}` }, 1);
+        return;
       }
       profile = profileArg;
       stageOverrides = {};
@@ -358,6 +390,7 @@ if (require.main === module) {
       configError = cfg.configError;
       if (!cfg.ok) {
         emit({ ok: false, error: configError || 'Failed to read config' }, 1);
+        return;
       }
     }
 

@@ -147,6 +147,20 @@ function checkInvokerBody(body, label) {
     );
   }
 
+  // --- (d) configError-surfacing clause (Red Team M86 verify fix-cycle 1) ---
+  // A SUCCESSFUL resolve can carry configError (named default for a malformed /
+  // hand-edited config). The contract requires the invoker to SURFACE it; an
+  // invoker doc that never mentions configError leaves the clean-looking-but-
+  // unconfigured-posture run silent — the same silent-spend class.
+  const hasConfigErrorSurfacing = /configError/.test(body);
+  if (!hasConfigErrorSurfacing) {
+    violations.push(
+      `[${label}] Missing configError-surfacing clause: invoker must print the ` +
+        "resolver's configError as a visible warning naming the effective profile " +
+        "(contract §Invoke-Time Injection, Red Team M86)"
+    );
+  }
+
   return violations;
 }
 
