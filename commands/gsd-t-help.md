@@ -510,7 +510,8 @@ Use these when user asks for help on a specific command:
   - `gsd-t model-profile show [--json]` — display active profile + per-stage resolution
   - `gsd-t model-profile set <standard|pro|premium>` — switch the project profile
   - `gsd-t model-profile set-stage <stage> <tier>` — per-stage override (rejects `competition-producers` and `competition-judge→opus` — M82 blindness clamps)
-  - `gsd-t model-profile resolve --profile <p> [stage] [--json]` — resolve a profile into the overrides envelope consumed by workflow invokers
+  - `gsd-t model-profile resolve --json` — resolve the ACTIVE config (profile + stageOverrides) into the overrides envelope consumed by workflow invokers (the invoker form)
+  - `gsd-t model-profile resolve --profile <p> [stage] [--json]` — diagnostic form: pure profile envelope, stageOverrides ZEROED by design (census/divergence checks only — never for invocation)
   - Emits `{ok, profile, overrides: { "<stage>": "<concreteModelId>" }, requiresThinkingOmitted?}`. Exit 0 resolved · 1 unknown profile/tier.
 - **Out of scope**: Session default model (`/model`) — profiles govern WORKFLOW STAGES only.
 - **Contract**: `.gsd-t/contracts/model-profile-config-contract.md` v1.0.0 STABLE.

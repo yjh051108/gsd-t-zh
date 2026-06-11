@@ -27,7 +27,12 @@ if (_missingPolicyExports.length) {
   const msg = `gsd-t-model-tier-policy.cjs is missing the M86 profile surface (${_missingPolicyExports.join(', ')}) — ` +
     'version skew: an older policy module is installed alongside this CLI. Reinstall/update @tekyzinc/gsd-t.';
   if (require.main === module) {
-    process.stdout.write(JSON.stringify({ ok: false, error: msg }) + '\n');
+    // The guard runs before flag parsing; honor the output convention manually.
+    if (process.argv.includes('--json')) {
+      process.stdout.write(JSON.stringify({ ok: false, error: msg }) + '\n');
+    } else {
+      process.stderr.write(msg + '\n');
+    }
     process.exit(1);
   }
   throw new Error(msg);
@@ -316,6 +321,8 @@ if (require.main === module) {
         process.stderr.write((obj.error || obj.configError || 'Unknown error') + '\n');
       } else {
         // Human-readable output
+        if (obj.message) process.stdout.write(obj.message + '\n');
+        if (obj.warning) process.stderr.write(`warning: ${obj.warning}\n`);
         if (obj.profile !== undefined && obj.overrides !== undefined) {
           process.stdout.write(`profile: ${obj.profile}\n`);
           for (const [k, v] of Object.entries(obj.overrides)) {

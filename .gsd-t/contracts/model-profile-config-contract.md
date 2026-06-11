@@ -49,10 +49,21 @@ Bottom of the ladder (`haiku`, `sonnet`) unchanged except `standard`'s judge→s
 
 ## Resolver Surface (the seam D2/D3/D4 consume)
 
+**Two resolve forms with DIFFERENT semantics (Red Team M86 r3 HIGH — do not confuse them):**
+
 ```
-node bin/gsd-t-model-profile.cjs resolve --profile <p> [stage] [--json]
-gsd-t model-profile resolve --profile <p> [stage] --json
+gsd-t model-profile resolve --json                      # BARE form — THE INVOKER FORM
+gsd-t model-profile resolve --profile <p> [stage] --json # diagnostic form — config-blind
 ```
+- **Bare form (invokers MUST use this):** reads `.gsd-t/model-profile.json` — profile AND
+  `stageOverrides`. Persisted `set-stage` overrides WIN per the precedence chain. Surfaces
+  `configError` from a malformed config.
+- **`--profile <p>` form (diagnostics/census ONLY):** resolves the named profile with
+  **`stageOverrides` ZEROED by design** — a pure profile envelope for divergence tests and
+  census runs. Using it for invocation silently drops every persisted override (`show` would
+  display haiku while the workflow billed fable — the r3 HIGH).
+  `test/m86-invoker-injection.test.js` FAILS any invoker command that uses this form.
+
 Emits:
 ```json
 {

@@ -125,6 +125,21 @@ function checkInvokerBody(body, label) {
     );
   }
 
+  // --- (b2) Resolve-form pin (Red Team M86 r3 HIGH) ---
+  // The invoker MUST use the bare config-driven form (`resolve --json`), never the
+  // config-blind diagnostic form (`resolve --profile <p>`): passing --profile ZEROES
+  // the config's stageOverrides, so every persisted set-stage override was silently
+  // dropped on real workflow runs — `show` displayed haiku while the workflow billed
+  // fable (contract precedence violation: stageOverrides must WIN over the profile).
+  const usesConfigBlindForm = /model-profile\s+resolve\s+--profile/.test(body);
+  if (usesConfigBlindForm) {
+    violations.push(
+      `[${label}] Config-blind resolve form: invoker uses "resolve --profile <p>", which ` +
+        "zeroes config stageOverrides — use the bare `gsd-t model-profile resolve --json` " +
+        "so persisted set-stage overrides apply (contract §Invoke-Time Injection, Red Team M86 r3)"
+    );
+  }
+
   // --- (c) Resolver-failure-handling clause ---
   // The invoker must NOT silently fall through to premium on resolver failure.
   // Acceptable patterns: "blocked-needs-human" (halt path) OR a loud named-posture
@@ -360,5 +375,29 @@ test("reports discovered fleet size (informational)", () => {
     `Expected ≥7 workflow-invoking command files, found ${targetCommandFiles.length}: ` +
       discovered.join("; ") +
       "\n(Expected: partition, verify, debug, plan, milestone, impact, prd, design-decompose, doc-ripple, wave)"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Red Team M86 r3 HIGH — negative fixture: the config-blind resolve form FAILS.
+// ---------------------------------------------------------------------------
+
+test("fixture (c): invoker using `resolve --profile <p>` (config-blind, zeroes stageOverrides) FAILS", () => {
+  const syntheticBody = [
+    "## Step 2: Resolve the active profile",
+    "```bash",
+    "gsd-t model-profile resolve --profile premium --json",
+    "```",
+    "**Resolver-failure handling:** HALT with blocked-needs-human if the resolver is",
+    "unavailable (model-profile resolver unavailable — running on PREMIUM fallback literals).",
+    "Also surface configError on a successful resolve.",
+    "```js",
+    "args: { overrides: resolved.overrides }",
+    "```",
+  ].join("\n");
+  const violations = checkInvokerBody(syntheticBody, "fixture-c-config-blind-form");
+  assert.ok(
+    violations.some((v) => v.includes("Config-blind resolve form")),
+    `Fixture (c) — invoker with the --profile form must produce the form violation, got: ${JSON.stringify(violations)}`
   );
 });

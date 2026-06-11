@@ -790,3 +790,44 @@ describe('Red Team r2 fix: resolveProfile library-level markers (LOW)', () => {
     assert.ok(/unknown stage/.test(r.configError), 'valid tier must not silence the unknown-stage marker');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Red Team r3 HIGH — the invoker form must honor persisted set-stage overrides.
+// ---------------------------------------------------------------------------
+
+describe('Red Team r3 fix: bare resolve (the invoker form) honors persisted stageOverrides', () => {
+  it('config {premium, red-team:haiku} → bare `resolve --json` emits haiku for red-team (override WINS)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'm86-bare-'));
+    fs.mkdirSync(path.join(dir, '.gsd-t'));
+    fs.writeFileSync(path.join(dir, '.gsd-t', 'model-profile.json'),
+      '{"profile":"premium","stageOverrides":{"red-team":"haiku"}}');
+    const r = spawnSync(process.execPath, [PROFILE_PATH, 'resolve', '--json'], { cwd: dir, encoding: 'utf8' });
+    const out = JSON.parse(r.stdout);
+    assert.equal(out.ok, true);
+    assert.equal(out.overrides['red-team'], MODEL_IDS.haiku,
+      'the persisted set-stage override must WIN on the invoker form — the r3 HIGH was --profile zeroing it (show said haiku, workflow billed fable)');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('the --profile diagnostic form still zeroes stageOverrides BY DESIGN (census/divergence semantics, documented)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'm86-diag-'));
+    fs.mkdirSync(path.join(dir, '.gsd-t'));
+    fs.writeFileSync(path.join(dir, '.gsd-t', 'model-profile.json'),
+      '{"profile":"premium","stageOverrides":{"red-team":"haiku"}}');
+    const r = spawnSync(process.execPath, [PROFILE_PATH, 'resolve', '--profile', 'premium', '--json'], { cwd: dir, encoding: 'utf8' });
+    const out = JSON.parse(r.stdout);
+    assert.equal(out.overrides['red-team'], MODEL_IDS.fable, 'pure profile envelope — config-blind by design');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('no invoker command file uses the config-blind form (mirror of the T10 lint pin)', () => {
+    const cmds = ['partition','plan','milestone','impact','prd','design-decompose','doc-ripple','verify','debug','wave'];
+    for (const c of cmds) {
+      const body = fs.readFileSync(path.resolve(__dirname, `../commands/gsd-t-${c}.md`), 'utf8');
+      assert.ok(!/model-profile\s+resolve\s+--profile/.test(body),
+        `commands/gsd-t-${c}.md must use the bare resolve form`);
+      assert.ok(/model-profile\s+resolve\s+--json/.test(body),
+        `commands/gsd-t-${c}.md must carry the bare \`resolve --json\` call`);
+    }
+  });
+});

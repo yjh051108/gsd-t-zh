@@ -29,8 +29,10 @@ Before calling the Workflow, resolve the active model profile to build the `over
 
 ```bash
 # Run via Bash at invoke time:
-gsd-t model-profile resolve --profile <active-profile> --json
-# <active-profile> = read from .gsd-t/model-profile.json "profile" field, or default "premium"
+gsd-t model-profile resolve --json
+# Bare form (NO --profile flag): reads .gsd-t/model-profile.json — profile AND stageOverrides
+# (set-stage overrides MUST win — contract precedence; --profile is a config-blind diagnostic
+# form that ZEROES stageOverrides and must never be used for invocation — Red Team M86 r3)
 ```
 
 **Resolver-failure handling (M86 — pre-mortem c2 #2):** if the resolve call fails, do NOT
