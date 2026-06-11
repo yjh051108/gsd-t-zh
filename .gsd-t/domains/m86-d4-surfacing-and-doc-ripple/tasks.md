@@ -34,13 +34,24 @@ token line (NAMED; global-default named when config absent — e.g. `profile: pr
 SC(f)). Consume the resolver — do NOT re-hardcode the profile→tier map. Do NOT alter the
 `[GSD-T NOW]` timestamp format (date-guard dependency).
 
+**Hook resilience (pre-mortem r1 #7 MEDIUM):** this is the every-turn, every-project
+UserPromptSubmit hook — the `[GSD-T NOW]` source the date guard depends on AND the auto-route
+signal. The new resolver dependency MUST be fully guarded: resolver module/binary absent in a
+consumer install (the `project_global_bin_propagation_gap` breakage class), resolver returning
+`{ok:false}`, or spawn failure must NEVER throw, NEVER suppress the NOW line, NEVER kill
+auto-routing. Render the profile as the named default or an explicit `profile: unknown` marker
+and carry on.
+
 **Acceptance criteria:**
 - With `.gsd-t/model-profile.json` present → the banner names that profile; absent → it names the
   global default with a `(default)` marker (never blank, never an implicit unsurfaced fallback) —
   SC(f).
 - The `[GSD-T NOW]` line format is byte-unchanged (date-guard intact).
+- Resilience cases: (1) resolver module/binary ABSENT and (2) resolver ERRORS → hook exits 0,
+  `[GSD-T NOW]` line byte-format intact, profile rendered as named default or explicit
+  `profile: unknown` (never a crash, never a dropped banner).
 - Verified by `node --test test/m86-surfacing.test.js` (present/absent fixtures + NOW-format
-  assertion).
+  assertion + the 2 resilience fixtures).
 
 ### M86-D4-T2 — Statusline surfacing (active profile, named)
 **Touches:** `scripts/gsd-t-statusline.js`

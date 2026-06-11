@@ -64,6 +64,22 @@ The `resolve` command emits the seam D2/D4 consume:
 Validate profile names ∈ {standard,pro,premium} and tier names ∈ {opus,fable,sonnet,haiku};
 reject unknown with a non-zero exit + `{ ok:false, error }` envelope. No top-level side effects.
 
+**Blindness clamps (pre-mortem r1 #3 HIGH):** `set-stage` validation is NOT mere tier-membership:
+- `set-stage competition-producers <anything>` → REJECTED (`{ok:false}`, non-zero exit). Producers
+  are HELD opus by the M82 blindness invariant — not an overridable stage, in ANY profile.
+- `set-stage competition-judge opus` (any value equal to the producers' held model) → REJECTED.
+  Judge model must NEVER equal producer model; the static lint can't see args-injected values,
+  so this dynamic clamp is the only guard on the runtime path.
+- `resolveProfile` itself enforces the invariant: for every profile × every ACCEPTED override
+  combination, resolved competition-judge model ≠ the producers' model.
+
+**Malformed-config behavior (pre-mortem r1 #5 MEDIUM):** `.gsd-t/model-profile.json` is
+hand-editable; corrupt JSON, wrong-typed `profile` (e.g. `42`), wrong-typed/non-string-valued
+`stageOverrides`, or `null` must each produce a DEFINED envelope — `{ok:false,error}` from
+resolve, or the named default carrying an explicit `configError` marker that D4's surfacing
+renders. NEVER a silent clean-premium envelope (a typo'd attempt to set `standard` must not
+silently become the most expensive posture).
+
 **Acceptance criteria:**
 - `resolve --profile <p> --json` emits a well-formed envelope whose `overrides` map matches T1's
   `resolveProfile` output for every designated stage, and carries `requiresThinkingOmitted` for
@@ -71,8 +87,12 @@ reject unknown with a non-zero exit + `{ ok:false, error }` envelope. No top-lev
 - Absent `.gsd-t/model-profile.json` → the named global default is returned (`profile` field set,
   never blank — SC(f)).
 - Unknown profile / unknown tier → non-zero exit + `{ ok:false, error }` (no silent acceptance).
+- Blindness clamps hold: `set-stage competition-producers *` and `set-stage competition-judge opus`
+  both REJECTED; resolveProfile never emits judge === producers' model.
+- Malformed config (corrupt/wrong-typed/null) → DEFINED envelope with explicit error/configError —
+  never a silent premium fall-through.
 - Verified by `node --test test/m86-policy-profiles.test.js` (envelope-shape, absent-default,
-  reject-unknown cases).
+  reject-unknown, blindness-clamp, malformed-config cases).
 
 ### M86-D1-T3 — gsd-t.js dispatch + dual bin-propagation
 **Touches:** `bin/gsd-t.js`
@@ -106,7 +126,10 @@ additively (M85 §Published Model-ID Constants + §Stage Policy stay byte-unchan
 - the profile dimension table (3 profiles × designated-fable-stage set, producers held opus);
 - the profile-aware resolve surface shape (`overrides` map + precedence);
 - the `??`-form workflow lint obligation (`model: overrides["<stage>"] ?? "<premium-literal>"`,
-  premium literal = the lint-guarded fallback).
+  premium literal = the lint-guarded fallback) — INCLUDING bracket-KEY validation (the unwrapped
+  `overrides["<stage>"]` key must equal the designated stageKey — pre-mortem r1 #2);
+- the blindness-clamp validation rules (producers not overridable; judge ≠ producers' model —
+  pre-mortem r1 #3) + the malformed-config defined-behavior rule (pre-mortem r1 #5).
 Update the Consumers list to add `bin/gsd-t-model-profile.cjs` + the profile-aware surface.
 The companion DRAFT seam `model-profile-config-contract.md` is promoted DRAFT → STABLE in this
 task (its `## Status:` line).
@@ -135,6 +158,15 @@ NEW test file (distinct from D3's drift lint). Cases:
   default, never blank.
 - **`requiresThinkingOmitted` propagated** for fable stages in the resolve envelope.
 - **Reject unknown** profile/stage (non-zero / `{ok:false}`).
+- **Blindness clamps (r1 #3):** (1) `set-stage competition-producers <any-non-opus>` AND
+  `set-stage competition-producers opus` both REJECTED (not an overridable stage); (2)
+  `set-stage competition-judge opus` REJECTED; (3) invariant case — for every profile × any
+  accepted stageOverrides combination, resolved competition-judge ≠ `claude-opus-4-8` (FAILS if
+  the resolver ever emits judge = producers' model).
+- **Malformed-config fixtures (r1 #5):** (1) syntactically corrupt JSON, (2) `profile` of wrong
+  type, (3) `stageOverrides` wrong-typed / non-string values — each asserted to produce a DEFINED
+  envelope (`{ok:false,error}` or named default + explicit `configError`), never a silent clean
+  premium envelope.
 - **Dual bin-propagation:** reads `bin/gsd-t.js`, asserts `gsd-t-model-profile.cjs` in BOTH tool
   arrays.
 - **Contract doc-assertion:** `model-tier-policy-contract.md` is v1.1.0 with the profile table.

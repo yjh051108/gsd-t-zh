@@ -21,15 +21,23 @@
 **Contract refs:** `model-profile-config-contract.md` §Drift-Lint Obligation; `model-tier-policy-contract.md` §Drift Enforcement.
 
 Extend the lint's model-literal extractor/regex so it recognizes
-`model: overrides["<stage>"] ?? "<premium-literal>"` and YIELDS the FALLBACK literal for
-validation, while still recognizing the bare `model: "<literal>"` form. Validate the extracted
-literal against the published tier set (D1's `MODEL_IDS` keys) AND the designated-stage policy
-(premium = the fallback for every designated stage). FAIL-CLOSED: any `model:`-bearing line the
-extractor cannot parse FAILS the lint (never a silent skip).
+`model: overrides["<stage>"] ?? "<premium-literal>"` and YIELDS **BOTH the bracket stage KEY and
+the FALLBACK literal** for validation, while still recognizing the bare `model: "<literal>"` form.
+Validate (a) the extracted fallback against the published tier set (D1's `MODEL_IDS` keys) AND the
+designated-stage policy (premium = the fallback for every designated stage); (b) **the bracket key
+=== that stage's designated stageKey, sourced from the policy module's `PROFILE_STAGE_TIERS`/
+`STAGE_TIERS` keys — NOT re-hardcoded** (pre-mortem r1 #2: a typo'd key like `overrides["red-tem"]`
+has a correct fallback, passes a fallback-only lint, and silently disables the override FOREVER —
+the stage runs premium fable on every profile). The extractor must ALSO recognize the combined
+debug form `cycle === 1 ? "opus" : (overrides["debug-cycle-2"] ?? "fable")`, validating the
+cycle-1 if-branch literal AND the parenthesized `??` else-branch (key + fallback) — pre-mortem
+r1 #6. FAIL-CLOSED: any `model:`-bearing line the extractor cannot parse FAILS the lint (never a
+silent skip).
 
 **Acceptance criteria:**
-- The extractor returns the fallback literal for every `??`-form line and the bare literal for
-  every bare line; both are validated against the tier set + stage policy.
+- The extractor returns key + fallback for every `??`-form line (flat AND combined-ternary) and
+  the bare literal for every bare line; fallbacks validated against tier set + stage policy;
+  bracket keys validated against the policy module's stage keys (not a re-hardcoded list).
 - An unparseable `model:`-bearing line FAILS (fail-closed) — proven by a fixture in T3.
 - Verified by `node --test test/m85-workflow-tier-policy-lint.test.js` GREEN against D2's real
   edited workflows.
@@ -60,15 +68,23 @@ a regex silently matching zero lines is the vacuous-pass failure mode this guard
 **Depends on:** T1 (the extractor/validator under test); uses fixture STRINGS, not real-workflow edits (keeps D3 write-disjoint from D2).
 **Contract refs:** `model-profile-config-contract.md` §Drift-Lint Obligation (3 mandatory negatives).
 
-NEW test file. Three fixtures fed to the extractor/validator, each asserted to FAIL:
+NEW test file. Fixtures fed to the extractor/validator, each negative asserted to FAIL:
 - (i) drifted BARE literal (e.g. `model: "claude-opus-4-7"`) → FAILS (M85 invariant preserved).
 - (ii) `??` form with a drifted FALLBACK (e.g. `overrides["red-team"] ?? "claude-opus-4-7"`) → FAILS.
 - (iii) `??` form with a fallback OUTSIDE the tier set (e.g. `?? "gpt-4"`) → FAILS.
-Plus a fail-closed fixture: an unparseable `model:`-bearing line FAILS. Use a fixture-string
-harness so this domain stays write-disjoint from D2's workflow source.
+- (iv) **typo'd bracket KEY with correct fallback** (`overrides["red-tem"] ?? "fable"`) → FAILS
+  (pre-mortem r1 #2 — the silently-disabled-override class).
+- (v) **combined debug form, drifted cycle-1 branch**
+  (`cycle === 1 ? "fable" : (overrides["debug-cycle-2"] ?? "fable")`) → FAILS (pre-mortem r1 #6).
+- (vi) **combined debug form, drifted parenthesized fallback**
+  (`cycle === 1 ? "opus" : (overrides["debug-cycle-2"] ?? "claude-opus-4-7")`) → FAILS.
+Plus: the CORRECT combined form as a passing POSITIVE (proves the rewritten extractor actually
+recognizes it, not vacuous), and a fail-closed fixture (an unparseable `model:`-bearing line
+FAILS). Use a fixture-string harness so this domain stays write-disjoint from D2's workflow source.
 
 **Acceptance criteria:**
-- All four negatives FAIL as designed (a green suite with no negative coverage is a FAILED domain).
+- All seven negatives FAIL as designed (a green suite with no negative coverage is a FAILED
+  domain); the correct combined form PASSES.
 - The negatives drive the SAME validator path the real-workflow lint uses (not a parallel mock).
 - Verified by `node --test test/m86-lint-unwrap-fallback.test.js` (each negative asserted via
   expected-throw / FAIL-detection harness).

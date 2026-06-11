@@ -17,9 +17,18 @@ that validates it, so a defect here cannot mask a defect in the guard.
 | `templates/workflows/gsd-t-phase.workflow.js` | `??` form for solution-space-probe, partition-probe, competition-judge, pre-mortem. |
 | `templates/workflows/gsd-t-verify.workflow.js` | `??` form for red-team. |
 | `templates/workflows/gsd-t-debug.workflow.js` | `??` form for the cycle-2 branch of the ternary. |
+| `templates/workflows/gsd-t-wave.workflow.js` | Forwards `overrides` to its verify/execute sub-workflow calls (pre-mortem r1 #1). |
 | `commands/gsd-t-partition.md` | Invoker calls D1 resolver, injects `overrides` into the phase workflow via args. |
 | `commands/gsd-t-verify.md` | Invoker calls D1 resolver, injects `overrides` into the verify workflow via args. |
 | `commands/gsd-t-debug.md` | Invoker calls D1 resolver, injects `overrides` into the debug workflow via args. |
+| `commands/gsd-t-plan.md` | Phase invoker wire-in (pre-mortem r1 #1 — pre-mortem stage fires HERE). |
+| `commands/gsd-t-milestone.md` | Phase invoker wire-in (probe/judge fire here). |
+| `commands/gsd-t-impact.md` | Phase invoker wire-in (uniform coverage). |
+| `commands/gsd-t-prd.md` | Phase invoker wire-in (uniform coverage). |
+| `commands/gsd-t-design-decompose.md` | Phase invoker wire-in (probe/judge fire here). |
+| `commands/gsd-t-doc-ripple.md` | Phase invoker wire-in (uniform coverage). |
+| `commands/gsd-t-wave.md` | Wave invoker resolves profile + injects `overrides` (pre-mortem r1 #1). |
+| `test/m86-invoker-injection.test.js` | Static fleet guard: every workflow-invoking command carries the injection block. |
 
 ## Deliverables
 
@@ -43,7 +52,9 @@ that validates it, so a defect here cannot mask a defect in the guard.
 
 - The policy module / config / CLI / contract → D1 (this domain CONSUMES D1's published resolver).
 - The drift lint + unwrap negative fixture → D3 (write-disjoint — D3 independently verifies D2).
-- `wave` invoker / status / help / README / CLAUDE docs → D4.
+- status / help / README / CLAUDE docs → D4. (The wave invoker + wave workflow moved INTO this
+  domain at plan-hardening — pre-mortem r1 #1 found them owned by nobody while the wave path
+  forwarded no overrides.)
 
 ## Dependencies
 

@@ -50,10 +50,15 @@ the file-disjointness oracle clears all 4 to run concurrently with D1's contract
 - **M86-CP1** (D1 seam): `gsd-t model-profile resolve --profile premium --json` emits a well-formed
   `overrides` map; `test/m86-policy-profiles.test.js` green (headline census per profile);
   contract is v1.1.0 + DRAFT seam promoted STABLE; `gsd-t-model-profile.cjs` in BOTH bin-tool arrays.
-- **M86-CP2** (D2 wired): the 3 workflows carry the exact `??` forms; the 3 invokers inject
-  `overrides` via args; a real-sandbox run per profile shows the correct fable-stage census (SC(a)).
-- **M86-CP3** (D3 guard): the unwrap lint passes on D2's real workflows; all 3 (+fail-closed)
-  negatives FAIL as designed (SC(c)).
+- **M86-CP2** (D2 wired): the 3 designated-stage workflows carry the exact `??` forms; the wave
+  workflow FORWARDS `overrides` to its verify/execute sub-calls; ALL 10 workflow-invoking commands
+  (partition/plan/milestone/impact/prd/design-decompose/doc-ripple/verify/debug/wave) inject
+  `overrides` via args (`test/m86-invoker-injection.test.js` green — pre-mortem r1 #1); a
+  real-sandbox run per profile shows the correct fable-stage census on EVERY entry point incl.
+  plan, milestone, and wave-composed verify (SC(a)).
+- **M86-CP3** (D3 guard): the unwrap lint passes on D2's real workflows, validating bracket KEY
+  (vs policy stageKeys) + fallback, flat AND combined-debug forms; all 7 negatives (+fail-closed,
+  +combined-form positive) behave as designed (SC(c)) — pre-mortem r1 #2/#6.
 - **M86-CP4** (D4 surfaced + docs): banner/statusline/status NAME the active profile (SC(f),
   `test/m86-surfacing.test.js` green); full doc-ripple complete; package.json 4.4.10 → 4.5.10.
 
