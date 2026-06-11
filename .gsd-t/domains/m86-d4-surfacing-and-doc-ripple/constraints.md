@@ -25,7 +25,7 @@
 
 - This domain WRITES ONLY: `scripts/gsd-t-auto-route.js`, `scripts/gsd-t-statusline.js`,
   `commands/gsd-t-status.md`, `commands/gsd-t-help.md`, `README.md`, `GSD-T-README.md`,
-  `templates/CLAUDE-global.md`, `CLAUDE.md`, `package.json`.
+  `templates/CLAUDE-global.md`, `CLAUDE.md`, `package.json`, `test/m86-surfacing.test.js`.
 - `scripts/gsd-t-statusline.js` is owned EXCLUSIVELY by D4 (the salvage variant that put it in D1
   is REJECTED to preserve disjointness — D4 owns all surfacing).
 - Does NOT touch `bin/`, the contract, workflow source, invoker commands, or the lint.

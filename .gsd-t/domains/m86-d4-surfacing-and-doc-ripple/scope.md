@@ -22,6 +22,7 @@ sandbox-fragile (D2) domains so it never gates them.
 | `templates/CLAUDE-global.md` | Profiles + model-tier section update (template). |
 | `CLAUDE.md` | Project M85/M86 section update. |
 | `package.json` | Minor version bump. |
+| `test/m86-surfacing.test.js` | NEW — killing test for the banner/statusline active-profile surfacing (SC(f) present/absent named-default). Disjoint from D1's `test/m86-policy-profiles.test.js` and D3's lint tests. |
 
 ## Deliverables
 

@@ -1,6 +1,82 @@
 # Integration Points
 
-## Current State: M85 — Model-Tier Policy (single source of truth) + Fable 5 Integration (PLANNED — 4 domains, 2 waves). See `.gsd-t/contracts/m85-integration-points.md`.
+## Current State: M86 — Model Profiles (standard/pro/premium tier-spend switch) (PLANNED — 4 domains, 1 wave, all file-disjoint).
+
+### M86 Wave Plan
+
+```
+Wave 1 (single wave — all 4 domains file-disjoint, 23 distinct owned files, zero overlap):
+
+  D1 m86-d1-policy-profiles-config-cli   ── SEAM PRODUCER (medium-risk core behind a stable
+      │                                      resolver envelope). Owns bin/gsd-t-model-tier-policy.cjs
+      │                                      (PROFILE_STAGE_TIERS + resolveProfile), NEW
+      │                                      bin/gsd-t-model-profile.cjs (config + CLI),
+      │                                      bin/gsd-t.js (dispatch + dual bin-propagation),
+      │                                      model-tier-policy-contract.md (→v1.1.0 additive),
+      │                                      test/m86-policy-profiles.test.js. Promotes the DRAFT
+      │                                      seam model-profile-config-contract.md → STABLE.
+      │   publishes: `gsd-t model-profile resolve --profile <p> [stage] --json`
+      │              → { ok, profile, overrides:{stage:modelId}, requiresThinkingOmitted? }
+      │
+      ├──────────────┬───────────────────┬──────────────────────┐
+      ▼              ▼                   ▼                      ▼
+  D2 invoker+     D3 drift-lint        D4 surfacing+docs    (consume D1's published seam —
+  workflow `??`   unwrap-guard         (banner/statusline    code against the contract, not
+  forms           (SAFETY NET)         /status/README/CLAUDE  D1's internals)
+  (TD-113         (test/ only,         /package.json bump)
+  QUARANTINE)     write-disjoint
+                  from D2)
+```
+
+D2/D3/D4 all CONSUME D1's published resolver surface; none depends on the others. Although the
+four are file-disjoint (1 wave for parallel execution), there is a CONTENT seam: D1 must land its
+resolver + the published `overrides` shape before D2's invokers can inject and D3's lint can
+validate against the v1.1.0 policy. Execute treats D1 as the contract-first seam (mirroring M85);
+the file-disjointness oracle clears all 4 to run concurrently with D1's contract published first.
+
+### M86 Cross-Domain Interfaces
+
+| Producer | Consumer | Interface |
+|----------|----------|-----------|
+| D1 `gsd-t model-profile resolve --json` | D2 invokers | `overrides` map (stage → concrete model id) injected into the workflow via `args` (M69 invoke-time injection) |
+| D1 `PROFILE_STAGE_TIERS` + `MODEL_IDS` | D3 lint | The tier set + designated-stage policy the lint validates each `??`-form fallback literal against |
+| D2 workflow `??` forms (`model: overrides["x"] ?? "<premium-literal>"`) | D3 lint | The exact shape D3's extractor UNWRAPS read-only (D3 never writes D2's files — independent verification) |
+| D1 config-read / resolver | D4 banner/statusline/status | The named active profile (global-default named when config absent — SC(f)) |
+| `model-profile-config-contract.md` (DRAFT→STABLE) | D2/D3/D4 | The partition-time seam; D1 owns it, all consumers code against the envelope, not internals |
+| `model-tier-policy-contract.md` v1.1.0 | all 4 | Additive over M85 v1.0.0 STABLE constants (unchanged); folds in the profile dimension + `??`-form lint obligation |
+
+### M86 Checkpoints
+
+- **M86-CP1** (D1 seam): `gsd-t model-profile resolve --profile premium --json` emits a well-formed
+  `overrides` map; `test/m86-policy-profiles.test.js` green (headline census per profile);
+  contract is v1.1.0 + DRAFT seam promoted STABLE; `gsd-t-model-profile.cjs` in BOTH bin-tool arrays.
+- **M86-CP2** (D2 wired): the 3 workflows carry the exact `??` forms; the 3 invokers inject
+  `overrides` via args; a real-sandbox run per profile shows the correct fable-stage census (SC(a)).
+- **M86-CP3** (D3 guard): the unwrap lint passes on D2's real workflows; all 3 (+fail-closed)
+  negatives FAIL as designed (SC(c)).
+- **M86-CP4** (D4 surfaced + docs): banner/statusline/status NAME the active profile (SC(f),
+  `test/m86-surfacing.test.js` green); full doc-ripple complete; package.json 4.4.10 → 4.5.10.
+
+### M86 Acceptance-Criteria → Domain Map
+
+| AC | Owner(s) | Killing test |
+|----|----------|--------------|
+| (a) profile→spend real-sandbox | D1 (mapping) + D2 (`??`+injection) | D2-T7 live model census |
+| (b) override beats profile live | D1 (precedence) + D2 (injection) | D1-T5 precedence case + D2-T7 live override |
+| (c) lint bites both forms | D3 | D3-T3 negatives (drifted-bare, drifted-fallback, out-of-tier) |
+| (d) per-project divergence | D1 (config-read) | D1-T5 absent/per-project (live 2-project = verify) |
+| (e) resolver consumed at invoke time | D2 (args injection) | D2-T7 `overrides`-visible-in-args |
+| (f) no silent degradation | D1 (named default) + D4 (surfacing) | D1-T5 named-default + D4 `test/m86-surfacing.test.js` |
+| (g) M85 partition-probe fable | ALREADY SATISFIED (banked 2026-06-10 18:27, ledger 6/6) | — (re-confirmed incidentally by D2-T7 premium partition) |
+
+Invariants held in the plan: competition producers stay bare `model: "opus"` in ALL profiles
+(M82 blindness); the premium literal stays the lint-guarded `??` fallback; NO tracked-file mutation
+on profile switch (invoke-time injection via args, M69); workflows stay runtime-native (no
+require/fs — TD-113).
+
+---
+
+## Prior State: M85 — Model-Tier Policy (single source of truth) + Fable 5 Integration (4 domains, 2 waves). See `.gsd-t/contracts/m85-integration-points.md`.
 
 ## Prior State: Milestone 41 — Universal Token Capture Across GSD-T (PARTITIONED — 5 domains)
 
