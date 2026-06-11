@@ -19,8 +19,11 @@
 ## File-Disjointness (re-validated by partition oracle)
 
 - This domain WRITES ONLY: `bin/gsd-t-model-tier-policy.cjs`, `bin/gsd-t-model-profile.cjs`,
-  `bin/gsd-t.js`, `.gsd-t/contracts/model-tier-policy-contract.md`, `test/m86-policy-profiles.test.js`.
-- It is the ONLY domain that touches `bin/`, the config schema, and the contract.
+  `bin/gsd-t.js`, `.gsd-t/contracts/model-tier-policy-contract.md`,
+  `.gsd-t/contracts/model-profile-config-contract.md` (the seam contract — added at
+  plan-hardening c2 #3; T4 amends it before the DRAFT→STABLE flip),
+  `test/m86-policy-profiles.test.js`.
+- It is the ONLY domain that touches `bin/`, the config schema, and the two contracts.
 - It does NOT touch `templates/workflows/`, the drift lint, `scripts/`, or any doc/README.
 
 ## Risk Containment

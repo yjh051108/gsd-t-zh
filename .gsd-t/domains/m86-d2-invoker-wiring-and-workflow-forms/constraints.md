@@ -20,11 +20,16 @@
 
 ## File-Disjointness (re-validated by partition oracle)
 
-- This domain WRITES ONLY: `templates/workflows/gsd-t-phase.workflow.js`,
-  `gsd-t-verify.workflow.js`, `gsd-t-debug.workflow.js`, `commands/gsd-t-partition.md`,
-  `commands/gsd-t-verify.md`, `commands/gsd-t-debug.md`.
+- This domain WRITES ONLY (expanded at plan-hardening r1 #1): `templates/workflows/gsd-t-phase.workflow.js`,
+  `gsd-t-verify.workflow.js`, `gsd-t-debug.workflow.js`, `gsd-t-wave.workflow.js` (overrides
+  forwarding ONLY — no model: lines), `commands/gsd-t-partition.md`, `commands/gsd-t-verify.md`,
+  `commands/gsd-t-debug.md`, `commands/gsd-t-plan.md`, `commands/gsd-t-milestone.md`,
+  `commands/gsd-t-impact.md`, `commands/gsd-t-prd.md`, `commands/gsd-t-design-decompose.md`,
+  `commands/gsd-t-doc-ripple.md`, `commands/gsd-t-wave.md`, `test/m86-invoker-injection.test.js`.
 - It does NOT touch the lint (D3) — write-disjoint, so a defect here cannot mask a guard defect.
-- It does NOT touch `bin/`, config, the contract (D1), or `scripts/`/status/help/README (D4).
+  (`test/m86-invoker-injection.test.js` is D2's OWN static guard over command files, not the
+  model-literal lint — D3's files stay untouched.)
+- It does NOT touch `bin/`, config, the contracts (D1), or `scripts/`/status/help/README (D4).
 - `gsd-t-execute/integrate/quick/scan` workflows are NOT designated-stage carriers for M86 —
   leave them untouched (they have no `??`-eligible stages in scope per the milestone).
 
