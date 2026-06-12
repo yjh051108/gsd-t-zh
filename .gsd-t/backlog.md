@@ -498,3 +498,25 @@ Run against binvoice session `692fe9fc-2e09-490c-bb1d-3ae54f865c41`: must cluste
 - Feeds the retro agent (#27): this item is itself the manual prototype of the retro pipeline (cross-session pattern → evidence-cited proposal → governor review) and `platform-invariants.md` is the natural home for future retro-adopted platform rules.
 - Origin artifacts: binvoice commit of platform-invariants.md (2026-06-10), GSD-T Decision Log M85 plan-hardening entries (archived in m85 milestone snapshot).
 - Scope: ~2 domains (template + pre-mortem/plan wiring; debug workflow micro-stage + contract + lint), 1 wave.
+
+## 32. Proportional gating — deterministic diff-scoped verification lanes (trivial changes stop paying the full toll)
+
+**Added**: 2026-06-12
+**Type**: framework feature
+**Origin**: user, watching binvoice 2026-06-11/12 — "mostly UI changes taking a very long time… they should be completed very quickly," then proposing a scoping/risk session that skips preflight + full gating when changes are trivial. Evidence: 11 quick runs in ~27h each paying the full battery (server 426 + web 288 + root 567 + tsc ×3 + builds + 39 Playwright + live smoke + doc ripple) — truly-UI-only quicks landed in ~12 min, so the fixed floor dominated; meanwhile 3 of 5 "trivial UI" requests were actually pipe bugs (silent extension egress CRITICAL, missing /orders/stats endpoint, orphaned PairingTokenPanel), proving INTENT-based triage misclassifies.
+
+### Design (settled in discussion 2026-06-12)
+- **Triage is computed from the DIFF, not judged from intent.** Post-edit, pre-commit, a deterministic classifier (a calculator in the disjointness-oracle/competition-judge house style — NOT an LLM confidence claim; the agent wanting to skip the gate must not grade its own exam, per feedback_deterministic_orchestration) assigns a lane from changed files/surfaces:
+  - **Lane 0** docs/comments/md → commit gates only.
+  - **Lane 1** style-only (tokens/CSS/classNames, zero logic delta) → tsc + affected package units + Playwright specs mapped to affected screens (M52 journey-coverage tooling already maps components→specs).
+  - **Lane 2** single-package logic, no contract/schema/API/IPC/money surface → package battery + targeted E2E.
+  - **Lane 3** contracts/schema/IPC/cross-package/payment paths → full battery (today's behavior).
+  - Ambiguity, allowlist miss, or mixed batch → FAIL TOWARD Lane 3.
+- **Skip = deferral, never exemption** (preserves feedback_no_silent_degradation): lane-skipped changes accumulate in a ledger; the FULL battery sweeps the accumulated delta at next milestone verify or every N skipped commits. Lane decision surfaced loudly per run (`lane: style-only · full battery deferred (4 commits pending)` — model-profile-style surfacing).
+- **Tripwire learning loop**: a sweep-attributed regression from a lane-skipped commit promotes that file-class out of its cheap lane.
+- **Up-front scoping session** = planning/estimation aid only ("looks like Lane 1, ~10 min"), never the enforcement point — intent-time enforcement is exactly how "just UI" becomes an unverified server endpoint.
+
+### Relation to existing items
+- Same proportionality theme as #31 (pre-mortem severity floors/cycle budgets) — the framework lacks effort calibration in BOTH directions: gates that can't shrink (this item) and adversarial loops that can't stop (#31/TD-294).
+- Tension acknowledged: Lane 1/2 deliberately relax the E2E-always enforcement rule (born from real burns) — the deferral ledger + sweep is what makes that relaxation safe and repayable, not silent.
+- Scope: ~2-3 domains (diff classifier cjs + ledger; quick/execute workflow lane wiring + surfacing; contract + lint + docs), 1-2 waves.
