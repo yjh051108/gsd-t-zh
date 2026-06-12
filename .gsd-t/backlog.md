@@ -516,6 +516,12 @@ Run against binvoice session `692fe9fc-2e09-490c-bb1d-3ae54f865c41`: must cluste
 - **Tripwire learning loop**: a sweep-attributed regression from a lane-skipped commit promotes that file-class out of its cheap lane.
 - **Up-front scoping session** = planning/estimation aid only ("looks like Lane 1, ~10 min"), never the enforcement point — intent-time enforcement is exactly how "just UI" becomes an unverified server endpoint.
 
+### Lane-scoped EXECUTION path + per-lane SLOs (added 2026-06-12 from the unit-price-column discussion)
+The full battery is only ~half the 15–20 min cost of a trivial change; the other half is workflow CEREMONY (preflight agent + brief generation + worker spawns ≈ 3–5 min) and milestone-grade doc ripple (~2–3 min) that buy nothing for a one-component edit. So lanes scope the EXECUTION PATH, not just the tests:
+- **Lane ≤2 → LEAD-DIRECT**: the lead agent makes the change in-session — no preflight agent, no brief, no worker spawn (codifies the existing "localized bugs: hands-on fix, not spawns" memory as a classifier-triggered rule, not a judgment call). Lane 3 → full quick/execute workflow as today.
+- **Right-sized doc ripple**: Lane 0/1 = one-line decision-log entry + commit; milestone-grade paragraphs reserved for Lane 3.
+- **Falsifiable per-lane SLOs (measured, not claimed — per feedback_measure_dont_claim)**: Lane 1 exemplar — "add a unit-price column to a grid where the data is already captured": command-start → commit **≤5 min wall-clock**, demonstrated on a real change in a real project (edit ~2 min + targeted gates ~1.5 min [tsc + affected package units + mapped Playwright spec] + one-line ripple + commit ~1 min). Current measured baseline: 15–20 min (binvoice 2026-06-12, user-reported + commit-cadence-confirmed).
+
 ### Relation to existing items
 - Same proportionality theme as #31 (pre-mortem severity floors/cycle budgets) — the framework lacks effort calibration in BOTH directions: gates that can't shrink (this item) and adversarial loops that can't stop (#31/TD-294).
 - Tension acknowledged: Lane 1/2 deliberately relax the E2E-always enforcement rule (born from real burns) — the deferral ledger + sweep is what makes that relaxation safe and repayable, not silent.
