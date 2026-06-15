@@ -1011,12 +1011,17 @@ function configureAutoRouteHook(scriptPath) {
 const HOOKS_DIR = path.join(SCRIPTS_DIR, "hooks");
 const PKG_HOOKS = path.join(PKG_SCRIPTS, "hooks");
 
-// Each entry: { script, events, async } — `events` is the array of hook event
-// names this script must be wired into. The `gsd-t-conversation-capture.js`
-// hook runs on SessionStart, UserPromptSubmit, and Stop (per the global
-// CLAUDE.md M45 D2 install block — PostToolUse stays opt-in via the
-// GSD_T_CAPTURE_TOOL_USES env flag, so we don't auto-register it).
-// `gsd-t-in-session-usage-hook.js` runs on Stop (per M43 D1 contract).
+// Each entry: { script, events, async, runner } — `events` is the array of hook
+// event names this script must be wired into. `runner` is the interpreter
+// ("node" default, "bash" for *.sh hooks). `async: true` lets the hook run
+// detached; OMIT it for hooks whose stdout must reach the terminal (the
+// ctx-cue banner is synchronous by design — see its header).
+// The `gsd-t-conversation-capture.js` hook runs on SessionStart,
+// UserPromptSubmit, and Stop (per the global CLAUDE.md M45 D2 install block —
+// PostToolUse stays opt-in via the GSD_T_CAPTURE_TOOL_USES env flag, so we
+// don't auto-register it). `gsd-t-in-session-usage-hook.js` runs on Stop (per
+// M43 D1 contract). `gsd-t-ctx-cue.sh` runs synchronously on Stop (M85 —
+// low-context red banner; sync so its stdout reaches the terminal).
 const IN_SESSION_HOOKS = [
   {
     script: "gsd-t-conversation-capture.js",
@@ -1027,6 +1032,11 @@ const IN_SESSION_HOOKS = [
     script: "gsd-t-in-session-usage-hook.js",
     events: ["Stop"],
     async: true,
+  },
+  {
+    script: "gsd-t-ctx-cue.sh",
+    events: ["Stop"],
+    runner: "bash",
   },
 ];
 
@@ -1072,7 +1082,8 @@ function configureInSessionHooks() {
   let added = 0;
   for (const hook of IN_SESSION_HOOKS) {
     const scriptPath = path.join(HOOKS_DIR, hook.script);
-    const cmd = `node "${scriptPath.replace(/\\/g, "\\\\")}"`;
+    const runner = hook.runner || "node";
+    const cmd = `${runner} "${scriptPath.replace(/\\/g, "\\\\")}"`;
 
     for (const event of hook.events) {
       if (!settings.hooks[event]) settings.hooks[event] = [];
@@ -1101,6 +1112,67 @@ function configureInSessionHooks() {
   try {
     fs.writeFileSync(SETTINGS_JSON, JSON.stringify(settings, null, 2));
     success(`${added} in-session hook entr${added === 1 ? "y" : "ies"} configured in settings.json`);
+  } catch (e) {
+    warn(`Failed to write settings.json: ${e.message}`);
+  }
+}
+
+// ─── Status Line ─────────────────────────────────────────────────────────────
+
+// The GSD-T status bar. Canonical source: scripts/statusline-command.sh. Copy
+// it to ~/.claude/statusline-command.sh and point settings.statusLine at it so
+// edits in the package survive install/update/update-all. We only set
+// statusLine when it is absent or already points at our script — never clobber
+// a user's custom status line.
+const STATUSLINE_SCRIPT = "statusline-command.sh";
+
+function installStatusLine() {
+  ensureDir(CLAUDE_DIR);
+  const src = path.join(PKG_SCRIPTS, STATUSLINE_SCRIPT);
+  if (!fs.existsSync(src)) {
+    info("No statusline-command.sh in package — skipping status line");
+    return;
+  }
+  const dest = path.join(CLAUDE_DIR, STATUSLINE_SCRIPT);
+  const srcContent = fs.readFileSync(src, "utf8");
+  const destContent = fs.existsSync(dest) ? fs.readFileSync(dest, "utf8") : "";
+  if (normalizeEol(srcContent) !== normalizeEol(destContent)) {
+    copyFile(src, dest, STATUSLINE_SCRIPT);
+    try { fs.chmodSync(dest, 0o755); } catch {}
+  } else {
+    info("Status line script unchanged");
+  }
+
+  const parsed = readSettingsJson();
+  if (parsed === null && fs.existsSync(SETTINGS_JSON)) {
+    warn("settings.json has invalid JSON — cannot configure status line");
+    return;
+  }
+  const settings = parsed || {};
+  const desiredCmd = `bash ${dest}`;
+  const existing = settings.statusLine;
+  // Set only when absent or already ours (command references our script).
+  const isOurs =
+    existing &&
+    existing.type === "command" &&
+    typeof existing.command === "string" &&
+    existing.command.includes(STATUSLINE_SCRIPT);
+  if (existing && !isOurs) {
+    info("Custom status line present — leaving it untouched");
+    return;
+  }
+  if (isOurs && existing.command === desiredCmd) {
+    info("Status line already configured");
+    return;
+  }
+  if (isSymlink(SETTINGS_JSON)) {
+    warn("Skipping settings.json write — target is a symlink");
+    return;
+  }
+  settings.statusLine = { type: "command", command: desiredCmd };
+  try {
+    fs.writeFileSync(SETTINGS_JSON, JSON.stringify(settings, null, 2));
+    success("Status line configured in settings.json");
   } catch (e) {
     warn(`Failed to write settings.json: ${e.message}`);
   }
@@ -1539,8 +1611,11 @@ async function doInstall(opts = {}) {
   heading("Auto-Route (UserPromptSubmit)");
   installAutoRoute();
 
-  heading("In-Session Hooks (Conversation Capture + Token Usage)");
+  heading("In-Session Hooks (Conversation Capture + Token Usage + Ctx Cue)");
   installInSessionHooks();
+
+  heading("Status Line");
+  installStatusLine();
 
   heading("Figma MCP (Design-to-Code)");
   configureFigmaMcp();

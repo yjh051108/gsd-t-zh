@@ -2,6 +2,17 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.6.10] - 2026-06-15 (Installer wiring for status line + low-context cue — minor)
+
+### Added — installer now copies and wires the status line + ctx-cue Stop hook
+
+Both `statusline-command.sh` (the M85 two-line GSD-T status bar) and `scripts/hooks/gsd-t-ctx-cue.sh` (the M85 low-context red banner) were canonical sources but had NO installer copy/wire path — dead source that never reached projects on `install` / `update-all` (the global-bin-propagation-gap pattern). This release wires both into `bin/gsd-t.js` so they propagate, ships the M85/M86 template sync (`templates/CLAUDE-global.md` now matches the live tightened global CLAUDE.md, adding the Output Style + Git Worktree Location sections), and commits the per-project `.gsd-t/model-profile.json` default (`{profile: standard}` — Fable 5 not used; all 6 high-leverage stages run on Opus/Sonnet).
+
+- `bin/gsd-t.js`: `IN_SESSION_HOOKS` gains a `runner` field (`node` default, `bash` for `.sh` hooks); `gsd-t-ctx-cue.sh` registered as a SYNCHRONOUS Stop hook (its banner stdout must reach the terminal — async would swallow it). New `installStatusLine()` copies `statusline-command.sh` to `~/.claude/` and sets `settings.statusLine` only when absent or already ours (never clobbers a custom status line). Both wired into the shared `doInstall` path, so `update` / `update-all` propagate them.
+- `templates/CLAUDE-global.md`: synced to the live global CLAUDE.md (Output Style default-CONCISE + Git Worktree Location MANDATORY sections added; verbose Update-Notices block condensed).
+- `.gsd-t/model-profile.json`: committed default `{profile: standard}`.
+- `test/m86-installer-statusline-ctxcue.test.js`: NEW black-box regression — runs the real installer against a sandbox HOME and asserts statusLine wiring, the bash-runner ctx-cue Stop hook, its synchronous registration, and both file copies.
+
 ## [4.4.10] - 2026-06-09 (M85 Model-Tier Policy + Fable 5 — minor)
 
 ### Added — single source of truth for model-tier assignments + the Fable 5 tier
