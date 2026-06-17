@@ -1,6 +1,6 @@
 # Contract: PseudoCode Source-of-Truth
 
-**Version**: 1.1.4
+**Version**: 1.1.5
 **Status**: STABLE
 **Owner domain**: `template-docripple-contract` (M87 D4)
 **Consumed by**: `guard-bridge-spike` (D1), `traceability-section-coverage` (D2), `milestone-two-altitude-flow` (D3)
@@ -110,6 +110,16 @@ The pass/fail decision over this map is **deterministic code, zero LLM
 judgment**. An LLM may PRODUCE the map; code GATES on it. Exit non-zero
 (contract-breach code) when any rule is unbacked or contradicted, naming the
 violated `<RULE-ID>`. (A1 kill-criterion.)
+
+**Non-vacuity on the MAP side (mandatory — the gate keys on the DOC, not the map).**
+The gate iterates the **DOC's derived RULE-ID set** as the source of truth, NOT
+the map's own keyset. For each doc-derived `<RULE-ID>`: a map entry that is
+present-and-backed (`backedBy` non-empty, `contradicted:false`) passes; a map
+entry that is unbacked (`backedBy: []`) or contradicted FAILS; **a doc-derived
+`<RULE-ID>` whose key is ABSENT ENTIRELY from the map is treated as UNBACKED →
+exit 4 naming it.** Iterating only the map's own keys would let an incomplete map
+(one that simply omits a doc rule) pass vacuously — forbidden. (M87-D1-T3 asserts
+this: a map missing one doc-derived id exits 4, proving doc-keyed iteration.)
 
 **A1 fixture-fidelity assertion (mandatory — closes the vacuous-pass hole).** The
 A1 harness MUST assert the parser extracts `N > 0` rules from the UNMODIFIED
@@ -285,6 +295,48 @@ integrate-time task **M87-INT-T1** with its own killing test:
 
 ---
 
+## 7. Doc + build-map discovery convention (deterministic — D1 owns the verify-step glob)
+
+> **Added v1.1.5 (plan-phase pre-mortem cycle, HIGH — discovery seam unspecified).**
+> Without a fixed on-disk convention for WHERE a milestone's PseudoCode docs +
+> build-maps live, the verify step's discovery is undefined → it could always
+> return nothing → the gate is permanent DEAD CODE (silent skip on every run).
+> This section makes discovery deterministic.
+
+Per-milestone PseudoCode docs and their build-maps live under a single project
+directory (mirrors the existing `.gsd-t/briefs/<id>.json` pattern):
+
+```
+.gsd-t/pseudocode/PseudoCode-[Title].md          # the doc (one per coherent subject)
+.gsd-t/pseudocode/PseudoCode-[Title].map.json    # its co-located build-map (same basename + .map.json)
+```
+
+The verify-workflow guard-map step (D1, in `gsd-t-verify.workflow.js`) discovers
+deterministically:
+
+1. **Glob** `.gsd-t/pseudocode/PseudoCode-*.md` for the project. A milestone may
+   produce SEVERAL docs (one per subject) — the step handles the multi-doc set,
+   not just one.
+2. For each doc, the map is the **same basename with `.md` → `.map.json`**
+   (`PseudoCode-Foo.md` → `PseudoCode-Foo.map.json`), co-located in the same dir.
+3. **Pairing outcomes** (each a distinct, observable outcome — never a silent pass):
+   - doc **+** co-located map present → **FIRE** the gate on that pair.
+   - doc with **no** co-located map → a **logged skip WITH A REASON**
+     (`reason: "no-build-map"`, naming the doc) — distinct from a fire, never a
+     silent pass.
+   - **zero** `PseudoCode-*.md` docs → a **logged skip WITH A REASON**
+     (`reason: "no-pseudocode-docs"`) — the gate legitimately has nothing to gate,
+     but the skip is surfaced, not silent (`feedback_no_silent_degradation`).
+4. The fire path passes `--doc <doc> --map <map>` to `bin/gsd-t-guard-map.cjs`;
+   any FAIL-blocking non-zero HALTS verify BEFORE the triad (peer of the
+   verify-gate / CI-parity / test-data halts).
+
+Discovery is path-as-path (glob + basename derivation), never substring. The set
+the step enumerates is asserted by M87-D1-T5 against a fixture `.gsd-t/pseudocode/`
+tree (incl. the multi-doc case).
+
+---
+
 ## Stability
 
 STABLE. Breaking changes to any grammar above require a version bump and a
@@ -292,6 +344,23 @@ coordinated edit across all consuming domains.
 
 ## Changelog
 
+- **1.1.5 (2026-06-17)** — post-split pre-mortem fixes (2 HIGH + 1 MED, all about
+  the gate's REACHABILITY + non-vacuity THROUGH the verify pipeline — NOT the
+  module A1 already proves; NO boundary/domain change, STABLE preserved). **NEW §7
+  "Doc + build-map discovery convention"** (HIGH — discovery seam was unspecified
+  → the verify gate could be permanent DEAD CODE): per-milestone docs live at
+  `.gsd-t/pseudocode/PseudoCode-[Title].md` with a co-located
+  `.map.json`; the verify step globs `PseudoCode-*.md` (multi-doc), pairs each by
+  basename, FIREs on a doc+map pair, and emits a logged skip-WITH-REASON
+  (`no-build-map` / `no-pseudocode-docs`) — never a silent pass. **§2 clarification**
+  (MED — map-side non-vacuity): the gate iterates the DOC's derived RULE-ID set as
+  source of truth, NOT the map's keyset; a doc-derived id whose key is ABSENT from
+  the map is treated as UNBACKED → exit 4 naming it (an incomplete map can't pass
+  vacuously). Companion task changes (in D1 tasks, not this contract): the
+  verify-workflow gate gains a real FIRING test (HIGH dead-code finding) —
+  `test/m87-verify-guardmap-wiring.test.js` (M87-D1-T5) asserts discovery resolves
+  + fires + halts-on-divergence + logs a distinct skip; M87-D1-T3 gains the
+  missing-map-entry → exit-4 assertion.
 - **1.1.4 (2026-06-17)** — M87/M88 SPLIT recorded (plan-phase pre-mortem cycle-4,
   8→5→2→6 findings; NO grammar change, NO domain-boundary change, STABLE
   preserved). The user split M87 into a deterministic core (ships now) + a

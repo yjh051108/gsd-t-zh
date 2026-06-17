@@ -9,6 +9,7 @@
 - `test/fixtures/m87/PseudoCode-PayPal.map.json`
 - `test/fixtures/m87/PseudoCode-PayPal-doctored.map.json`
 - `templates/workflows/gsd-t-verify.workflow.js`
+- `test/m87-verify-guardmap-wiring.test.js`
 
 ---
 
@@ -100,7 +101,13 @@ both deterministic (no LLM). The doctoring flips a MAP entry, not the doc text,
 so the derived ids stay identical between the faithful and doctored runs. Also:
 unbacked rule fails; contradicted rule fails; malformed input → 64; module never
 throws; derived ids are stable across re-parse.
-**Acceptance criteria**: A1 — parser yields N>0 (PayPal=13) on the unmodified exemplar; faithful map keyset == derived id set; faithful doc+faithful map → exit 0 / faithful doc+doctored map → exit 4, RULE-ID named.
+**Map-side non-vacuity (cycle MED — gate keys on the DOC, not the map):** feed a
+map that is MISSING one doc-derived RULE-ID ENTIRELY (the key absent, not merely
+unbacked) → the gate MUST exit 4 naming that rule as UNBACKED. This proves the
+gate iterates the DOC's derived id set as source of truth and treats an absent
+map entry as unbacked — an incomplete map that simply omits a doc rule can NEVER
+pass vacuously (contract §2 "Non-vacuity on the MAP side").
+**Acceptance criteria**: A1 — parser yields N>0 (PayPal=13) on the unmodified exemplar; faithful map keyset == derived id set; faithful doc+faithful map → exit 0 / faithful doc+doctored map → exit 4, RULE-ID named; a map MISSING a doc-derived id (key absent) → exit 4 naming it as unbacked (doc-keyed iteration, no map-side vacuous pass).
 **Files**: `test/m87-guard-map-bridge.test.js`.
 **Test**: this IS the test (the A1 falsifiable harness; the headline impl it exercises is M87-D1-T2's `bin/gsd-t-guard-map.cjs`).
 
@@ -110,11 +117,43 @@ throws; derived ids are stable across re-parse.
 Add a deterministic guard-map gate step (FAIL-blocking, BEFORE the triad,
 alongside verify-gate/CI-parity/test-data) via the `runCli` inline-agent helper.
 M71 sandbox-clean; M85 tier literal policy-conformant (`haiku`, like the other
-gate calls). Run only when a `PseudoCode-[Title].md` + build-map exist for the
-milestone (absent → skip, logged, never silent failure).
-**Acceptance criteria**: A6 — M71 runtime-native lint + M85 tier-policy lint stay green; full suite green.
+gate calls). **Discovery per contract §7:** glob `.gsd-t/pseudocode/PseudoCode-*.md`
+(multi-doc), pair each with its co-located `PseudoCode-[Title].map.json` by
+basename; a doc+map pair FIREs the gate; a doc with no map → logged
+skip-with-reason (`no-build-map`); zero docs → logged skip-with-reason
+(`no-pseudocode-docs`) — never a silent pass. The fire path passes the resolved
+`--doc`/`--map` to `gsd-t-guard-map.cjs`; a FAIL-blocking non-zero HALTS verify
+BEFORE the triad.
+**Acceptance criteria**: A6 — M71 runtime-native lint + M85 tier-policy lint stay green; full suite green. PLUS the reachability AC (proven by M87-D1-T5): the gate step FIRES on a discovered doc+map pair, HALTS verify before the triad on a doctored (divergent) map, and logs a DISTINCT skip-with-reason when the doc/map is absent — i.e. the step is reachable and non-vacuous through the pipeline, NOT dead code.
 **Files**: `templates/workflows/gsd-t-verify.workflow.js`.
-**Test**: `test/m71-workflow-runtime-native-lint.test.js`, `test/m85-workflow-tier-policy-lint.test.js` (existing, must stay green).
+**Test**: `test/m87-verify-guardmap-wiring.test.js` (the firing/reachability test — M87-D1-T5), plus `test/m71-workflow-runtime-native-lint.test.js`, `test/m85-workflow-tier-policy-lint.test.js` (existing, must stay green).
+**Headline**: true
+
+### M87-D1-T5 — Verify-pipeline FIRING / reachability test (closes the dead-code class)
+**Touches**: `test/m87-verify-guardmap-wiring.test.js`
+**PseudoCode-Section**: PseudoCode-PayPal#2-server-post-invoicescreate-the-money-call-the-record-is-born-here
+The reachability test for M87-D1-T4 — proves the verify gate step is NOT dead
+code (the M5 dead-headline class: a broken discovery = permanent silent skip
+while A1 + the M71/M85 lints + suite-green all stay green). Against a FIXTURE
+milestone with a `.gsd-t/pseudocode/` tree present, assert:
+- **(enumeration, §7)** the step ENUMERATES the expected doc+map set from a fixture
+  `.gsd-t/pseudocode/` tree — INCLUDING the multi-doc case (several
+  `PseudoCode-[Title].md`, each paired to its `.map.json` by basename);
+- **(resolve)** the step RESOLVES and passes the correct `--doc`/`--map` paths to
+  `bin/gsd-t-guard-map.cjs` for each discovered pair;
+- **(fire + halt on divergence)** on the DOCTORED map the step propagates a
+  FAIL-blocking non-zero that HALTS verify BEFORE the triad — asserted the same
+  way the existing verify-gate / ci-parity / test-data halts are asserted in the
+  workflow;
+- **(fire + proceed)** on the FAITHFUL map the step proceeds (no halt);
+- **(skip is distinct, not silent)** a pure-skip run (doc absent, or doc present
+  with no co-located map) LOGS the skip WITH A REASON (`no-pseudocode-docs` /
+  `no-build-map`), asserted DISTINCT from a fire (a skip must be observably a skip,
+  never indistinguishable from a clean fire-and-pass).
+Reachability-adjacent to the headline; M71 sandbox-clean assertions preserved.
+**Acceptance criteria**: the gate step enumerates the §7 doc+map set (incl. multi-doc), resolves correct `--doc`/`--map`, FIRES + HALTS-before-triad on a doctored map, proceeds on a faithful map, and logs a DISTINCT skip-with-reason when absent — the gate is reachable + non-vacuous through the verify pipeline.
+**Files**: `test/m87-verify-guardmap-wiring.test.js`.
+**Test**: this IS the test (the firing/reachability harness; the impl it exercises is M87-D1-T4's verify-workflow gate step + M87-D1-T2's `bin/gsd-t-guard-map.cjs`).
 
 ---
 

@@ -3,7 +3,7 @@
 ## Current State: M87 — Intention-First PseudoCode as Milestone Source-of-Truth (PLANNED + RE-SCOPED — risk-first, 4 file-disjoint domains, 2 waves; Wave 1 = prove-or-kill A1; Wave 2 gated on A1; M83 traceability-gate PASSES all 4 domains, 0 violations). **Cycle-4 split (2026-06-17):** the deterministic core stays in M87 (A1 guard-bridge gate, A2 section-coverage + the folded gate-scoping fix, A4 ripple drift lint, A6 regression bar + A7 derived-id stability); the soft-AC halves that resist deterministic gating moved to **M88** (backlog #35): A3 deterministic sign-off STATE/gate, the A1 map-GENERATION path, the A5 triad-consumption seam (M87-INT-T1 — descoped), and the SC4 divergence-grammar round-trip. D3 still ships the two-altitude FLOW + keep-or-supersede PROMPT here.
 
 ### Seam contract
-`.gsd-t/contracts/pseudocode-source-of-truth-contract.md` v1.1.4 STABLE — the SINGLE source of all grammars (guard-map §2, section-citation §3, divergence §4, ripple-points §5). Authored at partition (D4-T0); §2 reconciled to the real binvoice corpus across the plan-phase pre-mortem fix (v1.1.0 dual grammar) and the re-plan re-validation (v1.1.1: hard count = 13, non-anchored inline marker); §3 reconciled (v1.1.2: citable-section source = `##` headings outside Appendix fences, PayPal=10/Extension=10 floor, deterministic GitHub-style slug §3.2, D2 non-vacuity floor + citation-resolution §3.3; §6/A5 wired to task M87-INT-T1). v1.1.4 records the M87/M88 split: §4 (divergence parse/format round-trip) and §6 (A5 triad-consumption seam) are annotated **M88** (their deterministic obligation moved); the GRAMMAR DEFINITIONS stay — they remain the spec. D1/D2/D3 consume it; no domain re-derives a grammar. A grammar change is a contract version bump + coordinated cross-domain edit.
+`.gsd-t/contracts/pseudocode-source-of-truth-contract.md` v1.1.5 STABLE — the SINGLE source of all grammars (guard-map §2, section-citation §3, divergence §4, ripple-points §5, **discovery convention §7**). Authored at partition (D4-T0); §2 reconciled to the real binvoice corpus across the plan-phase pre-mortem fix (v1.1.0 dual grammar) and the re-plan re-validation (v1.1.1: hard count = 13, non-anchored inline marker); §3 reconciled (v1.1.2: citable-section source = `##` headings outside Appendix fences, PayPal=10/Extension=10 floor, deterministic GitHub-style slug §3.2, D2 non-vacuity floor + citation-resolution §3.3; §6/A5 wired to task M87-INT-T1). v1.1.4 records the M87/M88 split: §4 (divergence parse/format round-trip) and §6 (A5 triad-consumption seam) are annotated **M88** (their deterministic obligation moved); the GRAMMAR DEFINITIONS stay — they remain the spec. **v1.1.5 — post-split reachability/non-vacuity fixes (2 HIGH + 1 MED):** NEW **§7 discovery convention** (docs at `.gsd-t/pseudocode/PseudoCode-[Title].md` + co-located `.map.json`; verify globs `PseudoCode-*.md` multi-doc, FIREs on a doc+map pair, logs a skip-WITH-REASON otherwise — never silent) closes the dead-code class; **§2 clarification** — the gate keys on the DOC's derived id set (an absent map entry = unbacked → exit 4), no map-side vacuous pass. D1/D2/D3 consume it; no domain re-derives a grammar. A grammar change is a contract version bump + coordinated cross-domain edit.
 
 ### M87 Wave Plan (risk-first — prove-or-kill before scaffolding)
 
@@ -18,7 +18,11 @@ WAVE 1 — guard-bridge-spike ALONE (LOAD-BEARING, PROVE-OR-KILL):
       │  one-rule variant → exit non-zero, RULE-ID named — both deterministic),
       │  binvoice fixtures (PayPal faithful + doctored, Extension faithful),
       │  and wires the gate into gsd-t-verify.workflow.js (M71 sandbox-clean,
-      │  M85 tier `haiku`, FAIL-blocking, BEFORE the triad).
+      │  M85 tier `haiku`, FAIL-blocking, BEFORE the triad) with §7 discovery
+      │  (glob .gsd-t/pseudocode/PseudoCode-*.md + co-located .map.json).
+      │  M87-D1-T5 is the FIRING/reachability test (gate fires + halts on a
+      │  doctored map + logs a DISTINCT skip when absent) — closes the dead-code
+      │  class; M87-D1-T3 adds map-side non-vacuity (absent map id = exit 4).
       │
       ▼  KILL GATE: M87-D1-T3 (A1) MUST pass. If A1 cannot be made
       │  deterministic → HALT the milestone + escalate for re-scope.
@@ -62,7 +66,7 @@ WAVE 2 — three domains, file-disjoint, START ONLY AFTER A1 PASSES:
 
 | Wave | Domains | Parallel? | Gate to next |
 |------|---------|-----------|--------------|
-| **W1** | D1 guard-bridge-spike (T1–T4) | runs ALONE (no wave-2 domain starts) | **A1 (M87-D1-T3) PASSES** — faithful exit 0 / doctored exit non-zero, RULE-ID named, deterministic. A1 fails → HALT + re-scope. |
+| **W1** | D1 guard-bridge-spike (T1–T5, incl. §7-discovery wiring + the firing/reachability test) | runs ALONE (no wave-2 domain starts) | **A1 (M87-D1-T3) PASSES** — faithful exit 0 / doctored exit non-zero, RULE-ID named, deterministic. A1 fails → HALT + re-scope. |
 | **W2** | D2 (T2–T5, incl. gate-scoping fix) · D3 (T1–T4, FLOW/protocol only) · D4 (T1–T3) | all 3 concurrent (write-disjoint, all depend on A1 only, not each other) | all wave-2 tasks complete + the partition-time wave-1 contributions (D2-T1 design note, D4-T0 contract) on disk |
 
 ### M87 Integrate-Time Seams (NOT parallel-written — serial at integrate, no domain owns)
@@ -82,18 +86,18 @@ The A4 drift lint (D4-T3) VERIFIES ripple points 1/2/4 POST-integration; D4 WRIT
 
 | Producer | Consumer | Interface |
 |----------|----------|-----------|
-| D4 `pseudocode-source-of-truth-contract.md` v1.1.4 STABLE | D1/D2/D3 | The partition-time seam — guard-map §2, section-citation §3, divergence §4 (round-trip → M88), ripple §5; all code against the contract, never re-derive |
-| D1 `bin/gsd-t-guard-map.cjs` (`--doc --map --json`, exit 0/4/64, build→rule map) | D2 (rule-aware paths); the A5 triad-consumption seam moved to M88 | JSON contract: `{ rules: { "<RULE-ID>": { backedBy:[...], contradicted:bool } } }`; consumers read the JSON, never edit D1 source. (M87 proves the gate's DISCRIMINATION of a map; the map-GENERATION path is M88.) |
+| D4 `pseudocode-source-of-truth-contract.md` v1.1.5 STABLE | D1/D2/D3 | The partition-time seam — guard-map §2, section-citation §3, divergence §4 (round-trip → M88), ripple §5, discovery §7; all code against the contract, never re-derive |
+| D1 `bin/gsd-t-guard-map.cjs` (`--doc --map --json`, exit 0/4/64, build→rule map) | D2 (rule-aware paths); the A5 triad-consumption seam moved to M88 | JSON contract: `{ rules: { "<RULE-ID>": { backedBy:[...], contradicted:bool } } }`; consumers read the JSON, never edit D1 source. **Gate keys on the DOC's derived id set (§2): an absent map entry = unbacked → exit 4 (no map-side vacuous pass).** Verify discovery per §7 (`.gsd-t/pseudocode/PseudoCode-*.md` + co-located `.map.json`). M87 proves the gate's DISCRIMINATION + reachability through verify (M87-D1-T5); the map-GENERATION path is M88. |
 | D2 extended `bin/gsd-t-traceability-gate.cjs` (`**PseudoCode-Section**: <Title>#<anchor>` parse, path-as-path; `--domains` explicit milestone-scoping) | plan phase | section-coverage gap report (zero-citing-task section = structural gap), additive over M83 AC→(path+test); `--milestone M87 --domains <4>` scopes to exactly the 4 subject-named domains, no fall-back-to-all |
 | D2 scope.md competition-altitude design note | D3 `gsd-t-phase.workflow.js` (integrate-time) | the documented decision D3 wires: solution-space probe shifts UP to high-level-approach altitude when behavior is spec'd; gate stays altitude-agnostic |
 | D3 `keep-or-supersede-subagent.md` | milestone flow | per inherited shipped-code model, ASK keep/supersede (prose PROTOCOL); each supersede WRITES a `⚠ Divergence` flag (§4 shape) into the doc. The deterministic `parseDivergence()`/`formatDivergence()` round-trip is M88. |
 | D4 `templates/PseudoCode-spec.md` | every future milestone | the shipped blank mold (both altitudes + all five section elements, anchored to binvoice exemplars per SC6) |
 
-### M87 File-Disjointness (validated via `gsd-t parallel --dry-run` — 19 distinct owned files, zero cross-domain overlap)
+### M87 File-Disjointness (validated via `gsd-t parallel --dry-run` — 20 distinct owned files, zero cross-domain overlap)
 
 | Domain | Files Owned |
 |--------|-------------|
-| D1 guard-bridge-spike | `bin/gsd-t-guard-map.cjs`, `test/m87-guard-map-bridge.test.js`, `test/fixtures/m87/PseudoCode-PayPal.md`, `test/fixtures/m87/PseudoCode-Extension.md`, `test/fixtures/m87/PseudoCode-PayPal-doctored.md`, `test/fixtures/m87/PseudoCode-PayPal.map.json`, `test/fixtures/m87/PseudoCode-PayPal-doctored.map.json`, `templates/workflows/gsd-t-verify.workflow.js` |
+| D1 guard-bridge-spike | `bin/gsd-t-guard-map.cjs`, `test/m87-guard-map-bridge.test.js`, `test/m87-verify-guardmap-wiring.test.js`, `test/fixtures/m87/PseudoCode-PayPal.md`, `test/fixtures/m87/PseudoCode-Extension.md`, `test/fixtures/m87/PseudoCode-PayPal-doctored.md`, `test/fixtures/m87/PseudoCode-PayPal.map.json`, `test/fixtures/m87/PseudoCode-PayPal-doctored.map.json`, `templates/workflows/gsd-t-verify.workflow.js` |
 | D2 traceability-section-coverage | `bin/gsd-t-traceability-gate.cjs`, `test/m87-traceability-section-coverage.test.js`, `test/m87-gate-milestone-scoping.test.js` |
 | D3 milestone-two-altitude-flow | `commands/gsd-t-milestone.md`, `templates/workflows/gsd-t-phase.workflow.js`, `templates/prompts/keep-or-supersede-subagent.md`, `test/m87-milestone-flow.test.js` |
 | D4 template-docripple-contract | `templates/PseudoCode-spec.md`, `commands/gsd-t-doc-ripple.md`, `.gsd-t/contracts/pseudocode-source-of-truth-contract.md`, `test/m87-docripple-presence-lint.test.js` |
@@ -104,7 +108,8 @@ D1 owns `gsd-t-verify.workflow.js`; D3 owns `gsd-t-phase.workflow.js` — DIFFER
 
 | AC | Owner | Killing test |
 |----|-------|--------------|
-| **A1** (kill-criterion — gate DISCRIMINATION; map-GENERATION → M88) | D1 | M87-D1-T3 — faithful map exit 0 / doctored map exit non-zero, RULE-ID named, deterministic |
+| **A1** (kill-criterion — gate DISCRIMINATION; map-GENERATION → M88) | D1 | M87-D1-T3 — faithful map exit 0 / doctored map exit non-zero, RULE-ID named, deterministic; **+ map-side non-vacuity: a map MISSING a doc-derived id (key absent) → exit 4 (doc-keyed iteration)** |
+| **Verify-pipeline reachability** (gate FIRES + halts-on-divergence + distinct skip; closes the dead-code class) | D1 | M87-D1-T5 (`test/m87-verify-guardmap-wiring.test.js`) — enumerates §7 doc+map set (multi-doc), resolves `--doc`/`--map`, FIREs + HALTS before triad on a doctored map, proceeds on faithful, logs a DISTINCT skip-with-reason when absent |
 | A2 (section-coverage gap) | D2 | M87-D2-T3 — planted gap detected structurally; substring mention insufficient |
 | A2 (gate-scoping — folded cycle-4 MEDIUM) | D2 | M87-D2-T5 (`test/m87-gate-milestone-scoping.test.js`) — `--milestone M87 --domains <4>` scopes to exactly the 4 M87 domains, zero historical; missing `--domains` + zero prefix-match → exit 64 |
 | A4 (ripple-presence drift lint, 4 points) | D4 | M87-D4-T3 — passes when all four present, FAILS when any one removed |
