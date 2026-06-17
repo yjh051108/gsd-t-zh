@@ -1,6 +1,6 @@
 # Contract: PseudoCode Source-of-Truth
 
-**Version**: 1.1.1
+**Version**: 1.1.2
 **Status**: STABLE
 **Owner domain**: `template-docripple-contract` (M87 D4)
 **Consumed by**: `guard-bridge-spike` (D1), `traceability-section-coverage` (D2), `milestone-two-altitude-flow` (D3)
@@ -133,6 +133,69 @@ A plan task cites the pseudocode section it implements via a field:
 - D2 EXTENDS `bin/gsd-t-traceability-gate.cjs` (M83) — it does not replace it.
   The existing AC→(path+test) binding is preserved.
 
+> **§3 source-of-sections + anchor mapping reconciled to the real corpus
+> (2026-06-17, pre-mortem CRITICAL A2 — the same vacuous-pass class already
+> closed for D1 in §2).** Before this clarification §3 named no SOURCE for "the
+> set of sections" and no heading→anchor function, so the gate could enumerate
+> ZERO sections and pass A2 vacuously; worse, the M87 tasks.md files cited
+> CONCEPTUAL anchors (`#guard-map`, `#one-breath`, `#mechanism`, `#divergence`,
+> `#intention`) that are NOT real headings and would never resolve. The
+> definitions below make the section set and the anchor function deterministic
+> and make an unresolvable citation a FAILURE.
+
+### 3.1 What counts as a citable section (deterministic)
+
+A **citable section** is every **level-2 (`##`) heading** in the
+`PseudoCode-[Title].md` doc — no more, no less. Explicitly EXCLUDED: the
+single-`#`-banner lines that appear INSIDE the Appendix raw-pseudocode code
+fences (`# 0.`, `# 1.`, …) — those are pseudocode comments, not document
+sections, and live between fence delimiters. The enumerator counts `^## `
+heading lines OUTSIDE fenced code blocks ONLY.
+
+Hard counts on the byte-verbatim binvoice exemplars (verified at plan time by
+`grep -cE '^## ' <doc>`): `PseudoCode-PayPal.md` = **10** `##` sections;
+`PseudoCode-Extension.md` = **10** `##` sections. (These are the fixture floor
+the D2 test asserts against — see §3.3. The count tracks the byte-verbatim
+fixture; it is never bent to a preordained number.)
+
+### 3.2 Heading → `#anchor` slug (deterministic, GitHub-style)
+
+The anchor segment of a citation is matched against the slug DERIVED from each
+`##` heading text by this exact function (GitHub-style, pure — same heading text
+→ same slug):
+
+1. Take the heading text after `## ` (trim leading/trailing whitespace).
+2. Lowercase it.
+3. Drop every character that is NOT an ASCII alphanumeric, a space, or a hyphen
+   (so backticks, `—`, `→`, `★`, `/`, `:`, `+`, `(`, `)`, `,`, `;`, `.`, `#`
+   are removed).
+4. Replace each space with a hyphen (`-`).
+5. Collapse runs of consecutive hyphens into one.
+
+Examples (verified against the real exemplars):
+
+| Heading | Slug |
+|---------|------|
+| `## 6. Money-safety map — every guard against a double-create` | `6-money-safety-map-every-guard-against-a-double-create` |
+| `## The two AIs, in one breath` | `the-two-ais-in-one-breath` |
+| `## 2. Server — `POST /invoices/create`  (★ THE MONEY CALL — the record is born here)` | `2-server-post-invoicescreate-the-money-call-the-record-is-born-here` |
+
+Matching is **path-as-path / slug-as-slug**, never substring (per
+`feedback_coverage_check_structural_not_substring`).
+
+### 3.3 D2 non-vacuity floor + citation-resolution requirement (mandatory)
+
+Mirroring §2's A1 fixture-fidelity assertion, the D2 test (M87-D2-T3) MUST:
+
+- assert the gate enumerates a **HARD COUNT** of `##` sections from the
+  UNMODIFIED exemplars — PayPal = **10**, Extension = **10** — not `≥ 0`. A gate
+  that enumerates zero sections is itself a FAILURE; "faithful → no gap" is only
+  meaningful once the faithful doc is proven to yield sections to cover.
+- assert that **every** `**PseudoCode-Section**` anchor cited across the M87
+  `tasks.md` files RESOLVES to a real `##`-heading slug (per §3.2) in the named
+  doc. An **unresolvable citation is a FAILURE** (catches the phantom-anchor
+  class — `#guard-map`, `#mechanism`, etc. — that was the A2 CRITICAL).
+
 ---
 
 ## 4. Divergence-flag grammar (D3 owns the keep-or-supersede protocol)
@@ -176,6 +239,22 @@ are an **integrate-time seam**, wired serially after D1's module passes A1 —
 NOT assigned to any parallel domain. D1 exposes the rule set via its CLI/JSON
 contract; the prompts consume it by that contract, never by editing D1 source.
 
+**A5 is WIRED, not dangling (pre-mortem MEDIUM).** This seam carries an explicit
+integrate-time task **M87-INT-T1** with its own killing test:
+
+- **Edit**: `templates/prompts/qa-subagent.md` (add a step that ingests D1's
+  `gsd-t guard-map --json` rule set and asserts each derived `<RULE-ID>` as a
+  contract-compliance assertion) and `templates/prompts/red-team-subagent.md`
+  (add the rule set as a pre-enumerated attack surface to probe for
+  contradiction). Both consume D1's JSON contract only — never edit D1 source.
+- **Test** (`test/m87-verify-triad-rule-consumption.test.js`): a verify run on a
+  spec'd milestone (a PseudoCode doc + build-map present) surfaces the derived
+  RULE-IDs in BOTH the QA contract-compliance frame AND the Red Team
+  attack-surface frame — a frame missing the rule set is a FAILURE.
+- **Ownership**: no parallel domain — it edits shared integrate seams
+  (`templates/prompts/*`) wired serially after D1's A1 passes. Recorded in
+  `integration-points.md` § "M87 Integrate-Time Seams" (the A5 row).
+
 ---
 
 ## Stability
@@ -185,6 +264,20 @@ coordinated edit across all consuming domains.
 
 ## Changelog
 
+- **1.1.2 (2026-06-17)** — §3 clarification (plan-phase pre-mortem fix; NO
+  boundary / ownership / domain change, STABLE preserved). Closes the A2
+  vacuous-pass class (the §2 fix's twin): §3 now DEFINES the citable-section
+  source (every `##` heading OUTSIDE Appendix code fences; PayPal=10,
+  Extension=10 hard floor), the deterministic GitHub-style heading→`#anchor`
+  slug function (§3.2), and a D2 non-vacuity floor + citation-resolution
+  requirement (§3.3 — every M87 tasks.md `**PseudoCode-Section**` anchor MUST
+  resolve to a real `##` slug; an unresolvable citation FAILS). §6 (A5) wired:
+  it now names the integrate-time task **M87-INT-T1** + its killing test
+  `test/m87-verify-triad-rule-consumption.test.js` so A5 is no longer dangling.
+  Knock-on (outside this contract): the five phantom conceptual anchors
+  (`#guard-map`/`#one-breath`/`#mechanism`/`#divergence`/`#intention`) cited in
+  all four domains' tasks.md were replaced with anchors that resolve to real
+  `##` slugs.
 - **1.1.1 (2026-06-17)** — re-plan re-validation: corrected the §2 hard count to
   **13** (real PayPal exemplar; was 12) and mandated **non-anchored, inline** marker
   matching (the marker sits after the guard prose, not at line-start). Both errors

@@ -3,7 +3,7 @@
 ## Current State: M87 — Intention-First PseudoCode as Milestone Source-of-Truth (PLANNED — risk-first, 4 file-disjoint domains, 2 waves; Wave 1 = prove-or-kill A1; Wave 2 gated on A1; M83 traceability-gate PASSES all 4 domains, 0 violations).
 
 ### Seam contract
-`.gsd-t/contracts/pseudocode-source-of-truth-contract.md` v1.1.1 STABLE — the SINGLE source of all grammars (guard-map §2, section-citation §3, divergence §4, ripple-points §5). Authored at partition (D4-T0); §2 reconciled to the real binvoice corpus across the plan-phase pre-mortem fix (v1.1.0 dual grammar) and the re-plan re-validation (v1.1.1: hard count = 13, non-anchored inline marker). D1/D2/D3 consume it; no domain re-derives a grammar. A grammar change is a contract version bump + coordinated cross-domain edit.
+`.gsd-t/contracts/pseudocode-source-of-truth-contract.md` v1.1.2 STABLE — the SINGLE source of all grammars (guard-map §2, section-citation §3, divergence §4, ripple-points §5). Authored at partition (D4-T0); §2 reconciled to the real binvoice corpus across the plan-phase pre-mortem fix (v1.1.0 dual grammar) and the re-plan re-validation (v1.1.1: hard count = 13, non-anchored inline marker); §3 reconciled (v1.1.2: citable-section source = `##` headings outside Appendix fences, PayPal=10/Extension=10 floor, deterministic GitHub-style slug §3.2, D2 non-vacuity floor + citation-resolution §3.3; §6/A5 wired to task M87-INT-T1). D1/D2/D3 consume it; no domain re-derives a grammar. A grammar change is a contract version bump + coordinated cross-domain edit.
 
 ### M87 Wave Plan (risk-first — prove-or-kill before scaffolding)
 
@@ -40,8 +40,9 @@ WAVE 2 — three domains, file-disjoint, START ONLY AFTER A1 PASSES:
   Owns the competition-  altitude shift into the
   altitude design note.  solution-space probe.
 
-  D2/D3/D4 are write-disjoint (16 distinct owned files, zero overlap) and run
-  concurrently once A1 is green. None depends on the others' code:
+  D2/D3/D4 are write-disjoint (10 distinct owned files across the three; 18
+  across all four domains incl. D1, zero overlap) and run concurrently once A1
+  is green. None depends on the others' code:
     - D2 CONSUMES D1's gsd-t-guard-map.cjs JSON contract (never edits it).
     - D3 wires the altitude shift D2 only DOCUMENTS (in scope.md).
     - D4's contract is the seam all three already build against.
@@ -67,7 +68,7 @@ WAVE 2 — three domains, file-disjoint, START ONLY AFTER A1 PASSES:
 | Living Documents table | `templates/CLAUDE-global.md` (~line 60) | shared file (file-disjointness invariant) | A4 ripple point 1 |
 | Pre-Commit Gate | `templates/CLAUDE-global.md` | shared file | A4 ripple point 2 |
 | project Living Documents ref | `CLAUDE.md` | shared file, co-owned at merge with D4's lint | A4 ripple point 4 |
-| verify-triad consumption | `templates/prompts/qa-subagent.md`, `templates/prompts/red-team-subagent.md` | wired AFTER D1's module passes A1; QA gets [RULE]s as contract-compliance assertions, Red Team as a pre-enumerated attack surface — consumed via D1's CLI/JSON contract, never by editing D1 source | A5 |
+| verify-triad consumption (**M87-INT-T1** — no domain owns) | `templates/prompts/qa-subagent.md`, `templates/prompts/red-team-subagent.md` | wired AFTER D1's module passes A1; QA gets [RULE]s as contract-compliance assertions, Red Team as a pre-enumerated attack surface — consumed via D1's CLI/JSON contract, never by editing D1 source. **Killing test:** `test/m87-verify-triad-rule-consumption.test.js` — a verify run on a spec'd milestone surfaces the derived RULE-IDs in BOTH the QA contract-compliance frame AND the Red Team attack-surface frame; a frame missing the rule set FAILS. | A5 |
 | CLI dispatch | `bin/gsd-t.js` | shared dispatch table; adds `guard-map` subcommand routing to D1's module | A1 wiring |
 | verify command invoker | `commands/gsd-t-verify.md` | shared command file; reflects the new gate step | A1/A5 |
 
@@ -77,18 +78,18 @@ The A4 drift lint (D4-T3) VERIFIES ripple points 1/2/4 POST-integration; D4 WRIT
 
 | Producer | Consumer | Interface |
 |----------|----------|-----------|
-| D4 `pseudocode-source-of-truth-contract.md` v1.1.1 STABLE | D1/D2/D3 | The partition-time seam — guard-map §2, section-citation §3, divergence §4, ripple §5; all code against the contract, never re-derive |
+| D4 `pseudocode-source-of-truth-contract.md` v1.1.2 STABLE | D1/D2/D3 | The partition-time seam — guard-map §2, section-citation §3, divergence §4, ripple §5; all code against the contract, never re-derive |
 | D1 `bin/gsd-t-guard-map.cjs` (`--doc --map --json`, exit 0/4/64, build→rule map) | verify-triad (A5 integrate seam), D2 (rule-aware paths) | JSON contract: `{ rules: { "<RULE-ID>": { backedBy:[...], contradicted:bool } } }`; consumers read the JSON, never edit D1 source |
 | D2 extended `bin/gsd-t-traceability-gate.cjs` (`**PseudoCode-Section**: <Title>#<anchor>` parse, path-as-path) | plan phase | section-coverage gap report (zero-citing-task section = structural gap), additive over M83 AC→(path+test) |
 | D2 scope.md competition-altitude design note | D3 `gsd-t-phase.workflow.js` (integrate-time) | the documented decision D3 wires: solution-space probe shifts UP to high-level-approach altitude when behavior is spec'd; gate stays altitude-agnostic |
 | D3 `keep-or-supersede-subagent.md` | milestone flow | per inherited shipped-code model, ASK keep/supersede; each supersede emits `⚠ Divergence` (§4) into the doc |
 | D4 `templates/PseudoCode-spec.md` | every future milestone | the shipped blank mold (both altitudes + all five section elements, anchored to binvoice exemplars per SC6) |
 
-### M87 File-Disjointness (validated via `gsd-t parallel --dry-run` — 16 distinct owned files, zero cross-domain overlap)
+### M87 File-Disjointness (validated via `gsd-t parallel --dry-run` — 18 distinct owned files, zero cross-domain overlap)
 
 | Domain | Files Owned |
 |--------|-------------|
-| D1 guard-bridge-spike | `bin/gsd-t-guard-map.cjs`, `test/m87-guard-map-bridge.test.js`, `test/fixtures/m87/PseudoCode-PayPal.md`, `test/fixtures/m87/PseudoCode-Extension.md`, `test/fixtures/m87/PseudoCode-PayPal-doctored.md`, `templates/workflows/gsd-t-verify.workflow.js` |
+| D1 guard-bridge-spike | `bin/gsd-t-guard-map.cjs`, `test/m87-guard-map-bridge.test.js`, `test/fixtures/m87/PseudoCode-PayPal.md`, `test/fixtures/m87/PseudoCode-Extension.md`, `test/fixtures/m87/PseudoCode-PayPal-doctored.md`, `test/fixtures/m87/PseudoCode-PayPal.map.json`, `test/fixtures/m87/PseudoCode-PayPal-doctored.map.json`, `templates/workflows/gsd-t-verify.workflow.js` |
 | D2 traceability-section-coverage | `bin/gsd-t-traceability-gate.cjs`, `test/m87-traceability-section-coverage.test.js` |
 | D3 milestone-two-altitude-flow | `commands/gsd-t-milestone.md`, `templates/workflows/gsd-t-phase.workflow.js`, `templates/prompts/keep-or-supersede-subagent.md`, `test/m87-milestone-signoff-flow.test.js` |
 | D4 template-docripple-contract | `templates/PseudoCode-spec.md`, `commands/gsd-t-doc-ripple.md`, `.gsd-t/contracts/pseudocode-source-of-truth-contract.md`, `test/m87-docripple-presence-lint.test.js` |
@@ -103,7 +104,7 @@ D1 owns `gsd-t-verify.workflow.js`; D3 owns `gsd-t-phase.workflow.js` — DIFFER
 | A2 (section-coverage gap) | D2 | M87-D2-T3 — planted gap detected structurally; substring mention insufficient |
 | A3 (sign-off unsigned ≠ DEFINED + logged skip) | D3 | M87-D3-T4 — unsigned ≠ DEFINED; sign flips; skip logged in progress.md |
 | A4 (ripple-presence drift lint, 4 points) | D4 | M87-D4-T3 — passes when all four present, FAILS when any one removed |
-| A5 (verify-triad consumes [RULE] set) | integrate seam (qa/red-team prompts) | verify run references rule IDs in QA/Red-Team frames |
+| A5 (verify-triad consumes [RULE] set) | integrate seam **M87-INT-T1** (qa/red-team prompts; no parallel domain) | `test/m87-verify-triad-rule-consumption.test.js` — verify run surfaces the derived RULE-IDs in BOTH the QA contract-compliance frame AND the Red Team attack-surface frame |
 | A6 (regression: suite green + M71 + M85 lints) | D1+D3 (workflow edits) | `test/m71-workflow-runtime-native-lint.test.js`, `test/m85-workflow-tier-policy-lint.test.js` stay green |
 
 ### M87 Load-Bearing Serial Constraints
