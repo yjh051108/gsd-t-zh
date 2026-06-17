@@ -1,6 +1,6 @@
 # Contract: PseudoCode Source-of-Truth
 
-**Version**: 1.0.0
+**Version**: 1.1.0
 **Status**: STABLE
 **Owner domain**: `template-docripple-contract` (M87 D4)
 **Consumed by**: `guard-bridge-spike` (D1), `traceability-section-coverage` (D2), `milestone-two-altitude-flow` (D3)
@@ -51,16 +51,33 @@ exemplars `PseudoCode-PayPal.md` + `PseudoCode-Extension.md`):
 
 ## 2. `[RULE]` guard-map grammar (D1 owns the parser)
 
-Each rule is a single line of the form:
+> **Grammar reconciled to the real corpus (2026-06-17, pre-mortem CRITICAL).**
+> The two binvoice exemplars — the fixture corpus this gate MUST validate against —
+> do NOT carry explicit RULE-IDs: `PseudoCode-PayPal.md` emits `[RULE] <prose>`
+> (no id, no colon) and `PseudoCode-Extension.md` emits `[RULE — <tag>] <prose>`
+> (em-dash variant). A parser written to a mandatory-`<RULE-ID>:` grammar extracts
+> ZERO rules from both, so A1's "faithful → exit 0" would pass VACUOUSLY (0 rules →
+> trivially all-backed). The grammar below accepts BOTH the loose forms the corpus
+> already uses AND an optional explicit id, so the gate is non-vacuous on real docs.
+
+A rule is any line matching the `[RULE …]` marker. Three accepted forms:
 
 ```
-[RULE] <RULE-ID>: <one-line invariant in prose>
+[RULE] <RULE-ID>: <invariant>      # explicit id (recommended for new docs; money/state guards)
+[RULE] <invariant>                  # loose — PayPal exemplar style (id DERIVED)
+[RULE — <tag>] <invariant>          # tagged em-dash — Extension exemplar style (id DERIVED)
 ```
 
-- `<RULE-ID>` is a stable, unique token within the doc (e.g. `R-PAYPAL-01`).
-  Matching is path-as-RULE-ID, never substring (per
+- **Rule ID resolution (deterministic):** if an explicit `<RULE-ID>:` is present,
+  that IS the id. Otherwise the parser DERIVES a stable id deterministically:
+  `R-<DOC-SLUG>-<NN>` where `<DOC-SLUG>` is from the filename (`PAYPAL`, `EXTENSION`)
+  and `<NN>` is the rule's 1-based appearance order within the doc. Derivation is
+  pure (same doc bytes → same ids); a reworded invariant keeps its id (order-keyed),
+  a reordered/inserted rule reflows ids below it (documented limitation — explicit
+  ids are the escape hatch when stability across reordering matters).
+- Matching is path-as-RULE-ID, never substring (per
   `feedback_coverage_check_structural_not_substring`).
-- A rule is **backed** when ≥1 test assertion references its `<RULE-ID>`.
+- A rule is **backed** when ≥1 test assertion references its (explicit or derived) id.
 - A rule is **contradicted** (a divergence) when the build/test evidence
   asserts the negation of the invariant. Contradiction and unbacked are both
   FAILURES at contract-breach severity.
@@ -75,6 +92,12 @@ The pass/fail decision over this map is **deterministic code, zero LLM
 judgment**. An LLM may PRODUCE the map; code GATES on it. Exit non-zero
 (contract-breach code) when any rule is unbacked or contradicted, naming the
 violated `<RULE-ID>`. (A1 kill-criterion.)
+
+**A1 fixture-fidelity assertion (mandatory — closes the vacuous-pass hole).** The
+A1 harness MUST assert the parser extracts `N > 0` rules from the UNMODIFIED
+`PseudoCode-PayPal.md` exemplar (currently **12** `[RULE]` lines) — a hard count,
+not `≥ 0`. A parser that silently extracts zero is itself a FAILURE. "Faithful →
+exit 0" is only meaningful once the faithful doc is proven to yield rules to back.
 
 ---
 
@@ -142,3 +165,15 @@ contract; the prompts consume it by that contract, never by editing D1 source.
 
 STABLE. Breaking changes to any grammar above require a version bump and a
 coordinated edit across all consuming domains.
+
+## Changelog
+
+- **1.1.0 (2026-06-17)** — §2 grammar reconciled to the real binvoice corpus after
+  the plan-phase pre-mortem flagged a CRITICAL vacuous-pass: the original
+  mandatory-`<RULE-ID>:` grammar matched NEITHER exemplar (PayPal `[RULE] <prose>`,
+  Extension `[RULE — <tag>]`), so the gate would extract zero rules and pass
+  trivially. §2 now accepts three forms (explicit id / loose / tagged) with
+  deterministic id derivation, and mandates the A1 fixture-fidelity assertion
+  (parser yields N>0, PayPal=12, on the UNMODIFIED exemplar). No domain boundary
+  or file-ownership change.
+- **1.0.0 (2026-06-17)** — initial partition-time contract.
