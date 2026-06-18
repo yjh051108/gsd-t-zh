@@ -5,14 +5,18 @@ WAVE 2 — gated on D1's A1 test passing. Concurrent with D3 (disjoint workflow 
 execute/debug/quick/wave workflow files — D3 never touches these.
 
 ## Mission
-Hook the same auto-research trigger into the FOUR worker workflows at their research-eligible steps:
-- **execute** — a domain worker hits an unfamiliar API/library mid-build.
+Hook the same Stated-Claims→classify→research trigger (premise-corrected) into the worker workflows at their
+research-eligible steps:
+- **execute** — a domain worker hits an unfamiliar API/library mid-build (a GUESSED external claim).
 - **debug** — failure root is external behavior; research instead of patch-guess (pairs with #33 circuit-breaker).
 - **quick** — fast task hits an unfamiliar external surface.
-- **wave** — full-cycle orchestration's research-eligible step.
+- **wave** — NOTHING (pure execute+verify composer, M85 zero-`model:`; research reaches it via the sub-workflows).
 
-Each insert calls the classifier (D1 envelope); `external` → research `agent()` stage citing a Verified-Facts
-block into the phase artifact; `internal` → grep/Read, asserting ZERO WebSearch on an internal gap (A3).
+Each insert (execute/debug/quick) embeds the Stated-Claims snippet (§6.5, LLM-prompted DETECT) so the agent tags
+load-bearing claims KNOWN|GUESSED; the wiring iterates each GUESSED claim through the classifier (D1 envelope);
+`external` → WRITE the §7 marker (`status=uncited`) → research `agent()` stage citing a Verified-Facts block
+(URL + date) → FLIP the marker to `status=cited`; `internal` → grep/Read, asserting the research stage is NEVER
+entered on an internal claim (A3 routing decision + sole-web-stage enforcement). Wave gets nothing.
 
 ## Files Owned
 - `templates/workflows/gsd-t-execute.workflow.js`
