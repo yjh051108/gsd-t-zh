@@ -1,6 +1,74 @@
 # Integration Points
 
-## Current State: M87 — Intention-First PseudoCode as Milestone Source-of-Truth (PLANNED + RE-SCOPED — risk-first, 4 file-disjoint domains, 2 waves; Wave 1 = prove-or-kill A1; Wave 2 gated on A1; M83 traceability-gate PASSES all 4 domains, 0 violations). **Cycle-4 split (2026-06-17):** the deterministic core stays in M87 (A1 guard-bridge gate, A2 section-coverage + the folded gate-scoping fix, A4 ripple drift lint, A6 regression bar + A7 derived-id stability); the soft-AC halves that resist deterministic gating moved to **M88** (backlog #35): A3 deterministic sign-off STATE/gate, the A1 map-GENERATION path, the A5 triad-consumption seam (M87-INT-T1 — descoped), and the SC4 divergence-grammar round-trip. D3 still ships the two-altitude FLOW + keep-or-supersede PROMPT here.
+## Current State: M89 — Auto-Research: deterministic external-info-gap resolution at every workflow phase (PLANNED — risk-first, 4 file-disjoint domains, 2 waves; Wave 1 = D1 prove-or-kill A1 classifier + D2 contract/stage concurrent; Wave 2 = D3 upper-phase+verify + D4 worker-workflows, gated on A1 GREEN). M87 PAUSED for M89 (user-prioritized 2026-06-18). M89 active.
+
+### M89 Seam contract
+`.gsd-t/contracts/auto-research-contract.md` v1.0.0 STABLE — the SINGLE seam between the classifier (D1) and the wiring domains (D3/D4): §1 classifier JSON envelope, §2 research `agent()` stage interface, §3 Verified-Facts cite-block format, §4 idempotency rule (A2), §5 no-silent-guess gate semantics (A3/A4), §6 the 13-item labeled-corpus oracle (A1). D1 PRODUCES the classifier matching §1; D3/D4 CONSUME the envelope SHAPE + stage interface inline, never D1's internals. D2 OWNS every shared doc-ripple surface (CLAUDE-global.md, bin/gsd-t.js, commands/gsd-t-help.md, package.json) — integrate-conflict-free by construction.
+
+**Plan-hardening correction (M89 plan):** §2's model form was `overrides["research"] ?? "<literal>"` — this FAILS the live M85 lint (`test/m85-workflow-tier-policy-lint.test.js`): the `??`-form bracket key must be one of the 6 injectable designated stages, and `research` is not one (no `research` key in `bin/gsd-t-model-tier-policy.cjs`). **Corrected to a BARE literal `model: "fable"`** (passes the lint's tier-set membership check; mirrors how non-designated stages already declare models, e.g. `gsd-t-execute.workflow.js:172`). D2-T1 records the §2 correction; D3-T1/D4-T1/D4-T2 wire the bare-`fable` literal.
+
+### M89 Wave Plan (risk-first — prove-or-kill before wiring)
+
+```
+WAVE 1 — D1 (prove-or-kill, LOAD-BEARING) + D2 (contract/stage/doc-ripple), CONCURRENT + file-disjoint:
+  D1 research-classifier-core          D2 research-stage-and-contract
+    bin/gsd-t-research-gate.cjs           auto-research-contract.md (the seam)
+    + 13-item labeled corpus              + templates/prompts/research-subagent.md
+    + A1 killing test (M89-D1-T3)         + cite-format + idempotency test
+                                          + SHARED doc-ripple (CLAUDE-global, gsd-t.js, help, package.json)
+        │
+        ▼  KILL GATE: A1 (M89-D1-T3) MUST pass — every one of the 13 hand-labels
+        │  matched deterministically. A mislabel FAILS → HALT M89 + re-scope.
+        │  Wave 1 touches ONLY net-new files + D2's single-owned shared surfaces —
+        │  if A1 fails, NO workflow file is contaminated (none edited yet).
+        │
+WAVE 2 — D3 + D4, file-disjoint (one-domain-per-workflow-file), START ONLY AFTER A1 GREEN:
+      ├──────────────────────────────────┬────────────────────────────────────┐
+      ▼                                   ▼
+  D3 wiring-upper-phase-and-gate      D4 wiring-worker-workflows
+    gsd-t-phase.workflow.js             gsd-t-{execute,quick,debug}.workflow.js
+    (6 eligible stages)                 (research stage; wave = composer-only, NO model:)
+    gsd-t-verify.workflow.js            + A3 zero-WebSearch test (internal gap)
+    (A4 no-silent-guess)
+    + phase-research-wiring test
+
+  D3/D4 are write-disjoint (6 workflow files split 2/4, zero overlap) + depend on A1 only,
+  not each other. Both CONSUME the D1 classifier + D2 contract inline.
+
+                GATE: A1 passed + both wave-2 domains complete
+                              │
+                              ▼
+       INTEGRATE (D2 single-owned shared surfaces already merged) → VERIFY → COMPLETE-MILESTONE
+       patch bump (D2-T5) → tag
+```
+
+### M89 Wave Groupings
+
+| Wave | Domains | Parallel? | Gate to next |
+|------|---------|-----------|--------------|
+| **W1** | D1 research-classifier-core (T1–T4) · D2 research-stage-and-contract (T1–T5) | concurrent, file-disjoint (D1 = net-new bin+test+fixture; D2 = contract+prompt+test+shared doc-ripple) | **A1 (M89-D1-T3) GREEN** — all 13 hand-labels matched deterministically. A1 fails → HALT + re-scope. |
+| **W2** | D3 wiring-upper-phase-and-gate (T1–T4) · D4 wiring-worker-workflows (T1–T4) | concurrent, write-disjoint (D3 = phase+verify; D4 = execute/debug/quick/wave) — both depend on A1 only | both wave-2 domains complete + M71 + M85 lints green (incl. wave-zero-`model:` + debug-cycle-ternary). |
+
+### M89 Integrate-Time Seams (D2 single-owned — NOT cross-domain co-authored)
+
+| Seam | File | Owner | Why no conflict |
+|------|------|-------|-----------------|
+| Research Policy replacement | `templates/CLAUDE-global.md` | D2 (M89-D2-T4) | D2 is the SOLE writer; D3/D4 must not touch it. |
+| CLI dispatch + `PROJECT_BIN_TOOLS` | `bin/gsd-t.js` | D2 (M89-D2-T4) | single-owner; routes to D1's `gsd-t-research-gate.cjs` (which must exist first — dep on M89-D1-T2). |
+| help line | `commands/gsd-t-help.md` | D2 (M89-D2-T4) | single-owner. |
+| version bump | `package.json` | D2 (M89-D2-T5) | single-owner of the manifest for M89. |
+
+### M89 Cross-Domain Dependencies
+
+| Consumer | Depends on | Via |
+|----------|-----------|-----|
+| D2-T4 dispatch | D1-T2 `bin/gsd-t-research-gate.cjs` exists | dispatch routes to the module |
+| D3 (all) | D1 A1 GREEN (gate) + D1 classifier + D2 §1/§2/§3/§4 + D2 `research-subagent.md` | inline `runCli` + Read-at-spawn prompt |
+| D4 (all) | D1 A1 GREEN (gate) + D1 classifier + D2 §1/§2/§3/§5 + D2 `research-subagent.md` | inline `runCli` + Read-at-spawn prompt |
+
+---
+
+## Prior State: M87 — Intention-First PseudoCode as Milestone Source-of-Truth (PLANNED + RE-SCOPED — risk-first, 4 file-disjoint domains, 2 waves; Wave 1 = prove-or-kill A1; Wave 2 gated on A1; M83 traceability-gate PASSES all 4 domains, 0 violations). **Cycle-4 split (2026-06-17):** the deterministic core stays in M87 (A1 guard-bridge gate, A2 section-coverage + the folded gate-scoping fix, A4 ripple drift lint, A6 regression bar + A7 derived-id stability); the soft-AC halves that resist deterministic gating moved to **M88** (backlog #35): A3 deterministic sign-off STATE/gate, the A1 map-GENERATION path, the A5 triad-consumption seam (M87-INT-T1 — descoped), and the SC4 divergence-grammar round-trip. D3 still ships the two-altitude FLOW + keep-or-supersede PROMPT here.
 
 ### Seam contract
 `.gsd-t/contracts/pseudocode-source-of-truth-contract.md` v1.1.5 STABLE — the SINGLE source of all grammars (guard-map §2, section-citation §3, divergence §4, ripple-points §5, **discovery convention §7**). Authored at partition (D4-T0); §2 reconciled to the real binvoice corpus across the plan-phase pre-mortem fix (v1.1.0 dual grammar) and the re-plan re-validation (v1.1.1: hard count = 13, non-anchored inline marker); §3 reconciled (v1.1.2: citable-section source = `##` headings outside Appendix fences, PayPal=10/Extension=10 floor, deterministic GitHub-style slug §3.2, D2 non-vacuity floor + citation-resolution §3.3; §6/A5 wired to task M87-INT-T1). v1.1.4 records the M87/M88 split: §4 (divergence parse/format round-trip) and §6 (A5 triad-consumption seam) are annotated **M88** (their deterministic obligation moved); the GRAMMAR DEFINITIONS stay — they remain the spec. **v1.1.5 — post-split reachability/non-vacuity fixes (2 HIGH + 1 MED):** NEW **§7 discovery convention** (docs at `.gsd-t/pseudocode/PseudoCode-[Title].md` + co-located `.map.json`; verify globs `PseudoCode-*.md` multi-doc, FIREs on a doc+map pair, logs a skip-WITH-REASON otherwise — never silent) closes the dead-code class; **§2 clarification** — the gate keys on the DOC's derived id set (an absent map entry = unbacked → exit 4), no map-side vacuous pass. D1/D2/D3 consume it; no domain re-derives a grammar. A grammar change is a contract version bump + coordinated cross-domain edit.

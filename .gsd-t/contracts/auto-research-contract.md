@@ -65,9 +65,18 @@ mirroring the triad-protocol convention).
 - **Input:** one external gap (the classifier envelope's `gap` text).
 - **Tool access:** `WebSearch` + `WebFetch` (the ONLY stages granted web tools).
 - **Output:** a Verified-Facts block (§3) with source URLs. Schema-validated.
-- **Model:** declared per `bin/gsd-t-model-tier-policy.cjs` (M85). The research stage runs on the
-  `research` tier alias; the consuming workflow uses the `overrides["research"] ?? "<literal>"` form
-  (M86 invoke-time injection), so the M85 drift lint stays green.
+- **Model:** the research stage uses a **BARE literal `model: "fable"`** (Fable tier — the single
+  highest-leverage web call per phase; mirrors the M85 rationale for the 5 highest-leverage stages).
+  **It does NOT use the `overrides["research"] ?? "<literal>"` form.** Plan-hardening correction (M89
+  plan phase): the `??`-override form's bracket key MUST be one of the 6 INJECTABLE designated stages
+  (`solution-space-probe`, `partition-probe`, `competition-judge`, `pre-mortem`, `red-team`,
+  `debug-cycle-2`) — `research` is not one, `bin/gsd-t-model-tier-policy.cjs` has no `research` key
+  (an unknown stage resolves to a defensive `sonnet` WITH a configError, never fable), and the live
+  M85 lint (`test/m85-workflow-tier-policy-lint.test.js`) FAILS any `overrides["research"] ?? …` line.
+  Non-designated workflow stages already declare models with bare literals (e.g.
+  `gsd-t-execute.workflow.js:172` `model: "sonnet"`). The bare `"fable"` literal passes the lint's
+  tier-set membership check. _(This is a clarification of the intended form, not an envelope-shape
+  change — contract stays v1.0.0 STABLE.)_
 
 ---
 
