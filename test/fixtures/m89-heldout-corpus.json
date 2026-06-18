@@ -1,0 +1,53 @@
+{
+  "_comment": "M89 D1 HELD-OUT generalization corpus (finding #1, the CRITICAL anti-self-fulfilling-oracle guard). These gaps are NOT used to author/tune the classifier — they are NOVEL gaps the classifier must label correctly by FEATURE CLASS (does the gap reference a third-party/library/platform/spec proper-noun or capability, vs. a this-repo path/symbol/file), NOT by hard-coded keywords scraped from the seen 13-item corpus. A classifier that passes test/fixtures/m89-labeled-corpus.json 13/13 but mislabels ANY held-out item FAILS A1 (proves it memorized keywords instead of generalizing). None of these proper nouns (Stripe, Chrome storage-quota, CSS :has()) or repo symbols (isOrderLocked, gsd-t-verify.workflow.js, cli-preflight) appears in the seen corpus.",
+  "items": [
+    {
+      "id": "HO-E1",
+      "source": "held-out (novel external)",
+      "gap": "What is the exact name of the Stripe webhook signature-verification header, and how is the signed payload constructed?",
+      "expectedClass": "external",
+      "expectedRoute": "web",
+      "featureSignal": "third-party API (Stripe) + spec/HTTP-header term — proper-noun + capability, not in this repo"
+    },
+    {
+      "id": "HO-E2",
+      "source": "held-out (novel external)",
+      "gap": "What is the per-origin storage-quota limit for the Chrome extension storage.local API?",
+      "expectedClass": "external",
+      "expectedRoute": "web",
+      "featureSignal": "platform/browser runtime behavior (Chrome) + limit term"
+    },
+    {
+      "id": "HO-E3",
+      "source": "held-out (novel external)",
+      "gap": "Which browsers currently support the CSS :has() selector and from what version?",
+      "expectedClass": "external",
+      "expectedRoute": "web",
+      "featureSignal": "published standard/spec (CSS) + browser-support/version facts"
+    },
+    {
+      "id": "HO-I1",
+      "source": "held-out (novel internal)",
+      "gap": "What does isOrderLocked return in this repo when the order is already locked?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep",
+      "featureSignal": "this-repo local symbol (isOrderLocked) + 'this repo' anchor — grep-able"
+    },
+    {
+      "id": "HO-I2",
+      "source": "held-out (novel internal)",
+      "gap": "Which domain owns templates/workflows/gsd-t-verify.workflow.js?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep",
+      "featureSignal": "repo-relative path (gsd-t-verify.workflow.js) — file-ownership question"
+    },
+    {
+      "id": "HO-I3",
+      "source": "held-out (novel internal)",
+      "gap": "What exit code does cli-preflight use when it hard-fails on a wrong branch?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep",
+      "featureSignal": "known local symbol/file (cli-preflight) — repo's own code"
+    }
+  ]
+}

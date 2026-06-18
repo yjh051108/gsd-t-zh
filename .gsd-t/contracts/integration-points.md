@@ -3,7 +3,7 @@
 ## Current State: M89 — Auto-Research: deterministic external-info-gap resolution at every workflow phase (PLANNED — risk-first, 4 file-disjoint domains, 2 waves; Wave 1 = D1 prove-or-kill A1 classifier + D2 contract/stage concurrent; Wave 2 = D3 upper-phase+verify + D4 worker-workflows, gated on A1 GREEN). M87 PAUSED for M89 (user-prioritized 2026-06-18). M89 active.
 
 ### M89 Seam contract
-`.gsd-t/contracts/auto-research-contract.md` v1.0.0 STABLE — the SINGLE seam between the classifier (D1) and the wiring domains (D3/D4): §1 classifier JSON envelope, §2 research `agent()` stage interface, §3 Verified-Facts cite-block format, §4 idempotency rule (A2), §5 no-silent-guess gate semantics (A3/A4), §6 the 13-item labeled-corpus oracle (A1). D1 PRODUCES the classifier matching §1; D3/D4 CONSUME the envelope SHAPE + stage interface inline, never D1's internals. D2 OWNS every shared doc-ripple surface (CLAUDE-global.md, bin/gsd-t.js, commands/gsd-t-help.md, package.json) — integrate-conflict-free by construction.
+`.gsd-t/contracts/auto-research-contract.md` v1.1.0 STABLE — the SINGLE seam between the classifier (D1) and the wiring domains (D3/D4): §1 classifier JSON envelope (§1.1 FEATURE-CLASS heuristic — finding #1), §2 research `agent()` stage interface, §3 Verified-Facts cite-block format, §4 idempotency rule (§4.1 exact normalized-gap-key "covers" — finding #2), §5 no-silent-guess gate semantics (§5 A3 routing-decision wording + sole-web-stage enforcement — finding #5; §5.1 ambiguous→internal-first→grep→escalate owned by D3/D4 — finding #3), §6 the 13-item labeled-corpus oracle + HELD-OUT generalization corpus (A1). **v1.1.0 (2026-06-18) — plan-phase pre-mortem fixes findings #1/#2/#3/#5 (Changelog in the contract).** D1 PRODUCES the classifier matching §1; D3/D4 CONSUME the envelope SHAPE + stage interface inline, never D1's internals. D2 OWNS every shared doc-ripple surface (CLAUDE-global.md, bin/gsd-t.js, commands/gsd-t-help.md, package.json) — integrate-conflict-free by construction.
 
 **Plan-hardening correction (M89 plan):** §2's model form was `overrides["research"] ?? "<literal>"` — this FAILS the live M85 lint (`test/m85-workflow-tier-policy-lint.test.js`): the `??`-form bracket key must be one of the 6 injectable designated stages, and `research` is not one (no `research` key in `bin/gsd-t-model-tier-policy.cjs`). **Corrected to a BARE literal `model: "fable"`** (passes the lint's tier-set membership check; mirrors how non-designated stages already declare models, e.g. `gsd-t-execute.workflow.js:172`). D2-T1 records the §2 correction; D3-T1/D4-T1/D4-T2 wire the bare-`fable` literal.
 
@@ -12,13 +12,18 @@
 ```
 WAVE 1 — D1 (prove-or-kill, LOAD-BEARING) + D2 (contract/stage/doc-ripple), CONCURRENT + file-disjoint:
   D1 research-classifier-core          D2 research-stage-and-contract
-    bin/gsd-t-research-gate.cjs           auto-research-contract.md (the seam)
+    bin/gsd-t-research-gate.cjs           auto-research-contract.md (the seam) v1.1.0
     + 13-item labeled corpus              + templates/prompts/research-subagent.md
-    + A1 killing test (M89-D1-T3)         + cite-format + idempotency test
+    + HELD-OUT corpus (finding #1)        + cite-format + idempotency test
+                                          (incl. negative: distinct gap-key
+    + A1 killing test (M89-D1-T3:          ≠ skip — finding #2)
+      seen+held-out+bad-input)
                                           + SHARED doc-ripple (CLAUDE-global, gsd-t.js, help, package.json)
         │
-        ▼  KILL GATE: A1 (M89-D1-T3) MUST pass — every one of the 13 hand-labels
-        │  matched deterministically. A mislabel FAILS → HALT M89 + re-scope.
+        ▼  KILL GATE: A1 (M89-D1-T3) MUST pass — every one of the 13 SEEN +
+        │  ≥6 HELD-OUT hand-labels matched deterministically by FEATURE CLASS
+        │  (finding #1: a keyword-memorized classifier fails the held-out set) +
+        │  bad-input boundary (finding #6). A mislabel FAILS → HALT M89 + re-scope.
         │  Wave 1 touches ONLY net-new files + D2's single-owned shared surfaces —
         │  if A1 fails, NO workflow file is contaminated (none edited yet).
         │
@@ -27,10 +32,16 @@ WAVE 2 — D3 + D4, file-disjoint (one-domain-per-workflow-file), START ONLY AFT
       ▼                                   ▼
   D3 wiring-upper-phase-and-gate      D4 wiring-worker-workflows
     gsd-t-phase.workflow.js             gsd-t-{execute,quick,debug}.workflow.js
-    (6 eligible stages)                 (research stage; wave = composer-only, NO model:)
-    gsd-t-verify.workflow.js            + A3 zero-WebSearch test (internal gap)
-    (A4 no-silent-guess)
-    + phase-research-wiring test
+    (6 eligible stages +                (research stage; wave = composer-only, NO model:)
+     ambiguous-escalate §5.1)           + A3 routing-decision test (internal gap) +
+    gsd-t-verify.workflow.js             sole-web-stage enforcement (finding #5)
+    (A4 no-silent-guess)                + ambiguous-escalate §5.1 (finding #3)
+    + phase-research-wiring test        + runtime state-change proof (D4-T4, finding #7)
+    + E2E dogfood test (D3-T4,
+      finding #4 — classify→research-
+      stub→cite→A4-PASS, offline)
+    + runtime state-change (D3-T5,
+      finding #7)
 
   D3/D4 are write-disjoint (6 workflow files split 2/4, zero overlap) + depend on A1 only,
   not each other. Both CONSUME the D1 classifier + D2 contract inline.
@@ -46,8 +57,8 @@ WAVE 2 — D3 + D4, file-disjoint (one-domain-per-workflow-file), START ONLY AFT
 
 | Wave | Domains | Parallel? | Gate to next |
 |------|---------|-----------|--------------|
-| **W1** | D1 research-classifier-core (T1–T4) · D2 research-stage-and-contract (T1–T5) | concurrent, file-disjoint (D1 = net-new bin+test+fixture; D2 = contract+prompt+test+shared doc-ripple) | **A1 (M89-D1-T3) GREEN** — all 13 hand-labels matched deterministically. A1 fails → HALT + re-scope. |
-| **W2** | D3 wiring-upper-phase-and-gate (T1–T4) · D4 wiring-worker-workflows (T1–T4) | concurrent, write-disjoint (D3 = phase+verify; D4 = execute/debug/quick/wave) — both depend on A1 only | both wave-2 domains complete + M71 + M85 lints green (incl. wave-zero-`model:` + debug-cycle-ternary). |
+| **W1** | D1 research-classifier-core (T1–T4, + held-out fixture) · D2 research-stage-and-contract (T1–T5) | concurrent, file-disjoint (D1 = net-new bin+test+2 fixtures incl. held-out; D2 = contract v1.1.0+prompt+test+shared doc-ripple) | **A1 (M89-D1-T3) GREEN** — all 13 SEEN + ≥6 HELD-OUT hand-labels matched deterministically (feature-class generalization, finding #1) + bad-input boundary (finding #6). A1 fails → HALT + re-scope. |
+| **W2** | D3 wiring-upper-phase-and-gate (T1–T5, incl. E2E dogfood T4 + runtime state-change T5) · D4 wiring-worker-workflows (T1–T4, incl. runtime state-change T4) | concurrent, write-disjoint (D3 = phase+verify+e2e; D4 = execute/debug/quick/wave) — both depend on A1 only | both wave-2 domains complete + the E2E dogfood test green + M71 + M85 lints green (incl. wave-zero-`model:` + debug-cycle-ternary). |
 
 ### M89 Integrate-Time Seams (D2 single-owned — NOT cross-domain co-authored)
 
@@ -63,8 +74,8 @@ WAVE 2 — D3 + D4, file-disjoint (one-domain-per-workflow-file), START ONLY AFT
 | Consumer | Depends on | Via |
 |----------|-----------|-----|
 | D2-T4 dispatch | D1-T2 `bin/gsd-t-research-gate.cjs` exists | dispatch routes to the module |
-| D3 (all) | D1 A1 GREEN (gate) + D1 classifier + D2 §1/§2/§3/§4 + D2 `research-subagent.md` | inline `runCli` + Read-at-spawn prompt |
-| D4 (all) | D1 A1 GREEN (gate) + D1 classifier + D2 §1/§2/§3/§5 + D2 `research-subagent.md` | inline `runCli` + Read-at-spawn prompt |
+| D3 (all) | D1 A1 GREEN (gate) + D1 classifier + D2 §1.1/§2/§3/§4.1/§5.1 + D2 `research-subagent.md` | inline `runCli` + Read-at-spawn prompt; D3 owns the ambiguous→grep→escalate step (§5.1) + the E2E dogfood test |
+| D4 (all) | D1 A1 GREEN (gate) + D1 classifier + D2 §1.1/§2/§3/§4.1/§5/§5.1 + D2 `research-subagent.md` | inline `runCli` + Read-at-spawn prompt; D4 owns the ambiguous→grep→escalate step (§5.1) + the sole-web-stage A3 enforcement |
 
 ---
 
