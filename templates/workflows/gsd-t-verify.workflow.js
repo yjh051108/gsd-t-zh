@@ -229,8 +229,23 @@ if (!vg.ok) {
 log(`verify-gate green`);
 
 // ─── M89 §7 ENFORCE Gate (FAIL-blocking — A4 no-silent-guess) ─────────────
-// Scans all milestone artifacts for <!-- auto-research-claim: ... status=uncited -->
-// markers. An uncited marker means an external guessed claim was never cited — FAIL.
+// Scans all milestone artifacts for STRUCTURAL auto-research-claim markers and FAILs if:
+//   (a) ANY marker is status=uncited (an external guessed claim was never cited), OR
+//   (b) ANY status=cited marker's file lacks a matching `## Verified Facts (auto-research)`
+//       block with a sourced fact line (a "cited" marker with no backing fact — the
+//       hollow-gate defeat the contract §7/§5 A4 require to FAIL).
+//
+// CRITICAL STRUCTURAL RULE (Red Team #1 + code-review #1):
+//   - A marker counts ONLY if the LINE is a COMPLETE HTML comment
+//     `<!-- auto-research-claim: ... status=uncited|cited -->` (has `auto-research-claim:`
+//     AND `status=...` on the SAME line AND the line is the comment `<!-- ... -->`). A bare
+//     substring match would count the marker TEMPLATE string carried in this repo's own
+//     prose/source (CLAUDE-global.md, this contract, the workflows that EMIT the template)
+//     as live markers → spurious VERIFY-FAILED when verify dogfoods on this repo.
+//   - A status=cited marker is only honored if its file ALSO contains a
+//     `## Verified Facts (auto-research)` heading AND ≥1 sourced fact line (`source:` URL).
+//     A cited marker WITHOUT a matching sourced fact is counted as a violation (named by
+//     its claim-key) — same as an uncited marker. This closes the hollow-gate (A4).
 // Contract: auto-research-contract.md §7 + §5 (A4).
 // M81: no fs — delegate to an agent's Bash (grep) + parse result.
 const AUTO_RESEARCH_GATE_SCHEMA = {
@@ -241,7 +256,9 @@ const AUTO_RESEARCH_GATE_SCHEMA = {
     pass: { type: "boolean" },
     uncitedCount: { type: "integer" },
     citedCount: { type: "integer" },
+    citedWithoutFactsCount: { type: "integer" },
     uncitedMarkers: { type: "array", items: { type: "string" } },
+    citedWithoutFactsKeys: { type: "array", items: { type: "string" } },
     internalOnlyArtifacts: { type: "boolean" },
     notes: { type: "string" },
   },
@@ -250,46 +267,53 @@ const AUTO_RESEARCH_GATE_SCHEMA = {
 phase("Auto-Research Gate");
 const arGate = await agent(
   [
-    `You are the M89 §7 ENFORCE gate scanner. Scan ALL milestone artifacts in the project at "${projectDir}" for auto-research-claim markers and determine if ANY status=uncited markers exist.`,
+    `You are the M89 §7 ENFORCE gate scanner. Scan ALL milestone artifacts in the project at "${projectDir}" for STRUCTURAL auto-research-claim markers and determine pass/fail per contract §7 + §5 (A4 no-silent-guess).`,
+    ``,
+    `A line is a LIVE MARKER ONLY IF it is a COMPLETE HTML comment of this exact structure (all on ONE line):`,
+    `    <!-- auto-research-claim: class=external key=<some-key> status=uncited -->`,
+    `    <!-- auto-research-claim: class=external key=<some-key> status=cited -->`,
+    `STRUCTURAL TEST (do NOT count a bare substring): the line, trimmed, MUST start with "<!--", MUST end with "-->", MUST contain "auto-research-claim:", MUST contain "status=uncited" or "status=cited", AND its key= value MUST be a CONCRETE normalized key (lowercase words/whitespace, NO angle brackets). Lines that merely MENTION the template in prose or source code (a backtick-quoted example, a string literal that emits the template, a contract illustration) are NOT live markers — they are not a standalone "<!-- ... -->" comment line, OR they carry a PLACEHOLDER key like "key=<claim-key>" / "key=<normalized-claim-key>" / "key=<some-key>" / "key=<key>" (any key= value containing "<" or ">"), OR a placeholder status like "status=uncited|cited" / "status=<status>". SKIP all of those — a real marker's key is the normalizeClaimKey output and never contains angle brackets.`,
     ``,
     `Steps:`,
-    `1. Run: \`grep -r "auto-research-claim" "${projectDir}" --include="*.md" --include="*.js" --include="*.ts" --include="*.tsx" --include="*.jsx" --include="*.cjs" --include="*.mjs" --include="*.py" -l 2>/dev/null || echo "no-matches"\``,
-    `   This finds all files with auto-research-claim markers. NOTE: worker workflows (execute/quick/debug) write §7 markers into their primary OUTPUT artifact, which may be a code file (.js/.ts/.py/...), not only markdown — the include set MUST cover those or an uncited marker in a code artifact escapes the gate (A4 no-silent-guess).`,
-    `2. For each matching file, run: \`grep "auto-research-claim" <file>\``,
-    `   to get the actual marker lines.`,
-    `3. Count:`,
-    `   - uncitedCount = lines containing "status=uncited"`,
-    `   - citedCount   = lines containing "status=cited" (excluding any that also contain "uncited")`,
-    `4. pass = true ONLY if uncitedCount === 0 (all markers are cited OR no markers exist).`,
-    `   pass = false if ANY marker has status=uncited.`,
-    `5. List up to 10 uncited marker lines in "uncitedMarkers" (the full HTML comment).`,
-    `6. If no files are found (step 1 returns no-matches), pass=true, uncitedCount=0, citedCount=0.`,
+    `1. Find candidate files: \`grep -rl "auto-research-claim" "${projectDir}" --include="*.md" --include="*.js" --include="*.ts" --include="*.tsx" --include="*.jsx" --include="*.cjs" --include="*.mjs" --include="*.py" 2>/dev/null || echo "no-matches"\``,
+    `   NOTE: worker workflows (execute/quick/debug) write §7 markers into their primary OUTPUT artifact, which may be a code file (.js/.ts/.py/...), not only markdown — the include set MUST cover those or an uncited marker in a code artifact escapes the gate (A4).`,
+    `2. For each candidate file, read the lines containing "auto-research-claim". Apply the STRUCTURAL TEST above to each line; discard non-marker lines (template/prose/source illustrations).`,
+    `3. Among the SURVIVING live markers, classify each as uncited (status=uncited) or cited (status=cited), and record its key= value.`,
+    `4. uncitedCount = number of live status=uncited markers. List up to 10 of their full comment lines in "uncitedMarkers".`,
+    `5. For EACH live status=cited marker: verify the SAME FILE contains BOTH (a) a heading line exactly "## Verified Facts (auto-research)" AND (b) at least as many sourced fact lines as that file has cited markers, where a sourced fact line is a list item ("- ...") that contains "source:" followed by a URL. A cited marker in a file that has NO Verified-Facts heading, or FEWER sourced fact lines than cited markers, is a HOLLOW cited marker — record its key= in "citedWithoutFactsKeys".`,
+    `   citedCount = number of live status=cited markers. citedWithoutFactsCount = number of hollow cited markers (cited with no matching sourced fact).`,
+    `6. pass = true ONLY IF uncitedCount === 0 AND citedWithoutFactsCount === 0 (every external claim is cited AND every cited marker has a matching sourced Verified-Facts entry). pass = false otherwise.`,
+    `7. If no files are found (step 1 returns no-matches) OR no LIVE markers survive the structural test, pass=true, uncitedCount=0, citedCount=0, citedWithoutFactsCount=0.`,
     ``,
-    `Return JSON per the schema: { "pass": true|false, "uncitedCount": N, "citedCount": N, "uncitedMarkers": [], "notes": "..." }`,
+    `Return JSON per the schema: { "pass": true|false, "uncitedCount": N, "citedCount": N, "citedWithoutFactsCount": N, "uncitedMarkers": [], "citedWithoutFactsKeys": [], "notes": "..." }`,
     ``,
-    `Contract: auto-research-contract.md §7 (ENFORCE marker) + §5/A4 (uncited external guess → verify FAILS).`,
+    `Contract: auto-research-contract.md §7 (ENFORCE marker — cited REQUIRES a matching Verified-Facts entry, same claim-key) + §5/A4 (uncited or hollow-cited external guess → verify FAILS).`,
   ].join("\n"),
   { label: "auto-research-gate", phase: "Auto-Research Gate", schema: AUTO_RESEARCH_GATE_SCHEMA, model: "haiku" }
 ).catch((e) => ({
-  pass: false, uncitedCount: -1, citedCount: 0,
+  pass: false, uncitedCount: -1, citedCount: 0, citedWithoutFactsCount: -1,
   notes: `auto-research gate agent error: ${e && e.message} — failing closed (A4)`,
 }));
 
 if (!arGate.pass) {
   const uncited = arGate.uncitedCount >= 0 ? arGate.uncitedCount : "unknown (agent error)";
-  log(`M89 auto-research gate FAIL — ${uncited} uncited external-claim marker(s) found (A4: no silent guess)`);
+  const hollow = arGate.citedWithoutFactsCount >= 0 ? arGate.citedWithoutFactsCount : "unknown (agent error)";
+  log(`M89 auto-research gate FAIL — ${uncited} uncited + ${hollow} hollow-cited external-claim marker(s) (A4: no silent guess)`);
   if (arGate.uncitedMarkers && arGate.uncitedMarkers.length > 0) {
     log(`  uncited markers: ${arGate.uncitedMarkers.slice(0, 5).join(" | ")}`);
+  }
+  if (arGate.citedWithoutFactsKeys && arGate.citedWithoutFactsKeys.length > 0) {
+    log(`  hollow cited (no matching sourced fact) keys: ${arGate.citedWithoutFactsKeys.slice(0, 5).join(" | ")}`);
   }
   return {
     status: "auto-research-gate-failed",
     overallVerdict: "VERIFY-FAILED",
     autoResearchGate: arGate,
-    reason: `M89 §7 ENFORCE: ${uncited} uncited external-claim marker(s) — run the phase again to cite them before verify`,
+    reason: `M89 §7 ENFORCE: ${uncited} uncited + ${hollow} hollow-cited external-claim marker(s) — every cited marker needs a matching sourced Verified-Facts entry; run the phase again to cite them`,
     verifyGate: vg.envelope,
   };
 }
-log(`M89 auto-research gate: PASS — ${arGate.citedCount} cited marker(s), 0 uncited`);
+log(`M89 auto-research gate: PASS — ${arGate.citedCount} cited marker(s) all backed by sourced facts, 0 uncited`);
 
 // ─── M57 CI-Parity Gate (FAIL-blocking) ───────────────────────────────────
 // Per commands/gsd-t-verify.md Step 2.6 + cli-build-coverage-contract.md +

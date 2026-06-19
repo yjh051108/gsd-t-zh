@@ -65,21 +65,63 @@ function buildVerifiedFactsBlock(factStatement, url, date) {
 }
 
 /**
- * §7 ENFORCE gate — simulates what the verify workflow's auto-research-gate agent does.
- * Returns { pass, uncitedCount, citedCount, uncitedMarkers }.
+ * Is this line a COMPLETE, LIVE auto-research-claim marker comment (§7)?
+ * Structural test (Red Team #1 + code-review #1): the trimmed line must be a single
+ * HTML comment `<!-- ... -->` containing `auto-research-claim:` AND a CONCRETE
+ * status=uncited|status=cited. A bare substring (template string in prose/source,
+ * or a `status=uncited|cited` placeholder) is NOT a live marker.
+ */
+function isLiveMarker(line) {
+  const t = line.trim();
+  if (!t.startsWith("<!--") || !t.endsWith("-->")) return false;
+  if (!t.includes("auto-research-claim:")) return false;
+  // Reject placeholder keys (key=<...>) — a real key is normalizeClaimKey output (no angle brackets)
+  const keyMatch = t.match(/key=([^\s]+)/);
+  if (keyMatch && (keyMatch[1].includes("<") || keyMatch[1].includes(">"))) return false;
+  // Concrete status (reject placeholders like status=uncited|cited or status=<...>)
+  return /status=uncited\b(?!\|)/.test(t) || /status=cited\b/.test(t);
+}
+
+/**
+ * Count sourced Verified-Facts fact lines + presence of the exact heading in a file.
+ */
+function factsSummary(artifactContent) {
+  const lines = artifactContent.split("\n");
+  const hasHeading = lines.some((l) => l.trim() === "## Verified Facts (auto-research)");
+  const sourcedFacts = lines.filter(
+    (l) => l.trim().startsWith("- ") && /source:\s*(<[^>]+>|https?:\/\/\S+)/i.test(l)
+  ).length;
+  return { hasHeading, sourcedFacts };
+}
+
+/**
+ * §7 ENFORCE gate — mirrors the verify workflow's auto-research-gate agent.
+ * FAILs if ANY uncited marker exists OR any cited marker is HOLLOW (its file lacks a
+ * matching `## Verified Facts (auto-research)` block with enough sourced fact lines).
+ * Single-file model (the test artifacts are one file): cited markers require
+ * (hasHeading && sourcedFacts >= citedCount) — else those cited markers are hollow.
+ * Returns { pass, uncitedCount, citedCount, citedWithoutFactsCount, uncitedMarkers }.
  */
 function runEnforceGate(artifactContent) {
   const lines = artifactContent.split("\n");
   const uncited = [];
   let citedCount = 0;
   for (const line of lines) {
-    if (line.includes("auto-research-claim:") && line.includes("status=uncited")) {
-      uncited.push(line.trim());
-    } else if (line.includes("auto-research-claim:") && line.includes("status=cited")) {
-      citedCount++;
-    }
+    if (!isLiveMarker(line)) continue;
+    if (/status=uncited\b/.test(line)) uncited.push(line.trim());
+    else if (/status=cited\b/.test(line)) citedCount++;
   }
-  return { pass: uncited.length === 0, uncitedCount: uncited.length, citedCount, uncitedMarkers: uncited };
+  const { hasHeading, sourcedFacts } = factsSummary(artifactContent);
+  // Hollow cited markers: cited markers not backed by enough sourced facts.
+  const citedWithoutFactsCount =
+    citedCount === 0 ? 0 : Math.max(0, citedCount - (hasHeading ? sourcedFacts : 0));
+  return {
+    pass: uncited.length === 0 && citedWithoutFactsCount === 0,
+    uncitedCount: uncited.length,
+    citedCount,
+    citedWithoutFactsCount,
+    uncitedMarkers: uncited,
+  };
 }
 
 /**
@@ -405,6 +447,89 @@ describe("A5 — Full Stated-Claims→classify→marker→gate-FAIL→research(s
     assert.equal(gateResult.uncitedCount, 0, "No uncited markers remain post-research");
     assert.equal(gateResult.citedCount, 1, "Exactly 1 cited marker present");
     assert.equal(gateResult.uncitedMarkers.length, 0, "No uncited markers in the list");
+  });
+
+  // Step 8: HOLLOW-CITED NEGATIVE — a status=cited marker WITHOUT a matching sourced
+  // Verified-Facts block MUST FAIL (Red Team #1 + code-review #4 / finding #5). This is
+  // the test that would have caught the hollow-gate CRITICAL: deleting the facts block
+  // from a passing artifact must flip the gate pass→fail.
+  test("STEP 8 (HOLLOW-CITED NEGATIVE): a cited marker with NO matching Verified-Facts block FAILS; deleting the block flips pass→fail", () => {
+    const claimText = PLANTED_EXTERNAL_CLAIM;
+    const uncitedMarker = buildUncitedMarker(claimText);
+    const citedMarker = buildCitedMarker(claimText);
+    const researchResult = stubResearchAgent(claimText);
+
+    // A. Properly cited artifact (marker flipped + facts block present) → PASS
+    const properlyCited = FIXTURE_ARTIFACT + "\n" + citedMarker + "\n" + researchResult.citedBlock + "\n";
+    const passGate = runEnforceGate(properlyCited);
+    assert.equal(passGate.pass, true, "Properly-cited artifact (marker + sourced facts) must PASS");
+
+    // B. Same artifact but with the Verified-Facts block DELETED → cited marker is now HOLLOW → FAIL
+    const hollowCited = FIXTURE_ARTIFACT + "\n" + citedMarker + "\n"; // no facts block
+    const hollowGate = runEnforceGate(hollowCited);
+    assert.equal(
+      hollowGate.pass, false,
+      "A status=cited marker with NO matching Verified-Facts block MUST FAIL (hollow-gate defeat — A4)"
+    );
+    assert.equal(hollowGate.uncitedCount, 0, "No uncited markers — the marker IS cited, just unbacked");
+    assert.equal(hollowGate.citedCount, 1, "The hollow cited marker is still counted as cited");
+    assert.equal(hollowGate.citedWithoutFactsCount, 1, "Exactly 1 hollow (unbacked) cited marker");
+
+    // C. The deletion FLIPS the verdict — proves the gate actually READS the facts block
+    assert.notEqual(
+      passGate.pass, hollowGate.pass,
+      "Deleting the Verified-Facts block must flip the gate pass→fail (the gate reads the block — not a no-op)"
+    );
+
+    // D. A cited marker with a heading but a SOURCELESS fact line is also hollow → FAIL
+    const sourcelessFacts = [
+      "## Verified Facts (auto-research)",
+      "",
+      "- **PayPal v2 invoice total amount limit is 1,000,000 USD** (no source)",
+    ].join("\n");
+    const sourcelessArtifact = FIXTURE_ARTIFACT + "\n" + citedMarker + "\n" + sourcelessFacts + "\n";
+    const sourcelessGate = runEnforceGate(sourcelessArtifact);
+    assert.equal(
+      sourcelessGate.pass, false,
+      "A cited marker backed by a Verified-Facts block with NO source: URL must FAIL (SC2 uncited fact)"
+    );
+  });
+
+  // Step 9: STRUCTURAL marker matching — the marker TEMPLATE string in prose/source is
+  // NOT a live marker (code-review #1 / dogfood false-positive guard).
+  test("STEP 9 (STRUCTURAL): a template/illustration line carrying the marker text is NOT counted as a live marker", () => {
+    const artifactWithTemplateProse = [
+      "# Some doc that DESCRIBES the marker format",
+      "",
+      "The §7 marker looks like: `<!-- auto-research-claim: class=external key=<key> status=uncited -->`",
+      'In source: const marker = `<!-- auto-research-claim: class=external key=${k} status=uncited -->`;',
+      "Lifecycle: it flips status=uncited|cited when the facts land.",
+    ].join("\n");
+
+    const gate = runEnforceGate(artifactWithTemplateProse);
+    assert.equal(
+      gate.pass, true,
+      "Prose/source illustrations of the marker template must NOT be counted as live markers (no spurious VERIFY-FAILED on dogfood)"
+    );
+    assert.equal(gate.uncitedCount, 0, "No live uncited markers in template/prose lines");
+  });
+
+  // Step 9b: PLACEHOLDER-KEY guard — a standalone comment line with a PLACEHOLDER key
+  // (key=<normalized-claim-key>) is the exact dogfood false-positive in the contract
+  // (auto-research-contract.md:341). It is NOT a live marker — a real key never carries
+  // angle brackets (normalizeClaimKey strips them). (code-review #1 dogfood guard.)
+  test("STEP 9b (PLACEHOLDER KEY): a standalone marker comment with key=<placeholder> is NOT a live marker", () => {
+    const contractIllustration = "<!-- auto-research-claim: class=external key=<normalized-claim-key> status=uncited -->";
+    assert.equal(
+      runEnforceGate(contractIllustration).pass, true,
+      "A placeholder-key marker (key=<...>) must NOT be counted as a live uncited marker (dogfood: the contract carries this exact line)"
+    );
+    // ...while a concrete-key marker on the same shape IS a live marker:
+    const realMarker = buildUncitedMarker("some real external claim");
+    assert.equal(
+      runEnforceGate(realMarker).pass, false,
+      "A concrete-key uncited marker IS live and must FAIL"
+    );
   });
 });
 

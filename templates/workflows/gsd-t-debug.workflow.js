@@ -86,12 +86,7 @@ const DEBUG_CYCLE_SCHEMA = {
 
 // M89 §7 — normalize claim-key (§4.1 exact-match key)
 function normalizeClaimKey(claim) {
-  return claim
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^['"""''.]+|['"""''.]+$/g, "")
-    .trim();
+  return claim.toLowerCase().replace(/\s+/g, " ").trim().replace(/^[^\w]+|[^\w]+$/g, "");
 }
 function uncitedMarker(key) { return `<!-- auto-research-claim: class=external key=${key} status=uncited -->`; }
 function citedMarker(key)   { return `<!-- auto-research-claim: class=external key=${key} status=cited -->`; }

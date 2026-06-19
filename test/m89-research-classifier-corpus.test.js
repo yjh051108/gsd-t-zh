@@ -292,6 +292,31 @@ describe("HELD-OUT generalization corpus — anti-self-fulfilling-oracle guard (
     assert.strictEqual(result.route, "grep", "HO-I4 must route to grep");
   });
 
+  // Finding #4 (MEDIUM): a claim with a bare internal anchor ("our"/"internal"/
+  // "this repo's") routes INTERNAL even when it carries an API/rate-limit term — the
+  // internal signal wins (internal-first). The genuinely-external HO-E4 (no anchor)
+  // must stay external — proving the anchor, not the limit term, is the discriminator.
+  test("finding #4: 'rate limit OUR INTERNAL gateway' → internal (bare anchor beats API term); HO-E4 (no anchor) stays external", () => {
+    const internalClaim = "What is the rate limit our internal API gateway enforces per tenant?";
+    const rInternal = classify(internalClaim);
+    assert.strictEqual(
+      rInternal.class,
+      "internal",
+      `An 'our internal' anchored rate-limit claim must be internal (internal-first), got "${rInternal.class}"\n` +
+        `  reason: "${rInternal.reason}"`,
+    );
+    assert.strictEqual(rInternal.route, "grep", "Internal-anchored claim must route to grep");
+
+    // The genuinely external HO-E4 (no internal anchor) must NOT regress to internal
+    const hoE4 = heldoutCorpus.items.find((i) => i.id === "HO-E4");
+    const rExternal = classify(hoE4.gap);
+    assert.strictEqual(
+      rExternal.class,
+      "external",
+      `HO-E4 (no internal anchor, asserts external limit) must stay external, got "${rExternal.class}"`,
+    );
+  });
+
   // Zero token overlap guard (held-out symbols must not appear in seen corpus)
   test("held-out proper nouns/symbols are absent from the seen corpus text (no keyword cross-contamination)", () => {
     const seenGaps = seenCorpus.items.map((i) => i.gap.toLowerCase());

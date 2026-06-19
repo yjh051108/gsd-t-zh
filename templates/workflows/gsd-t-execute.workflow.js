@@ -71,12 +71,7 @@ const DOMAIN_RESULT_SCHEMA = {
 // M89 §7 — ENFORCE marker format helpers (normalize claim-key per §4.1)
 // Normalize: lowercase, collapse internal whitespace, strip surrounding punctuation/quotes.
 function normalizeClaimKey(claim) {
-  return claim
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^['"""''.]+|['"""''.]+$/g, "")
-    .trim();
+  return claim.toLowerCase().replace(/\s+/g, " ").trim().replace(/^[^\w]+|[^\w]+$/g, "");
 }
 
 // M89 §7 — marker templates

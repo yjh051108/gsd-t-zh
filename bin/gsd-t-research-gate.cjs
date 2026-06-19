@@ -156,6 +156,12 @@ const EXTERNAL_BROWSER_RUNTIME_TERMS = [
 /**
  * Explicit "this repo" / "our" ANCHOR phrases. Presence of any of these
  * strongly signals internal — the question is about code IN this repository.
+ *
+ * Finding #4 (MEDIUM): bare "our <noun>" / "internal" / "this repo's" anchors
+ * are internal signals too; when an internal anchor is present, an external
+ * API/limit/rate-limit term does NOT force external — the internal signal wins
+ * (internal-first per §1.1). E.g. "the rate limit OUR INTERNAL API gateway
+ * enforces per tenant" is about THIS repo's own gateway → internal.
  */
 const INTERNAL_ANCHOR_PHRASES = [
   "this repo", "our repo", "the repo",
@@ -165,44 +171,81 @@ const INTERNAL_ANCHOR_PHRASES = [
   "this file", "our file",
   "the existing ", "our existing",
   "in the codebase",
+  // Bare internal anchors (finding #4): "our <noun>" / "internal" / "this repo's"
+  "our ", "internal ", " internal",
+  "this repo's", "repo's",
   // Ownership / file-system signals
   "which domain owns", "which file owns", "who owns",
   "which module", "which handler", "which function",
   "which contract", "which test", "which workflow",
-  // Schema / DB (this-repo database)
-  "this repo's", "repo's",
   // Exit code / return value of THIS module
   "return when", "returns when", "return on", "returns on",
   "exit code", "what does ", "how does ",
 ];
 
 /**
- * Known local file / module NAMES in this repo. These are not corpus keywords
- * but rather the family of file-naming patterns GSD-T uses — presence signals
- * the claim is about THIS repo's own code.
+ * Internal file / path SHAPE patterns. These are STRUCTURAL shapes (file
+ * extensions, repo-relative path separators, GSD-T's file-naming convention) —
+ * NOT an enumerated list of specific repo symbols.
  *
- * We detect patterns not hard-coded filenames, so this generalizes.
+ * Finding #3 (HIGH — anti-self-fulfilling-oracle): the held-out corpus uses NOVEL
+ * local symbols precisely to prove the classifier GENERALIZES by SHAPE rather than
+ * memorizing a list. So NONE of those specific held-out symbols may appear here —
+ * they are detected structurally instead (a file-path shape below, or a bare
+ * camelCase/kebab local-symbol shape via matchLocalSymbolShape). A guard test
+ * (m89-classifier-no-hardcoded-heldout-symbols) asserts none re-appear as a literal.
  */
 const INTERNAL_FILE_PATTERNS = [
-  // GSD-T module naming conventions
+  // GSD-T module naming convention (shape, not a specific filename)
   "gsd-t-", // bin/gsd-t-*.cjs files
   ".workflow.js", // workflow scripts
   ".test.js", // test files
   "gsd-t.js", // main CLI
-  // Contract / domain / scope files
+  // Contract / domain / scope file shapes
   "-contract.md", // contract files
   "scope.md", "tasks.md", "constraints.md",
   "progress.md", "architecture.md", "workflows.md",
   // Path separators that imply repo-relative paths
   "bin/", "test/", "templates/", "commands/", ".gsd-t/",
-  // Key GSD-T symbols (local symbols in this repo, even bare)
-  "resolvePRofile", // deliberately varied case handled by toLower
-  "resolveprofile",
-  "provedisjointness",
-  "isorderlocked",
-  "cli-preflight",
-  "verify-gate",
 ];
+
+/**
+ * Bare local-symbol SHAPE detector (finding #3 — the generalizing internal signal).
+ *
+ * A bare camelCase (e.g. getUserToken, parseConfigFile) or kebab/snake module-ish
+ * identifier (e.g. some-cli-tool) referenced WITHOUT any external proper noun /
+ * API term is a local-symbol shape → this repo's own grep-able code. Detected by
+ * STRUCTURE, not by an enumerated symbol list, so a NOVEL held-out symbol classifies
+ * correctly by shape.
+ *
+ *   - camelCase: a token with an internal lower→Upper transition (getUserToken)
+ *   - kebab-ish module name: lowercase words joined by hyphens that is NOT a known
+ *     English hyphenation (e.g. some-cli-tool) — heuristically, a hyphenated
+ *     token whose segments look like code identifiers
+ *
+ * @param {string} text - the ORIGINAL-case claim text (camelCase needs case)
+ * @returns {string|null} the matched symbol shape, or null
+ */
+function matchLocalSymbolShape(text) {
+  // camelCase identifier: a word boundary, 1+ lowercase, then an Upper, then word chars.
+  // Excludes ALLCAPS and single-cap (PascalCase sentence-start handled by requiring a
+  // leading lowercase run before the first uppercase).
+  const camel = text.match(/\b[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*\b/);
+  if (camel) return camel[0];
+  // kebab-ish code module: two+ lowercase segments joined by hyphens, each ≥2 chars,
+  // not a single common word. Excludes ordinary hyphenated English by requiring the
+  // whole token NOT to be in a small stop-list of common hyphenations.
+  const kebab = text.match(/\b[a-z][a-z0-9]+(?:-[a-z0-9]+)+\b/);
+  if (kebab) {
+    const COMMON_HYPHENATED = new Set([
+      "rate-limit", "cross-origin", "same-origin", "user-agent", "pop-up",
+      "third-party", "real-time", "well-known", "fail-toward", "best-practice",
+      "up-to-date", "built-in", "set-up", "per-request", "per-tenant", "per-origin",
+    ]);
+    if (!COMMON_HYPHENATED.has(kebab[0])) return kebab[0];
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // PROPER-NOUN-LESS EXTERNAL ASSERTION detection (the cycle-2 finding #3 fix)
@@ -289,9 +332,11 @@ function classify(gap) {
   );
 
   // ── Step 6: Check for internal FILE / SYMBOL signals ─────────────────────
-  const matchedFilePattern = INTERNAL_FILE_PATTERNS.find((pattern) =>
-    lower.includes(pattern.toLowerCase())
-  );
+  // (a) repo-relative path / file-naming SHAPE, (b) bare camelCase / kebab-ish
+  // local-symbol SHAPE (finding #3 — structural, NOT an enumerated symbol list).
+  const matchedFilePattern =
+    INTERNAL_FILE_PATTERNS.find((pattern) => lower.includes(pattern.toLowerCase())) ||
+    matchLocalSymbolShape(trimmed);
 
   // ── Decision logic ────────────────────────────────────────────────────────
   //
@@ -328,21 +373,20 @@ function classify(gap) {
   const hasExternalProperNoun = !!matchedProperNoun;
   const hasExternalAssertion = !!matchedExternalAssertion;
 
-  // Case A: Internal anchor + file/symbol signal present, and no external
-  // API/browser/limit term (proper noun alone doesn't override clear internal) → INTERNAL
-  if (
-    (hasInternalAnchor || hasInternalFile) &&
-    !hasExternalApiTerm &&
-    !hasExternalBrowserTerm &&
-    !hasExternalAssertion
-  ) {
-    const signal = hasInternalAnchor ? matchedAnchor : matchedFilePattern;
+  // Case A: Internal ANCHOR present → INTERNAL (internal signal WINS — finding #4).
+  // An explicit "this repo / our / internal / exit code / which-owns" anchor means the
+  // question is about THIS repo's own code, even if it also mentions an external
+  // proper noun or an API/limit/rate-limit term. E.g. "the rate limit OUR INTERNAL API
+  // gateway enforces per tenant" is about this repo's gateway → internal, NOT external.
+  // (HO-E4 — the proper-noun-LESS external assertion — has NO internal anchor, so it
+  // still routes external below; that distinction is preserved.)
+  if (hasInternalAnchor) {
     return {
       ok: true,
       gap: trimmed,
       class: "internal",
       route: "grep",
-      reason: `Internal signal: "${signal}" — this question concerns this repo's own code/structure`,
+      reason: `Internal anchor "${matchedAnchor}" — this question concerns this repo's own code/structure (internal signal wins over any external term)`,
     };
   }
 
@@ -370,9 +414,9 @@ function classify(gap) {
   }
 
   // Case D: External proper noun alone (no internal anchor, no overriding internal file) → EXTERNAL
-  // But only if no internal signals are present (internal file/anchor takes precedence
-  // over a bare proper-noun mention when the question is clearly about this repo)
-  if (hasExternalProperNoun && !hasInternalAnchor && !hasInternalFile) {
+  // (internal file/symbol shape takes precedence over a bare proper-noun mention when the
+  // question is clearly about this repo's own code)
+  if (hasExternalProperNoun && !hasInternalFile) {
     return {
       ok: true,
       gap: trimmed,
@@ -382,33 +426,20 @@ function classify(gap) {
     };
   }
 
-  // Case E: External proper noun + internal anchor, WITH an external API term
-  // → the external API term (the CORE of the question) overrides the anchor → EXTERNAL
-  if (hasExternalProperNoun && hasInternalAnchor && hasExternalApiTerm) {
-    return {
-      ok: true,
-      gap: trimmed,
-      class: "external",
-      route: "web",
-      reason: `External: "${matchedProperNoun}" third-party API term ("${matchedApiTerm}") present despite internal anchor — question concerns the external system's contract`,
-    };
-  }
-
-  // Case F: External proper noun + internal anchor, NO external API term
+  // Case E: External proper noun + internal file/symbol, NO external API term
   // → question is about how THIS repo uses the tool → INTERNAL
-  if (hasExternalProperNoun && (hasInternalAnchor || hasInternalFile) && !hasExternalApiTerm) {
-    const signal = hasInternalAnchor ? matchedAnchor : matchedFilePattern;
+  if (hasExternalProperNoun && hasInternalFile && !hasExternalApiTerm) {
     return {
       ok: true,
       gap: trimmed,
       class: "internal",
       route: "grep",
-      reason: `Internal: despite mention of "${matchedProperNoun}", internal anchor "${signal}" anchors this to this repo's own implementation`,
+      reason: `Internal: despite mention of "${matchedProperNoun}", internal file/symbol "${matchedFilePattern}" anchors this to this repo's own implementation`,
     };
   }
 
-  // Case G: External API term (no proper noun, no internal anchor) → EXTERNAL
-  if (hasExternalApiTerm && !hasInternalAnchor && !hasInternalFile) {
+  // Case F: External API term (no proper noun, no internal anchor) → EXTERNAL
+  if (hasExternalApiTerm && !hasInternalFile) {
     return {
       ok: true,
       gap: trimmed,
@@ -418,7 +449,7 @@ function classify(gap) {
     };
   }
 
-  // Case H: Browser/runtime behavior term → EXTERNAL (runtime is external)
+  // Case G: Browser/runtime behavior term → EXTERNAL (runtime is external)
   if (hasExternalBrowserTerm) {
     return {
       ok: true,
@@ -429,10 +460,10 @@ function classify(gap) {
     };
   }
 
-  // Case I: Proper-noun-LESS external assertion pattern → EXTERNAL
+  // Case H: Proper-noun-LESS external assertion pattern → EXTERNAL
   // This is the critical cycle-2 finding #3 fix: an unverified external claim
   // routes external even without a vendor proper noun.
-  if (hasExternalAssertion && !hasInternalAnchor && !hasInternalFile) {
+  if (hasExternalAssertion && !hasInternalFile) {
     return {
       ok: true,
       gap: trimmed,
@@ -442,14 +473,14 @@ function classify(gap) {
     };
   }
 
-  // Case J: Internal file/symbol signal (no external signals) → INTERNAL
+  // Case I: Internal file/symbol signal (no external signals) → INTERNAL
   if (hasInternalFile) {
     return {
       ok: true,
       gap: trimmed,
       class: "internal",
       route: "grep",
-      reason: `Internal: local file/symbol pattern ("${matchedFilePattern}") — concerns this repo's own code`,
+      reason: `Internal: local file/symbol shape ("${matchedFilePattern}") — concerns this repo's own code`,
     };
   }
 
