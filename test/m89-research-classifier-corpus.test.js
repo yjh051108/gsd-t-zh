@@ -204,8 +204,8 @@ describe("SEEN corpus — 13-item hand-labeled oracle (A1 kill gate)", () => {
 describe("HELD-OUT generalization corpus — anti-self-fulfilling-oracle guard (A1 kill gate)", () => {
   const items = heldoutCorpus.items;
 
-  test("held-out corpus fixture has exactly 8 items", () => {
-    assert.strictEqual(items.length, 8, `Expected 8 held-out items, got ${items.length}`);
+  test("held-out corpus fixture has exactly 14 items", () => {
+    assert.strictEqual(items.length, 14, `Expected 14 held-out items, got ${items.length}`);
   });
 
   test("each held-out item has required keys incl. featureSignal", () => {
@@ -218,11 +218,11 @@ describe("HELD-OUT generalization corpus — anti-self-fulfilling-oracle guard (
     }
   });
 
-  test("held-out corpus has exactly 4 external and 4 internal items", () => {
+  test("held-out corpus has exactly 7 external and 7 internal items", () => {
     const externalCount = items.filter((i) => i.expectedClass === "external").length;
     const internalCount = items.filter((i) => i.expectedClass === "internal").length;
-    assert.strictEqual(externalCount, 4, `Expected 4 external held-out items, got ${externalCount}`);
-    assert.strictEqual(internalCount, 4, `Expected 4 internal held-out items, got ${internalCount}`);
+    assert.strictEqual(externalCount, 7, `Expected 7 external held-out items, got ${externalCount}`);
+    assert.strictEqual(internalCount, 7, `Expected 7 internal held-out items, got ${internalCount}`);
   });
 
   // Per-item held-out assertions
@@ -315,6 +315,47 @@ describe("HELD-OUT generalization corpus — anti-self-fulfilling-oracle guard (
       "external",
       `HO-E4 (no internal anchor, asserts external limit) must stay external, got "${rExternal.class}"`,
     );
+  });
+
+  // Cycle-3 discriminators (the 3 findings this fix closes) — asserted by RULE.
+  test("cycle-3 finding #1: interrogative phrasing does NOT pull internal (question words are neutral)", () => {
+    // 'How does Stripe …?' is the natural phrasing of an EXTERNAL research question.
+    const r = classify("How does Stripe construct the webhook signature-verification header?");
+    assert.strictEqual(r.class, "external", `interrogative external mislabeled: ${r.reason}`);
+    // Genuine anchors still pull internal regardless of the question word.
+    for (const g of [
+      "What is the rate limit our internal API gateway enforces?",
+      "How does the existing gsd-t-traceability-gate.cjs enumerate tasks?",
+    ]) {
+      assert.strictEqual(classify(g).class, "internal", `genuine-anchor question mislabeled: "${g}"`);
+    }
+  });
+
+  test("cycle-3 finding #2: a bare camelCase symbol does NOT override a co-occurring external proper noun", () => {
+    // proper noun + bare symbol → external (fail-toward-external)
+    assert.strictEqual(classify("react useState returns a stateful value").class, "external");
+    assert.strictEqual(
+      classify("the stripe createCharge call returns a chargeId field").class,
+      "external",
+    );
+    // bare symbol, NO external signal → internal by shape
+    assert.strictEqual(classify("parseConfig clamps the model").class, "internal");
+    // PATH-shaped signal DOES override a proper noun → internal
+    assert.strictEqual(classify("how does gsd-t-verify.workflow.js call Stripe?").class, "internal");
+  });
+
+  test("cycle-3 finding #3: single-word homographs are external only when a strong signal co-occurs", () => {
+    // homograph alone → internal
+    assert.strictEqual(classify("we square the input value before hashing").class, "internal");
+    assert.strictEqual(classify("the function bails at the edge case").class, "internal");
+    // homograph + strong co-occurring signal (or possessive company form) → external
+    assert.strictEqual(classify("Square's payments API rejects negative amounts").class, "external");
+    assert.strictEqual(classify("deploy to the edge with Cloudflare Workers").class, "external");
+  });
+
+  test("cycle-3 nit: bare 'bearer' is NOT external; 'bearer token' (with a co-signal) is", () => {
+    assert.strictEqual(classify("the handler reads the bearer prefix off the header").class, "internal");
+    assert.strictEqual(classify("the api returns a bearer token after auth").class, "external");
   });
 
   // Zero token overlap guard (held-out symbols must not appear in seen corpus)

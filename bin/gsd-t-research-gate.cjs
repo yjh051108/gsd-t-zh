@@ -103,16 +103,21 @@ function boundaryMatch(lowerText, token) {
  * New vendors can be added without changing the classification logic.
  *
  * Cycle-2 finding #3 (code-review): ALL tokens are matched on WORD BOUNDARIES
- * (boundaryMatch), so the short ambiguous tokens "go"/"rest"/"css"/"soap"/"java"/
- * "swift"/"rust"/"edge"/"ie" can NO LONGER hit inside "cargo"/"the rest of"/"cookie"/
- * "ego"/"movie". The old space-padding hack ("go ", "rest ") is removed — bare tokens
- * + \b is the correct fix.
+ * (boundaryMatch), so the short ambiguous tokens "css"/"soap"/"rest" can NO LONGER hit
+ * inside "cargo"/"the rest of"/"cookie". The old space-padding hack is removed.
+ *
+ * Cycle-3 finding #3 (code-review): single-word English HOMOGRAPHS that are also vendor /
+ * language names ("square"/"go"/"rust"/"swift"/"java"/"edge"/"ie"/"amazon") were MOVED to
+ * WEAK_EXTERNAL_PROPER_NOUNS — even with \b they misroute benign internal claims ("we
+ * square the input", "bails at the edge case"). They now count external only when a strong
+ * external signal co-occurs (or in possessive form). This list keeps ONLY the unambiguous
+ * multi-char proper nouns.
  */
 const EXTERNAL_PROPER_NOUNS = [
   // Payment processors
-  "paypal", "stripe", "square", "braintree", "adyen", "klarna", "plaid",
+  "paypal", "stripe", "braintree", "adyen", "klarna", "plaid",
   // Cloud platforms
-  "aws", "amazon", "azure", "google cloud", "gcp", "cloudflare",
+  "aws", "azure", "google cloud", "gcp", "cloudflare",
   // Auth providers / standards
   "oauth", "openid", "auth0", "okta", "cognito", "saml", "jwt", "jwks",
   // Databases / data
@@ -123,9 +128,9 @@ const EXTERNAL_PROPER_NOUNS = [
   // CDN / infra
   "cloudfront", "fastly", "akamai", "nginx", "vercel", "netlify",
   // Languages / runtimes (version-sensitive external behavior)
-  "node.js", "python", "ruby", "java", "go", "rust", "swift",
+  "node.js", "python", "ruby",
   // Browsers and browser APIs
-  "chrome", "chromium", "firefox", "safari", "webkit", "edge", "ie",
+  "chrome", "chromium", "firefox", "safari", "webkit",
   "internet explorer",
   // UI frameworks (external behavior / version facts)
   "react", "vue", "angular", "svelte", "next.js", "nuxt", "remix",
@@ -140,6 +145,27 @@ const EXTERNAL_PROPER_NOUNS = [
   // SaaS / third-party services
   "github", "gitlab", "bitbucket", "jira", "slack", "zendesk",
   "salesforce", "hubspot", "intercom",
+];
+
+/**
+ * WEAK external proper nouns (cycle-3 finding #3, code-review important + nit).
+ *
+ * Single-word English HOMOGRAPHS that are also vendor / product / language names:
+ * "square" (the verb / the shape vs the payments co), "go"/"rust"/"swift"/"java"
+ * (verbs / a material / an adjective / an island vs the languages), "edge"/"ie"
+ * (the noun / "i.e." vs the browsers), "amazon" (the river vs the cloud). On their
+ * own these misroute benign INTERNAL claims external ("we square the input value",
+ * "bails at the edge case"). Gated behind a CO-OCCURRENCE requirement (like
+ * WEAK_EXTERNAL_API_TERMS): they count as an external signal ONLY when ANOTHER
+ * external signal co-occurs (a strong proper noun, a strong API term, a browser
+ * term, or the external-assertion pattern). So:
+ *   "we square the input value before hashing"     → internal (no other signal)
+ *   "the function bails at the edge case"           → internal
+ *   "Square's payments API"                         → external ("payments api"... )
+ *   "deploy to the edge with Cloudflare Workers"    → external (cloudflare co-occurs)
+ */
+const WEAK_EXTERNAL_PROPER_NOUNS = [
+  "square", "go", "rust", "swift", "java", "edge", "ie", "amazon",
 ];
 
 /**
@@ -163,7 +189,7 @@ const EXTERNAL_API_TERMS = [
   "/v1/", "/v2/", "/v3/", // version-prefixed paths typical of third-party APIs
   "api key", "api secret", "api token",
   "webhook", "callback url", "redirect uri", "redirect url",
-  "access token", "refresh token", "bearer token", "bearer",
+  "access token", "refresh token", "bearer token",
   "authorization header", "authorization code",
   "rate limit", "rate-limit", "quota limit",
   "response shape", "return shape", "error shape", "error code",
@@ -249,14 +275,23 @@ const INTERNAL_ANCHOR_PHRASES = [
   // API gateway" still triggers on "our".
   "our", "our internal",
   "this repo's", "repo's",
-  // Ownership / file-system signals
+  // Ownership / file-system signals — these PHRASES ("which X owns") are genuinely
+  // about this repo's file/module structure, so they stay.
   "which domain owns", "which file owns", "who owns",
-  "which module", "which handler", "which function",
-  "which contract", "which test", "which workflow",
   // Exit code / return value of THIS module
   "return when", "returns when", "return on", "returns on",
-  "exit code", "what does", "how does",
+  "exit code",
 ];
+
+// NOTE (cycle-3 finding #1, Red Team HIGH): interrogative phrasings — "how does",
+// "what does", "what is", "which", "when", "where", "which module/handler/function/
+// contract/test/workflow" — were REMOVED from INTERNAL_ANCHOR_PHRASES. Question words
+// are NEUTRAL: they are the most natural way to phrase an EXTERNAL research question
+// ("How does Stripe construct the webhook signature?"), so they must NOT pull internal.
+// A question is classified by its CONTENT signals (proper noun / API term / local
+// symbol / path), never by its interrogative shape. Genuine repo anchors ("our",
+// "this repo", "exit code", "which X owns") remain; "which module/handler/function"
+// are dropped because a bare "which" + a generic noun carries no this-repo signal.
 
 /**
  * Internal file / path SHAPE patterns. These are STRUCTURAL shapes (file
@@ -380,8 +415,20 @@ function classify(gap) {
   const lower = trimmed.toLowerCase();
 
   // ── Step 1: Check for external PROPER NOUN signals (WORD-BOUNDARY) ────────
-  const matchedProperNoun = EXTERNAL_PROPER_NOUNS.find((noun) =>
+  // STRONG proper nouns only; WEAK homographs ("square"/"go"/"edge"/…) are gated
+  // behind co-occurrence in Step 1b (cycle-3 finding #3).
+  const matchedStrongProperNoun = EXTERNAL_PROPER_NOUNS.find((noun) =>
     boundaryMatch(lower, noun)
+  );
+  const matchedWeakProperNoun = WEAK_EXTERNAL_PROPER_NOUNS.find((noun) =>
+    boundaryMatch(lower, noun)
+  );
+  // A POSSESSIVE homograph ("square's", "amazon's") is the company, not the verb/noun —
+  // you do not write "we square's the input". So the possessive form is a STRONG signal
+  // on its own (cycle-3 finding #3: "Square's payments API" → external; "we square the
+  // input value" → internal). Matched on the lowercased text.
+  const matchedPossessiveHomograph = WEAK_EXTERNAL_PROPER_NOUNS.find((noun) =>
+    boundaryMatch(lower, noun + "'s")
   );
 
   // ── Step 2: Check for external API / protocol / version / limit terms ────
@@ -408,11 +455,22 @@ function classify(gap) {
   );
 
   // ── Step 6: Check for internal FILE / SYMBOL signals ─────────────────────
-  // (a) repo-relative path / file-naming SHAPE, (b) bare camelCase / kebab-ish
-  // local-symbol SHAPE (finding #3 — structural, NOT an enumerated symbol list).
-  const matchedFilePattern =
-    INTERNAL_FILE_PATTERNS.find((pattern) => boundaryMatch(lower, pattern)) ||
-    matchLocalSymbolShape(trimmed);
+  // Cycle-3 finding #2 (code-review): these are TWO signal STRENGTHS, not one.
+  //   (a) PATH-shaped signal — a repo-relative path / file-naming SHAPE
+  //       (INTERNAL_FILE_PATTERNS: `bin/`, `*.workflow.js`, `gsd-t-*`, `*-contract.md`).
+  //       This is a STRONG internal signal: it can OVERRIDE a co-occurring external
+  //       proper noun ("how does gsd-t-verify.workflow.js call Stripe?" → internal).
+  //   (b) bare camelCase / kebab-ish LOCAL-SYMBOL shape (matchLocalSymbolShape).
+  //       This is a WEAK internal signal: a bare camelCase token is shape-identical
+  //       to an EXTERNAL symbol ("createCharge" Stripe vs "parseConfig" this-repo),
+  //       so it pulls internal ONLY when NO external proper-noun / browser term
+  //       co-occurs. It must NEVER override a co-occurring external proper noun
+  //       (the conflict-resolution rule below).
+  const matchedPathPattern = INTERNAL_FILE_PATTERNS.find((pattern) =>
+    boundaryMatch(lower, pattern)
+  );
+  const matchedSymbolShape = matchLocalSymbolShape(trimmed);
+  const matchedFilePattern = matchedPathPattern || matchedSymbolShape;
 
   // ── Step 2b: WEAK external API term (finding #4 LOW) — counts ONLY if another
   // external signal co-occurs (proper noun / strong API term / browser term /
@@ -420,9 +478,37 @@ function classify(gap) {
   const matchedWeakApiTerm = WEAK_EXTERNAL_API_TERMS.find((term) =>
     boundaryMatch(lower, term)
   );
-  const hasOtherExternalSignal =
-    !!matchedProperNoun || !!matchedApiTerm || !!matchedBrowserTerm || !!matchedExternalAssertion;
-  const effectiveApiTerm = matchedApiTerm || (matchedWeakApiTerm && hasOtherExternalSignal ? matchedWeakApiTerm : undefined);
+
+  // STRONG external signals: a strong proper noun, a strong API term, a browser/runtime
+  // term, or the proper-noun-less assertion pattern. These are the ONLY signals that can
+  // promote a WEAK signal (weak API term OR weak homograph proper noun). Two weak signals
+  // together do NOT promote each other (cycle-3 finding #3: "square endpoint" stays
+  // internal — both are weak homographs/generics).
+  const hasStrongExternalSignal =
+    !!matchedStrongProperNoun ||
+    !!matchedPossessiveHomograph ||
+    !!matchedApiTerm ||
+    !!matchedBrowserTerm ||
+    !!matchedExternalAssertion;
+
+  // A weak homograph proper noun ("square"/"go"/"edge"/…) is promoted to a real proper
+  // noun when: a strong external signal co-occurs, OR it appears in POSSESSIVE form
+  // ("Square's …") which is unambiguously the company (cycle-3 finding #3).
+  const effectiveProperNoun =
+    matchedStrongProperNoun ||
+    matchedPossessiveHomograph ||
+    (matchedWeakProperNoun && hasStrongExternalSignal ? matchedWeakProperNoun : undefined);
+
+  // A weak generic API word ("endpoint"/"quota"/…) counts ONLY when a strong external
+  // signal OR an effective (possibly-promoted) proper noun co-occurs.
+  const effectiveApiTerm =
+    matchedApiTerm ||
+    (matchedWeakApiTerm && (hasStrongExternalSignal || !!effectiveProperNoun)
+      ? matchedWeakApiTerm
+      : undefined);
+
+  // The effective proper noun the rest of the decision logic uses.
+  const matchedProperNoun = effectiveProperNoun;
 
   // ── Decision logic ────────────────────────────────────────────────────────
   //
@@ -453,11 +539,37 @@ function classify(gap) {
   //     → internal (the question is about how this repo implements it)
 
   const hasInternalAnchor = !!matchedAnchor;
-  const hasInternalFile = !!matchedFilePattern;
+  // Cycle-3 finding #2 — two internal-signal STRENGTHS (see Step 6):
+  //   hasInternalPath  = STRONG: a repo-relative path / file-naming shape. MAY override
+  //                      a co-occurring external proper noun.
+  //   hasInternalSymbol= WEAK: a bare camelCase / kebab local-symbol shape. May NOT
+  //                      override a co-occurring external proper noun (shape-identical to
+  //                      an external symbol). Pulls internal only when NO external signal.
+  const hasInternalPath = !!matchedPathPattern;
+  const hasInternalSymbol = !!matchedSymbolShape;
+  const hasInternalFile = hasInternalPath || hasInternalSymbol;
   const hasExternalApiTerm = !!effectiveApiTerm;
   const hasExternalBrowserTerm = !!matchedBrowserTerm;
   const hasExternalProperNoun = !!matchedProperNoun;
   const hasExternalAssertion = !!matchedExternalAssertion;
+
+  // ── CONFLICT-RESOLUTION RULE (cycle-3, the durable fix) ────────────────────
+  // A text classifier CANNOT tell external `createCharge` (Stripe) from internal
+  // `parseConfig` (this repo) by SHAPE alone — both are identical camelCase. So
+  // when signals CONFLICT, the SAFE default is FAIL-TOWARD-EXTERNAL (research), NOT
+  // internal: a silent miss defeats the milestone; over-research is bounded cost.
+  //
+  // An external proper noun (or browser/runtime term) may be OVERRIDDEN to internal
+  // ONLY by a PATH-SHAPED internal signal (hasInternalPath) OR an explicit internal
+  // anchor (hasInternalAnchor — handled in Case A above). A BARE camelCase/kebab
+  // symbol shape (hasInternalSymbol) must NEVER override a co-occurring external
+  // proper noun. So:
+  //   "react useState returns a stateful value"            → external (proper noun beats bare symbol)
+  //   "the stripe createCharge call returns a chargeId"    → external
+  //   "how does gsd-t-verify.workflow.js call the api?"     → internal (PATH overrides)
+  //   "does parseConfig clamp the model in this repo?"     → internal (anchor — Case A)
+  //   bare "parseConfig clamps the model" (no external)     → internal (Case I, by shape)
+  const internalOverridesProperNoun = hasInternalPath; // anchor handled in Case A
 
   // Case A: Internal ANCHOR present → INTERNAL (internal signal WINS — finding #4).
   // An explicit "this repo / our / internal / exit code / which-owns" anchor means the
@@ -499,28 +611,33 @@ function classify(gap) {
     };
   }
 
-  // Case D: External proper noun alone (no internal anchor, no overriding internal file) → EXTERNAL
-  // (internal file/symbol shape takes precedence over a bare proper-noun mention when the
-  // question is clearly about this repo's own code)
-  if (hasExternalProperNoun && !hasInternalFile) {
+  // Case D: External proper noun NOT overridden by a PATH-shaped internal signal → EXTERNAL.
+  // Cycle-3 finding #2: a bare camelCase/kebab SYMBOL shape does NOT override a co-occurring
+  // proper noun (shape-identical to an external symbol — "createCharge" vs "parseConfig").
+  // Only a PATH-shaped signal (internalOverridesProperNoun) sends a proper-noun claim internal.
+  // So "react useState ..." / "the stripe createCharge ... returns chargeId" → external here.
+  if (hasExternalProperNoun && !internalOverridesProperNoun) {
     return {
       ok: true,
       gap: trimmed,
       class: "external",
       route: "web",
-      reason: `External: third-party proper noun ("${matchedProperNoun}") detected — concerns a system outside this repo`,
+      reason: `External: third-party proper noun ("${matchedProperNoun}") detected — concerns a system outside this repo (no path-shaped internal signal overrides it; a bare symbol shape does not)`,
     };
   }
 
-  // Case E: External proper noun + internal file/symbol, NO external API term
-  // → question is about how THIS repo uses the tool → INTERNAL
-  if (hasExternalProperNoun && hasInternalFile && !hasExternalApiTerm) {
+  // Case E: External proper noun + PATH-shaped internal signal, NO external API term
+  // → question is about how THIS repo uses the tool → INTERNAL.
+  // (Reached only when internalOverridesProperNoun is true, i.e. a real repo path /
+  // *.workflow.js / bin/* / gsd-t-* shape co-occurs — e.g. "how does
+  // gsd-t-verify.workflow.js call Stripe?")
+  if (hasExternalProperNoun && internalOverridesProperNoun && !hasExternalApiTerm) {
     return {
       ok: true,
       gap: trimmed,
       class: "internal",
       route: "grep",
-      reason: `Internal: despite mention of "${matchedProperNoun}", internal file/symbol "${matchedFilePattern}" anchors this to this repo's own implementation`,
+      reason: `Internal: despite mention of "${matchedProperNoun}", path-shaped internal signal "${matchedPathPattern}" anchors this to this repo's own implementation`,
     };
   }
 

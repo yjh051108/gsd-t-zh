@@ -1,12 +1,38 @@
 # Contract: Auto-Research Gate + Web-Research Stage (M89)
 
-## Version: 1.2.1
+## Version: 1.2.2
 ## Status: STABLE
 ## Owner: m89-d2-research-stage-and-contract
 ## Consumers: m89-d1-research-classifier-core, m89-d3-wiring-upper-phase-and-gate, m89-d4-wiring-worker-workflows
 ## Created: 2026-06-18 (M89 partition)
 
 ## Changelog
+- **v1.2.2 (2026-06-19 — M89 verify cycle-3, 1 Red Team HIGH + 2 code-review important + 1 nit):**
+  hardens §1.1 with an explicit **CONFLICT-RESOLUTION RULE** for the classifier. A text
+  classifier cannot tell external `createCharge` (Stripe) from internal `resolveProfile`
+  (this repo) by SHAPE alone, so when signals CONFLICT the SAFE default is
+  **FAIL-TOWARD-EXTERNAL** (research), never internal (a silent miss defeats the milestone;
+  over-research is bounded cost). Three classifier fixes, no envelope-shape change:
+  - **finding #1 (Red Team HIGH):** interrogative phrasings ("how does"/"what does"/"what
+    is"/"which"/"when"/"where" + "which module/handler/function/contract/test/workflow") were
+    REMOVED from the internal-anchor set. Question words are NEUTRAL — the natural way to phrase
+    an EXTERNAL research question — and must NOT pull internal. "How does Stripe construct the
+    webhook signature?" → external; genuine anchors ("our"/"this repo"/"exit code"/"which X
+    owns") still → internal.
+  - **finding #2 (code-review important):** a bare camelCase/kebab LOCAL-SYMBOL shape may NOT
+    override a co-occurring external proper noun (shape-identical). Only a PATH-shaped internal
+    signal (a repo path / `*.workflow.js` / `bin/*` / `gsd-t-*`) or an explicit anchor overrides
+    a proper noun. A bare symbol pulls internal ONLY when NO external proper-noun/browser term
+    co-occurs. "react useState …" / "the stripe createCharge … returns chargeId" → external;
+    bare "resolveProfile …" (no external) → internal by shape (HO-I4 unchanged).
+  - **finding #3 (code-review important) + nit:** single-word English HOMOGRAPHS
+    ("square"/"go"/"rust"/"swift"/"java"/"edge"/"ie"/"amazon") moved to WEAK proper nouns —
+    external only when another strong external signal co-occurs (or in possessive company form,
+    "Square's …"). "we square the input value" / "bails at the edge case" → internal. Bare
+    "bearer" demoted to weak (requires "bearer token").
+  - Held-out corpus grown to **14 items (7 external / 7 internal)** adding the previously-
+    uncovered classes (interrogative external, react/stripe camelCase external, square/edge
+    homograph internal). Determinism + CLASSIFY/ENFORCE invariants unchanged.
 - **v1.2.1 (2026-06-18 — M89 verify cycle-2 HONESTY CORRECTION, MEDIUM):** the v1.2.0
   §6.5 final bullet + §1.3 type-3 claimed a DETERMINISTIC code path that forces an
   external/time-varying claim to GUESSED:stale "by the wiring" ("the one place code, not
@@ -130,6 +156,23 @@ deterministic and feature-based:
   `test/fixtures/m89-heldout-corpus.json`, INCLUDING the proper-noun-LESS external claim HO-E4 and the
   symbol-only internal claim HO-I4) proves generalization — a classifier passing the seen 13 but
   failing any held-out item FAILS A1.
+
+**Conflict-resolution rule (v1.2.2 — the durable fix).** A text classifier CANNOT tell external
+`createCharge` (Stripe) from internal `resolveProfile` (this repo) by SHAPE alone — they are
+identical camelCase. So when signals CONFLICT (a vendor proper-noun AND an ambiguous symbol/question
+shape both present), the SAFE default is **FAIL-TOWARD-EXTERNAL (research), NOT internal** — a silent
+miss defeats the milestone; over-research is bounded cost. Concretely:
+
+- An external **proper noun** (or browser/runtime term) may be overridden to internal ONLY by (a) a
+  **PATH-SHAPED internal signal** (an `INTERNAL_FILE_PATTERNS` hit — a real repo path / `*.workflow.js`
+  / `bin/*` / `gsd-t-*` shape) OR (b) an **explicit internal anchor** ("our" / "our internal" / "this
+  repo" / "this repo's" / "exit code" / "which X owns").
+- A **bare camelCase/kebab symbol shape** (`matchLocalSymbolShape`) must NEVER override a co-occurring
+  external proper noun; it pulls internal ONLY when NO external proper-noun/browser term co-occurs.
+- **Interrogative phrasing** (a question word — "how does"/"what is"/"which"/…) is NEUTRAL and must
+  NEVER pull internal — it is the most natural way to phrase an external research question.
+- Single-word **homographs** that are also vendor/language names ("square"/"go"/"edge"/…) are an
+  external signal only when a strong external signal co-occurs (or in possessive company form).
 
 ### 1.2 Class → route mapping
 

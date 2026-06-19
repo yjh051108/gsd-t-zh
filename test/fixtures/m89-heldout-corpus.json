@@ -64,6 +64,54 @@
       "expectedClass": "internal",
       "expectedRoute": "grep",
       "featureSignal": "SYMBOL-ONLY internal: a bare local symbol (resolveProfile) with NO repo-relative path and NO 'this repo' anchor — still internal because the symbol is grep-able local code, not an external system. Pairs with HO-E4 (proper-noun-less external) to prove the classifier decides by feature class (local-symbol vs external-assertion), not by surface keywords."
+    },
+    {
+      "id": "HO-E5",
+      "source": "held-out (cycle-3 finding #1 — interrogative external)",
+      "gap": "How does Stripe construct the webhook signature-verification header?",
+      "expectedClass": "external",
+      "expectedRoute": "web",
+      "featureSignal": "Interrogative phrasing ('how does') is NEUTRAL — the most natural way to phrase an EXTERNAL research question. The question word must NOT pull internal; the Stripe proper noun + webhook term make this external. Cycle-2 wrongly listed 'how does' as an internal anchor (Red Team HIGH)."
+    },
+    {
+      "id": "HO-E6",
+      "source": "held-out (cycle-3 finding #2 — camelCase symbol does NOT override a proper noun)",
+      "gap": "The stripe createCharge call returns a chargeId field on success.",
+      "expectedClass": "external",
+      "expectedRoute": "web",
+      "featureSignal": "A bare camelCase symbol (createCharge/chargeId) is shape-identical to a this-repo symbol, so it must NEVER override the co-occurring external proper noun (stripe). FAIL-TOWARD-EXTERNAL: only a PATH-shaped internal signal or an explicit anchor overrides a proper noun — a bare symbol does not."
+    },
+    {
+      "id": "HO-E7",
+      "source": "held-out (cycle-3 finding #2 — library camelCase external)",
+      "gap": "react useState returns a stateful value and a setter function.",
+      "expectedClass": "external",
+      "expectedRoute": "web",
+      "featureSignal": "External library (react) proper noun + a bare camelCase symbol (useState). The proper noun wins over the bare symbol shape — external. (A keyword router treating any camelCase as this-repo would silently miss this.)"
+    },
+    {
+      "id": "HO-I5",
+      "source": "held-out (cycle-3 finding #3 — homograph internal)",
+      "gap": "We square the input value before hashing it in the digest helper.",
+      "expectedClass": "internal",
+      "expectedRoute": "grep",
+      "featureSignal": "'square' is a single-word English HOMOGRAPH (the verb here) that is also a vendor name. With NO co-occurring strong external signal it must NOT route external — it is this repo's own code. Cycle-2 listed bare 'square' as a strong proper noun (code-review important)."
+    },
+    {
+      "id": "HO-I6",
+      "source": "held-out (cycle-3 finding #3 — homograph internal)",
+      "gap": "The retry loop bails at the edge case where the queue is empty.",
+      "expectedClass": "internal",
+      "expectedRoute": "grep",
+      "featureSignal": "'edge' is a homograph (the noun 'edge case' here) that is also a browser name. With no co-occurring external signal it stays internal. Pairs with HO-I5 to prove the homograph gating is by co-occurrence, not by surface token."
+    },
+    {
+      "id": "HO-I7",
+      "source": "held-out (cycle-3 finding #2 — camelCase symbol, no external signal → internal by shape)",
+      "gap": "buildTaskGraph orders the domains topologically before fan-out.",
+      "expectedClass": "internal",
+      "expectedRoute": "grep",
+      "featureSignal": "A bare camelCase symbol (buildTaskGraph) with NO co-occurring external proper noun / API term routes internal by shape (this repo's grep-able code). Contrasts with HO-E6/HO-E7 where a proper noun co-occurs and the bare symbol does NOT override it."
     }
   ]
 }
