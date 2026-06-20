@@ -347,9 +347,9 @@ async function runStatedClaimsPipeline(projectDir, phaseName, phaseResult, state
       }
     }
 
-    // Classify the claim via the D1 classifier.
+    // Classify the claim via the D1 classifier (--json for parity with the worker workflows).
     const classifyResult = await runCli(
-      projectDir, "research-gate", ["classify", claimText], "gsd-t-research-gate.cjs",
+      projectDir, "research-gate", ["classify", claimText, "--json"], "gsd-t-research-gate.cjs",
       "classify-claim", true, "Phase"
     );
     const envelope = classifyResult.envelope || {};
@@ -461,60 +461,11 @@ async function runStatedClaimsPipeline(projectDir, phaseName, phaseResult, state
         log(`m89: internal claim "${claimKey}" resolved via grep (no web, no marker)`);
         processed.push({ claimKey, action: "resolved-grep", class: "internal", excerpt: grepResult.excerpt });
       } else {
-        // §5.1 Escalate to external: grep returned nothing → treat as external.
+        // §5.1 Escalate to external: grep returned nothing. Reuse doExternal() (same
+        // marker→research→cite→flip path, incl. the key: trailer + fallback artifact)
+        // instead of duplicating it (matches execute/quick/debug).
         log(`m89: internal claim "${claimKey}" grep EMPTY → escalating to external (§5.1)`);
-        const escalationMarker = `<!-- auto-research-claim: class=external key=${claimKey} status=uncited -->`;
-        // FAIL-CLOSED: write the escalation marker to the real OR fallback artifact (always).
-        await agent(
-          [
-            `Create the parent directory if needed, then append the following HTML comment marker on a NEW LINE at the END of the file at "${externalArtifact}" (create the file if it does not exist):`,
-            ``,
-            escalationMarker,
-            ``,
-            `Return JSON: { "ok": true }`,
-          ].join("\n"),
-          { label: "marker-write-escalated", phase: "Phase", schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } }, model: "haiku" }
-        ).catch(() => null);
-
-        const escalatedResearch = await agent(
-          [
-            `You are the auto-research agent (auto-research-contract §2). Your SOLE job is to verify ONE ambiguous claim (initially classified internal but grep returned NOTHING — escalated to external per §5.1).`,
-            ``,
-            `FIRST read your protocol via the Read tool: templates/prompts/research-subagent.md`,
-            ``,
-            `Claim to verify: "${claimText}"`,
-            `Normalized claim-key: "${claimKey}"`,
-            ``,
-            `Use WebSearch + WebFetch to find authoritative sources. Emit a ## Verified Facts (auto-research) block per §3 format. On every fact line append the trailer \`key: ${claimKey}\` so the §7 gate matches by claim-key (Red Team MEDIUM #2).`,
-            `Return JSON per the schema.`,
-          ].join("\n"),
-          { label: "research-stage", phase: "Phase", schema: RESEARCH_RESULT_SCHEMA, model: "fable" }
-        ).catch((e) => ({ ok: false, gapKey: claimKey, reason: `research agent error: ${e && e.message}` }));
-
-        if (escalatedResearch && escalatedResearch.ok && escalatedResearch.citedBlock) {
-          await agent(
-            [
-              `Append the following cited Verified-Facts block on a NEW LINE at the END of the file at "${externalArtifact}":`,
-              ``,
-              escalatedResearch.citedBlock,
-              ``,
-              `Then FIND and REPLACE the marker:`,
-              `  <!-- auto-research-claim: class=external key=${claimKey} status=uncited -->`,
-              `with:`,
-              `  <!-- auto-research-claim: class=external key=${claimKey} status=cited -->`,
-              ``,
-              `Return JSON: { "ok": true }`,
-            ].join("\n"),
-            { label: "cite-write-and-flip", phase: "Phase", schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } }, model: "haiku" }
-          ).catch(() => null);
-          log(`m89: escalated claim "${claimKey}" cited via web research (§5.1)`);
-          processed.push({ claimKey, action: "cited-after-escalation", class: "external-escalated" });
-        } else {
-          const reason = (escalatedResearch && escalatedResearch.reason) || "escalated research returned no cited block";
-          log(`m89: escalated research STAGE-FAILURE for claim "${claimKey}": ${reason}`);
-          errors.push({ claimKey, error: `escalated research failure: ${reason}` });
-          processed.push({ claimKey, action: "research-failed", class: "external-escalated", reason });
-        }
+        await doExternal();
       }
     };
 

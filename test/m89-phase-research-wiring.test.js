@@ -684,11 +684,16 @@ describe("T3.6 — Ambiguous-escalation path (§5.1): grep-empty → escalate to
     );
   });
 
-  test("phase workflow writes a §7 marker for escalated claims (same as external direct path)", () => {
-    // Escalated claims also write an uncited marker before research
+  test("phase workflow writes a §7 marker for escalated claims (via the shared doExternal() path)", () => {
+    // v1.3.3 dedup: escalated claims go through doExternal() (which writes the uncited marker
+    // via "marker-write-uncited") instead of a separate "marker-write-escalated" path.
     assert.ok(
-      phaseSource.includes("marker-write-escalated") || phaseSource.includes("escalationMarker"),
-      "Phase workflow must write a §7 marker for escalated (ambiguous→external) claims"
+      /grep EMPTY[\s\S]{0,160}await doExternal\(\)/.test(phaseSource),
+      "Phase workflow's §5.1 escalation must call doExternal() — which writes the §7 uncited marker"
+    );
+    assert.ok(
+      phaseSource.includes("marker-write-uncited"),
+      "doExternal() must write the §7 uncited marker (marker-write-uncited) for escalated claims"
     );
   });
 
@@ -737,25 +742,21 @@ describe("T3.7 — Research stage model: bare 'fable' literal (NOT overrides[...
     );
   });
 
-  test("both research-stage agents (direct + escalated) use bare model: 'fable'", () => {
-    // There are 2 research-stage agent calls: one for direct external, one for escalated.
-    // Both must use model: "fable".
+  test("every research-stage agent uses bare model: 'fable'; the §5.1 escalation reuses doExternal()", () => {
+    // v1.3.3 dedup: the grep-empty escalation now CALLS doExternal() (one shared research-stage
+    // agent) instead of re-inlining a second research-stage call. So there is ≥1 research-stage
+    // agent and EVERY one is model: "fable". The escalation no longer duplicates the path.
     const allResearchStageRe = /label:\s*["']research-stage["'][^}]*model\s*:\s*["']([^"']+)["']/gs;
     const matches = [...phaseSource.matchAll(allResearchStageRe)];
-
-    // At least 2 research-stage calls must exist
-    assert.ok(
-      matches.length >= 2,
-      `Must have at least 2 research-stage agent calls (direct + escalated), found ${matches.length}`
-    );
-
+    assert.ok(matches.length >= 1, `Must have ≥1 research-stage agent call, found ${matches.length}`);
     for (const match of matches) {
-      assert.equal(
-        match[1],
-        "fable",
-        `research-stage model must be "fable" (bare literal), got "${match[1]}"`
-      );
+      assert.equal(match[1], "fable", `research-stage model must be "fable" (bare literal), got "${match[1]}"`);
     }
+    // The §5.1 grep-empty escalation must reuse doExternal() (not re-inline a research-stage).
+    assert.ok(
+      /grep EMPTY[\s\S]{0,160}await doExternal\(\)/.test(phaseSource),
+      "the phase §5.1 grep-empty escalation must call doExternal() (dedup — no re-inlined research path)"
+    );
   });
 
   test("research-stage labels do NOT use the ?? override form for 'research' key", () => {

@@ -131,11 +131,27 @@
     },
     {
       "id": "HO-I8",
-      "source": "held-out (v1.3.2 — concrete repo PATH beats a co-occurring vendor)",
+      "source": "held-out (v1.3.3 — repo PATH co-occurring with a vendor → AMBIGUOUS, NOT internal)",
       "gap": "which domain owns templates/workflows/gsd-t-verify.workflow.js, the one that calls the Stripe API?",
-      "expectedClass": "internal",
-      "expectedRoute": "grep",
-      "featureSignal": "A CONCRETE REPO PATH (templates/workflows/gsd-t-verify.workflow.js / *.workflow.js / gsd-t-*) is the ONLY truly-internal string fact — a path is unambiguous and CANNOT also be an external claim. It beats even a co-occurring strong external signal (Stripe + api). Contrasts with HO-E8/HO-E9 where the anchor is a generic phrase, not a path."
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "v1.3.3 FINAL rule: there is NO string-fact that is exclusively internal — a single claim can carry BOTH a real repo path AND a real external-API subject (this one has the path templates/workflows/gsd-t-verify.workflow.js AND Stripe+API). The mechanical classifier NEVER overrides a strong external signal — not even with a path — so this is AMBIGUOUS -> LLM judge -> research. Was 'internal' under the obsolete v1.3.2 'concrete path beats strong-external' override that re-opened the silent miss (cycle 6)."
+    },
+    {
+      "id": "HO-E10",
+      "source": "held-out (v1.3.3 — repo PATH + external vendor, the cycle-6 silent-miss closer)",
+      "gap": "Wire the Stripe OAuth token refresh into templates/workflows/gsd-t-execute.workflow.js",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "BOTH a concrete repo path (templates/workflows/gsd-t-execute.workflow.js) AND a strong external signal (Stripe + OAuth). A claim can be about both at once. The v1.3.2 'path wins outright' rule routed this internal/grep -> the external Stripe OAuth subject was never researched (the cycle-6 silent miss). v1.3.3: strong-external + any path/anchor -> AMBIGUOUS -> judge -> research. The Red Team noted NO prior fixture paired a path with an external vendor — why this shipped uncaught."
+    },
+    {
+      "id": "HO-E11",
+      "source": "held-out (v1.3.3 — repo PATH + external vendor)",
+      "gap": "Update bin/handler.js to call the Stripe API webhook endpoint",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "Concrete repo path (bin/handler.js) AND strong external (Stripe + api + webhook + endpoint). Path does NOT override the external signal -> AMBIGUOUS -> judge -> research. Pairs with HO-E10."
     }
   ]
 }

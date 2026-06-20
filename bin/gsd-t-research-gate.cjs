@@ -88,37 +88,30 @@ function boundaryMatch(lowerText, token) {
 // question phrasing) is NOT a string fact → it falls through to ambiguous.
 
 /**
- * DECISIVE this-repo anchors — SPECIFIC string facts that unambiguously name THIS repo's
- * own code/structure. These WIN outright (internal) even if a vendor proper-noun + API
- * term also co-occur: "does the resolver clamp the model in this repo?" is about this
- * repo regardless of any external mention. (Interrogative words are deliberately ABSENT —
- * they are neutral and the natural way to phrase an external research question.)
+ * This-repo anchor phrases. An anchor signals internal ONLY when NO strong external signal
+ * (a real vendor proper-noun + API term) co-occurs (see the final decision rule in
+ * `classify()`). An anchor NEVER overrides a strong external signal — a generic English
+ * phrase like "exit code" / "who owns" / "this file" can appear in a sentence whose real
+ * subject is an external vendor ("what exit code does the Stripe API return?"), so it is not
+ * a string fact that the claim is internal. (There is no "decisive" vs "broad" split: since
+ * NO anchor overrides a strong external signal, the distinction is behaviorally dead — one
+ * flat list. Interrogative words are deliberately ABSENT — neutral, the natural way to phrase
+ * an external research question.)
  */
-const DECISIVE_INTERNAL_ANCHORS = [
+const INTERNAL_ANCHORS = [
   "this repo", "this repo's", "repo's",
-  "our repo", "this codebase", "our codebase",
+  "our repo", "the repo",
+  "this codebase", "our codebase",
   "in this project", "our project",
-  "this module", "this file",
-  "in the codebase",
-  "our internal",
-  // ownership / file-system phrasings genuinely about this repo's structure
-  "which domain owns", "which file owns", "who owns",
-  // exit code / return value of THIS module
-  "exit code",
-];
-
-/**
- * BROAD this-repo anchors — bare/generic phrases ("our", "the repo", "the existing", …).
- * They signal internal ONLY when NO strong external signal co-occurs. When an unambiguous
- * vendor proper-noun + API term co-occurs, a bare anchor is a CONFLICT, not a string fact:
- * "Our users authenticate via the Auth0 OAuth endpoint" is NOT decisively about this repo
- * just because it says "our" → the conflict routes to AMBIGUOUS (→ LLM judge → research),
- * never silently internal (Red Team MEDIUM).
- */
-const BROAD_INTERNAL_ANCHORS = [
-  "the repo", "our module", "our file",
+  "this module", "our module",
+  "this file", "our file",
   "the existing", "our existing",
-  "our",
+  "in the codebase",
+  "our", "our internal",
+  // ownership / file-system phrasings about this repo's structure
+  "which domain owns", "which file owns", "who owns",
+  // exit code / return value of a module
+  "exit code",
 ];
 
 /**
@@ -205,68 +198,67 @@ function classify(gap) {
   const lower = trimmed.toLowerCase();
 
   // ── String-fact signals ────────────────────────────────────────────────────
-  // A CONCRETE REPO PATH (a real path/file shape / gsd-t-* tool name) is the ONLY
-  // truly-internal string fact: a path is unambiguous — it cannot ALSO be an external
-  // claim. An ANCHOR PHRASE ("this repo" / "our internal" / "exit code" / "who owns") is
-  // a WEAKER signal: it is a generic English phrase that can appear in a sentence whose
-  // real subject is an external vendor ("what exit code does the Stripe API return?"), so
-  // an anchor may NOT override a strong external signal.
   const matchedPath = INTERNAL_FILE_PATTERNS.find((p) => boundaryMatch(lower, p));
-  const matchedAnchor =
-    DECISIVE_INTERNAL_ANCHORS.find((p) => boundaryMatch(lower, p)) ||
-    BROAD_INTERNAL_ANCHORS.find((p) => boundaryMatch(lower, p));
+  const matchedAnchor = INTERNAL_ANCHORS.find((p) => boundaryMatch(lower, p));
 
   // STRONG external string fact: an unambiguous vendor proper-noun AND an API/protocol term.
+  // BOTH are required — a bare homograph or a bare URL-looking token cannot make a claim
+  // strong-external (the vendor list is multi-char proper nouns only, no homographs).
   const matchedVendor = EXTERNAL_VENDOR_NOUNS.find((v) => boundaryMatch(lower, v));
   const matchedApiTerm = EXTERNAL_API_TERMS.find((t) => boundaryMatch(lower, t));
   const hasStrongExternal = !!matchedVendor && !!matchedApiTerm;
 
-  // ── Decision priority (the durable, class-closing rule — string facts only) ──
+  // ── FINAL DECISION RULE (the structural resolution of the 7-cycle silent-miss class) ──
   //
-  // 1. CONCRETE REPO PATH → internal (decisive — a path is a path; wins over everything).
-  // 2. STRONG EXTERNAL signal present → at LEAST ambiguous. NO anchor (decisive OR broad)
-  //    may override it: strong-external + ANY anchor → AMBIGUOUS; strong-external + no
-  //    anchor → external. (A generic English phrase can NEVER again route an
-  //    external-vendor claim internal — the silent-miss class is closed here.)
-  // 3. Anchor present, NO strong external → internal.
-  // 4. else → ambiguous (→ LLM judge → uncertain→research).
+  // `internal` is returned ONLY when there is ZERO strong-external signal. The mechanical
+  // classifier NEVER overrides an external signal with anything — not a path, not "this
+  // repo", not anything. There is no string-fact that is exclusively internal (a single
+  // claim can carry BOTH a real repo path AND a real external-API subject at once — e.g.
+  // "wire the Stripe OAuth refresh into gsd-t-execute.workflow.js"), so every "wins
+  // outright → internal" override re-opens the silent miss. Removing ALL override rules
+  // closes the class by construction. The cost is more ambiguous→judge calls — the safe
+  // direction (the judge researches when unsure; it never silently guesses internal).
+  //
+  //   hasStrongExternal + (any path/anchor) → ambiguous
+  //   hasStrongExternal + nothing else      → external
+  //   NO strong external + (path OR anchor) → internal
+  //   else                                  → ambiguous
 
-  // 1. Concrete repo path — the only decisive-internal string fact.
-  if (matchedPath) {
-    return {
-      ok: true, gap: trimmed, class: "internal", route: "grep",
-      reason: `Internal string-fact: concrete repo path/file/tool shape "${matchedPath}" — a path is unambiguous, this concerns this repo's own files (beats any external signal)`,
-    };
-  }
-
-  // 2. Strong external signal — no anchor may override it.
   if (hasStrongExternal) {
-    if (matchedAnchor) {
+    if (matchedPath || matchedAnchor) {
+      const co = matchedPath ? `repo path "${matchedPath}"` : `anchor "${matchedAnchor}"`;
       return {
         ok: true, gap: trimmed, class: "ambiguous", route: "judge",
-        reason: `Ambiguous CONFLICT: anchor "${matchedAnchor}" co-occurs with a strong external signal (vendor "${matchedVendor}" + API term "${matchedApiTerm}") — a generic anchor phrase cannot override a strong external signal; the LLM judge decides (uncertain → research)`,
+        reason: `Ambiguous: a strong external signal (vendor "${matchedVendor}" + API term "${matchedApiTerm}") co-occurs with an internal ${co} — the mechanical classifier NEVER overrides an external signal (a claim can be about BOTH at once); the LLM judge decides (uncertain → research)`,
       };
     }
     return {
       ok: true, gap: trimmed, class: "external", route: "web",
-      reason: `External string-fact: vendor proper noun "${matchedVendor}" + API/protocol term "${matchedApiTerm}" (no internal anchor/path) — concerns an external system's contract`,
+      reason: `External string-fact: vendor proper noun "${matchedVendor}" + API/protocol term "${matchedApiTerm}" (no internal path/anchor) — concerns an external system's contract`,
     };
   }
 
-  // 3. Anchor present, NO strong external → internal (this-repo signal stands).
+  // No strong external signal at all → a concrete repo path or this-repo anchor is decisive
+  // internal (there is nothing external to override).
+  if (matchedPath) {
+    return {
+      ok: true, gap: trimmed, class: "internal", route: "grep",
+      reason: `Internal string-fact: repo path/file/tool shape "${matchedPath}" and NO strong external signal — concerns this repo's own files`,
+    };
+  }
   if (matchedAnchor) {
     return {
       ok: true, gap: trimmed, class: "internal", route: "grep",
-      reason: `Internal string-fact: this-repo anchor "${matchedAnchor}" with no co-occurring strong external signal — concerns this repo's own code/structure`,
+      reason: `Internal string-fact: this-repo anchor "${matchedAnchor}" and NO strong external signal — concerns this repo's own code/structure`,
     };
   }
 
-  // 4. EVERYTHING ELSE is AMBIGUOUS. Placing it would require JUDGMENT, not a string fact —
-  //    that is the LLM's call, NOT regex's. The wiring routes ambiguous → LLM judge; if the
-  //    LLM is not confident, the claim is RESEARCHED (uncertain → verify, never guess).
+  // EVERYTHING ELSE is AMBIGUOUS — no string fact at all (semantic placement is the LLM's
+  // call, not regex's). The wiring routes ambiguous → LLM judge; if the LLM is not
+  // confident, the claim is RESEARCHED (uncertain → verify, never guess).
   return {
     ok: true, gap: trimmed, class: "ambiguous", route: "judge",
-    reason: "Ambiguous — no concrete repo path, no this-repo anchor, no strong external string fact. Semantic placement requires judgment, so the LLM judge decides; if not confident, the claim is researched (uncertain → verify, never guess-internal)",
+    reason: "Ambiguous — no strong external signal, no concrete repo path, no this-repo anchor. Semantic placement requires judgment, so the LLM judge decides; if not confident, the claim is researched (uncertain → verify, never guess-internal)",
   };
 }
 

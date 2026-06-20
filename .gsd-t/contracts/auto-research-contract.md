@@ -1,12 +1,39 @@
 # Contract: Auto-Research Gate + Web-Research Stage (M89)
 
-## Version: 1.3.2
+## Version: 1.3.3
 ## Status: STABLE
 ## Owner: m89-d2-research-stage-and-contract
 ## Consumers: m89-d1-research-classifier-core, m89-d3-wiring-upper-phase-and-gate, m89-d4-wiring-worker-workflows
 ## Created: 2026-06-18 (M89 partition)
 
 ## Changelog
+- **v1.3.3 (2026-06-20 — M89 FINAL classifier rule: remove ALL "wins outright → internal" overrides, PATCH):**
+  the silent-miss class is STRUCTURAL — over 7 verify cycles, every "X is decisively internal" override
+  re-opened it, because a single claim can carry BOTH a real repo path AND a real external-API subject at
+  once ("wire the Stripe OAuth refresh into `gsd-t-execute.workflow.js`"). The v1.3.2 "concrete path beats
+  strong-external" rule did it again (cycle 6): such a claim routed internal/grep and the external subject
+  was never researched. **There is NO string-fact that is exclusively internal — not even a path.** So ALL
+  override rules are removed.
+  - **§1.1 final decision rule (replaces the 4-step priority):** `internal` is returned ONLY when there is
+    ZERO strong-external signal. **If `hasStrongExternal` (an unambiguous vendor proper-noun + API/protocol
+    term), the result is NEVER `internal`** — a co-occurring path/anchor → `ambiguous` (→ judge →
+    uncertain→research); nothing else → `external`. Else (no strong external): a concrete path or this-repo
+    anchor → `internal`; else → `ambiguous`. The mechanical classifier never overrides an external signal
+    with anything — that removes the entire silent-miss class by construction (no override rule exists to
+    exploit). The cost is more ambiguous→judge calls — the safe direction.
+  - **Corpus:** added held-out rows pairing a repo PATH with a strong external vendor → ambiguous (HO-E10
+    "wire the Stripe OAuth refresh into gsd-t-execute.workflow.js"; HO-E11 "update bin/handler.js to call
+    the Stripe API webhook endpoint"); re-labeled HO-I8 (path + Stripe) internal→ambiguous. The Red Team
+    noted NO prior fixture paired a path with an external vendor — why cycle 6 shipped uncaught.
+  - **Anchor lists COLLAPSED** to one flat `INTERNAL_ANCHORS` (the DECISIVE/BROAD split is behaviorally
+    dead — neither overrides a strong external signal). Stale `DECISIVE_INTERNAL_ANCHORS` docstring removed.
+  - **LOW (homograph/URL false-external):** `hasStrongExternal` requires a genuine vendor proper-noun
+    (multi-char, homograph-free list) AND an API term — a bare homograph or a bare URL-looking token can
+    NEVER make a claim strong-external on its own. (Already structurally true: the vendor noun is the gate;
+    documented + asserted, no list change needed.)
+  - **nits:** phase §5.1 grep-empty escalation now CALLS `doExternal()` (dedup, matching
+    execute/quick/debug — keeps the `key:` trailer + fallback artifact in sync); phase classify invocation
+    passes `--json` for parity with the worker workflows.
 - **v1.3.2 (2026-06-20 — M89 re-verify: the silent-miss class re-emerged via DECISIVE anchors, PATCH):**
   the v1.3.1 fail-closed fix worked, but the silent-miss class re-emerged through a path the v1.3.1
   conflict rule didn't cover — DECISIVE anchors. `classify()` tested `DECISIVE_INTERNAL_ANCHORS` FIRST and
@@ -261,26 +288,28 @@ The classifier returns one of **THREE** results:
   (shape-identical to an external symbol, so not a string fact); single-word homographs that are also
   vendor names ("square"/"go"/"edge"); a generic "contract file"/"browser popup blocker" phrasing.
 
-**Decision priority — the durable, class-closing rule (v1.3.2).** The ONLY truly-internal STRING-FACT is
-a **CONCRETE REPO PATH** (a real path/file shape — `bin/x.cjs` / `templates/…` / `*.workflow.js` / a real
-`gsd-t-*` tool name). A path is unambiguous: it cannot ALSO be an external claim. An **anchor phrase**
-("this repo" / "our internal" / "exit code" / "who owns" / "this file") is a WEAKER signal — a generic
-English phrase that can appear in a sentence whose real subject is an external vendor (*"What exit code
-does the Stripe API return on rate limit?"*). So an anchor may NOT override a strong external signal.
-Evaluated in strict order:
+**FINAL decision rule (v1.3.3 — the structural resolution of the 7-cycle silent-miss class).** There is
+**NO string-fact that is exclusively internal — not even a path.** A single claim can carry BOTH a real
+repo path AND a real external-API subject at once (*"wire the Stripe OAuth refresh into
+`gsd-t-execute.workflow.js`"*), so every "X wins outright → internal" override re-opens the silent miss.
+The rule therefore removes ALL overrides: **`internal` is returned ONLY when there is ZERO strong-external
+signal.** Define `hasStrongExternal` = an unambiguous vendor proper-noun (multi-char, homograph-free) AND
+an API/protocol term. Then:
 
-1. **CONCRETE REPO PATH present → `internal`** (decisive — a path is a path; wins over everything,
-   including a co-occurring vendor + API term).
-2. **else STRONG EXTERNAL signal present** (unambiguous vendor proper-noun + API/protocol term) → it is
-   at LEAST ambiguous. NO anchor (decisive OR broad) may override it: **strong-external + ANY anchor →
-   `ambiguous`** (→ judge → uncertain→research); **strong-external + no anchor → `external`**.
-3. **else anchor present, NO strong external → `internal`** (the this-repo signal stands).
-4. **else → `ambiguous`** (→ judge).
+- **`hasStrongExternal` → the result is NEVER `internal`.** A co-occurring path/anchor → `ambiguous`
+  (→ judge → uncertain→research); nothing else → `external`.
+  - `hasStrongExternal` + (any path OR anchor) → `ambiguous`
+  - `hasStrongExternal` + nothing else → `external`
+- **else (NO strong external signal at all):**
+  - a concrete repo path OR a this-repo anchor → `internal`
+  - else → `ambiguous`
 
-Net effect: **an anchor phrase can only win `internal` when NO strong external signal co-occurs; only a
-concrete repo PATH beats a strong external signal.** A generic English phrase ("exit code"/"who owns"/
-"this file") can NEVER again route an external-vendor claim internal — the silent-miss class (which
-re-emerged via DECISIVE anchors after v1.3.1) is closed at the rule level, not patched per instance.
+Net effect: **the mechanical classifier NEVER overrides an external signal — not with a path, not with
+"this repo", not with anything.** `internal` requires ZERO strong-external signal. This removes the entire
+silent-miss class by construction (there is no override rule left to exploit). The cost is more
+ambiguous→judge calls — the safe direction (the judge researches when unsure; it never silently guesses
+internal). `hasStrongExternal` requires a genuine vendor proper-noun AND an API term, so a bare homograph
+or a bare URL-looking token can never make a benign internal claim strong-external (LOW closed).
 
 **The `ambiguous` residue → LLM judge → uncertain → research (owned by the WIRING — §5.1 / D3+D4).**
 The classifier is a pure calculator; it does NOT make the semantic call. The 4 consuming workflows route
