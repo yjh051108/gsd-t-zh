@@ -631,7 +631,7 @@ Deterministic trigger (not advisory prose — the existing CLAUDE-global Researc
 - **Decision (user, 2026-06-18):** backlog it, do NOT fix inline; re-verify M89 as-is and accept it may re-flake. If it re-blocks M89 repeatedly, escalate to fix-now.
 - Scope: ~1 domain (diagnose status-under-load, then either harden the test [child-tree kill + timeout] or fix the command's slow path), <1 wave.
 
-## 38. Unproven-assumption guard: stop → research-how-others-solved-it → re-examine premise → then proceed (supersedes M89's narrow scope)
+## 38. Unproven-assumption guard: stop → research-how-others-solved-it → re-examine premise → then proceed (supersedes M89's narrow scope) — **PROMOTED → M90 (2026-06-21, DEFINED — RESEARCH-GATED; partition/plan deferred; full definition in progress.md § Current Milestone M90)**
 
 **Added**: 2026-06-21
 **Type**: framework capability (HIGHEST leverage — addresses the root pattern behind a week of thrash) | **App**: gsd-t
