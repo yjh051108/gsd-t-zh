@@ -22,6 +22,15 @@
 //
 // M82 Competition Mode (generate-and-judge — the GENERATIVE dual of the
 // orthogonal validation triad). Contract: competition-mode-contract.md v1.0.0.
+//
+// M90 §2 D4-T4 (competition arm): Divergence-path (R-ARCH-1) wired into the competition arm.
+// After Judge selects the winner, the N producers' proposals are fed to the divergence-sampling
+// path (R-ARCH-1) via the inline runCli helper. HONESTY CLAUSE: Self-MoA samples of ONE model
+// (temperature/seed-varied) may NOT diverge like fresh-context saga cases the threshold was
+// tuned on. That mismatch is RECORDED by the instrumentation sink; the result is logged as
+// EXPERIMENTAL+MEASURED (never claimed as proof). If the real competition feed cannot
+// meaningfully exercise the divergence formula, the result documents that fact.
+// Contract: unproven-assumption-doctrine-contract.md §2 (R-ARCH-1, divergence path, competition-arm-only).
 //   - Eligible phases: partition, milestone, discuss, design-decompose (pre-contract,
 //     wide-solution-space). INELIGIBLE: plan/impact/prd/doc-ripple (narrow / one
 //     right answer) — competition there is wasted, so a competition arg is ignored.
@@ -721,6 +730,9 @@ const baseObjective = promptByPhase[phaseName];
 const briefLine = `**Brief (REQUIRED):** ${brief.briefPath || "(no brief — re-walk repo)"}`;
 
 let result;
+// M90 §2 D4-T4: holds the divergence-path result from the competition arm (R-ARCH-1).
+// Set inside the competition arm (before Finalize), attached to result after.
+let _pendingArchTriggerDivergence = null;
 if (!competitionOn) {
   // ── Single-producer path (default, unchanged behavior) ──
   phase("Phase");
@@ -910,6 +922,57 @@ if (!competitionOn) {
   }
   log(`competition: winner = ${winner.id} (of ${candidates.map((c) => c.id).join(", ")})`);
 
+  // M90 §2 D4-T4 — R-ARCH-1 divergence-sampling (competition arm only, EXPERIMENTAL+MEASURED).
+  // Feed the N producers' proposals to the divergence-sampling path. HONESTY CLAUSE (the doctrine
+  // on itself): Self-MoA (one model, temperature-varied) may not diverge like fresh-context saga
+  // cases the threshold was tuned on. The result is EXPERIMENTAL: the instrumentation sink records
+  // the fire-rate; we NEVER claim it works. If the divergence score is low (convergent), that is
+  // still a measurement — the path is not broken, the formula is just not exercised by Self-MoA.
+  {
+    const candidateTexts = candidates.map((c) => {
+      // Extract a representative text from each candidate for divergence analysis.
+      if (phaseName === "partition") {
+        return JSON.stringify(c.domains || []);
+      }
+      return String(c.proposal || c.rationale || "");
+    }).filter((t) => t.length > 0);
+
+    if (candidateTexts.length >= 2) {
+      const triggerInput = JSON.stringify({
+        type: "divergence-sampling",
+        answers: candidateTexts,
+        basis: `${phaseName} phase competition: ${candidates.length} Self-MoA producers — checking if proposal divergence signals an unproven architectural assumption`,
+      });
+      const divResult = await runCli(
+        projectDir,
+        "architectural-trigger",
+        ["trigger", triggerInput],
+        "gsd-t-architectural-trigger.cjs",
+        `arch-trigger-divergence:${phaseName}`,
+        true,
+        "Judge"
+      );
+      const divEnv = divResult.envelope || {};
+      // Log the result — ALWAYS note the experimental nature (no efficacy claim).
+      // The divergenceScore and fired flag are the measurement; the sink has the record.
+      log(
+        `M90 arch-trigger R-ARCH-1 (competition-arm, EXPERIMENTAL): ` +
+        `${phaseName} | fired=${divEnv.fired} | divergenceScore=${divEnv.divergenceScore != null ? divEnv.divergenceScore.toFixed(3) : "?"} | ` +
+        `reason=${divEnv.reason || "?"} | experimental=true (Self-MoA may not diverge like fresh-context saga cases)`
+      );
+      // Store the result for attachment to `result` after Finalize assigns it.
+      _pendingArchTriggerDivergence = {
+        fired: divEnv.fired || false,
+        divergenceScore: divEnv.divergenceScore != null ? divEnv.divergenceScore : null,
+        reason: divEnv.reason || null,
+        experimental: true,
+        n: candidateTexts.length,
+      };
+    } else {
+      log(`M90 arch-trigger R-ARCH-1: skipped — only ${candidateTexts.length} producer text(s) available (need ≥2)`);
+    }
+  }
+
   // FINALIZE: one agent commits the WINNING approach (pick-one at the thesis level),
   // then enriches it with non-overlapping good line-items from the losers (safe union
   // at the separable layer — "winner + salvage orphaned good ideas"; never grafts a
@@ -991,6 +1054,10 @@ if (!competitionOn) {
 
   // Thread the competition telemetry up so the caller can report measured SC#1.
   result.competition = { n: candidates.length, winner: winner.id, ranked };
+  // M90 §2 D4-T4: attach divergence-path result if computed (EXPERIMENTAL+MEASURED).
+  if (_pendingArchTriggerDivergence && result) {
+    result.archTriggerDivergence = _pendingArchTriggerDivergence;
+  }
 }
 
 // ── M89 Stated-Claims pipeline (research-eligible phases) ──────────────────

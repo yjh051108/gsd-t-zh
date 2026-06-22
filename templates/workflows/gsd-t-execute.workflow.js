@@ -22,6 +22,16 @@
 // (exact normalized claim-key match only). Wave is a pure composer and does NOT embed this wiring
 // (M85 zero-model: invariant; research reaches wave via its execute sub-workflow).
 //
+// M90 §2 D4-T4: Architectural-trigger wiring (protocol-class path, R-ARCH-2 "everywhere" feed).
+// After domain workers, compute the extend-existing-code signal from each domain's filesTouched:
+// any file that already existed on disk before this execute run is extend-class (the task EXTENDED
+// existing code rather than creating net-new). For each such domain, fire the arch trigger (R-ARCH-2)
+// via the inline runCli helper. This is the NAMED PRODUCER: the signal is computed from real
+// runtime inputs (filesTouched vs. on-disk existence), never from a seeded injection.
+// Result is logged + stored in domainArchTriggerResults for verify gate (R-FAIL-2: if the trigger
+// fires with provenByAdversaryOnly=true and the flag is unresolved, verify FAILS).
+// Contract: unproven-assumption-doctrine-contract.md §2 (R-ARCH-2, protocol-class path).
+//
 // Invocation contract:
 //   The Workflow tool reads this file's `meta` block and runs the script
 //   body. `args` is the JSON object passed in via Workflow({args}). Expected
@@ -480,6 +490,68 @@ if (allGuessedClaims.length === 0) {
   }
 }
 
+// ── M90 §2 D4-T4 — Arch-Trigger (protocol-class, extend-existing-code signal) ──
+// For each domain, compute the extend-existing-code signal: any file in filesTouched that
+// already existed on disk before this execute run → extend-class → fire the arch trigger.
+// PRODUCER: signal is computed from real runtime inputs (filesTouched vs. on-disk check).
+// The trigger is best-effort (non-blocking): log results for verify gate; don't halt execute.
+const domainArchTriggerResults = [];
+for (const dr of domainResults.filter(Boolean)) {
+  if (!Array.isArray(dr.filesTouched) || dr.filesTouched.length === 0) continue;
+  // Check which files existed on disk before this run (extend-class signal).
+  // agent()-Bash: check existence via `test -f <file>` for each touched file.
+  const touchedFiles = dr.filesTouched.slice(0, 10); // cap at 10 per domain
+  const checkResult = await agent(
+    [
+      `For the project at \`${projectDir}\`, check which of these files existed on disk BEFORE the current execute run.`,
+      `Files to check: ${JSON.stringify(touchedFiles)}`,
+      `For each file, run: \`test -f '${projectDir}/<file>' && echo EXISTS || echo ABSENT\` (substitute <file> with the actual path).`,
+      `Return JSON: { "existingFiles": ["<file>", ...] } — list ONLY files that exist (exit 0 from test -f).`,
+      `Do NOT modify any files. Read-only existence check.`,
+    ].join("\n"),
+    {
+      label: `arch-trigger-exist-check:${dr.domain}`,
+      phase: "Research",
+      model: "haiku",
+      schema: {
+        type: "object", required: ["existingFiles"],
+        properties: { existingFiles: { type: "array", items: { type: "string" } } },
+        additionalProperties: true,
+      },
+    }
+  ).catch(() => ({ existingFiles: [] }));
+
+  const existingFiles = Array.isArray(checkResult && checkResult.existingFiles) ? checkResult.existingFiles : [];
+  if (existingFiles.length === 0) continue; // no extend-class signal for this domain
+
+  // Signal confirmed: domain extended existing code → fire arch trigger (R-ARCH-2)
+  const triggerInput = JSON.stringify({
+    type: "extend-existing-code",
+    context: `domain:${dr.domain} extended existing files: ${existingFiles.slice(0, 3).join(", ")}`,
+    basis: `Execute domain ${dr.domain} edited existing file(s): ${existingFiles.slice(0, 3).join(", ")}`,
+  });
+  const triggerResult = await runCli(
+    projectDir,
+    "architectural-trigger",
+    ["trigger", triggerInput],
+    "gsd-t-architectural-trigger.cjs",
+    `arch-trigger:${dr.domain}`,
+    true,
+    "Research"
+  );
+  const triggerEnv = triggerResult.envelope || {};
+  log(`M90 arch-trigger ${dr.domain}: fired=${triggerEnv.fired} reason=${triggerEnv.reason || "?"} provenByAdversaryOnly=${triggerEnv.provenByAdversaryOnly || false}`);
+  domainArchTriggerResults.push({
+    domain: dr.domain,
+    existingFiles,
+    fired: triggerEnv.fired || false,
+    reason: triggerEnv.reason || null,
+    provenByAdversaryOnly: triggerEnv.provenByAdversaryOnly || false,
+    stopDirective: triggerEnv.stopDirective || false,
+  });
+}
+log(`M90 arch-trigger: ${domainArchTriggerResults.length} domain(s) fired extend-existing-code signal`);
+
 phase("Integrate");
 const integratePrompt = [
   `You are the integration agent. ${domainResults.length} domain workers have completed.`,
@@ -519,4 +591,6 @@ return {
   domainResults,
   integrate,
   verifyGate: vg.envelope,
+  // M90 §2: arch-trigger results (surfaced for verify gate R-FAIL-2 check)
+  archTriggerResults: domainArchTriggerResults,
 };

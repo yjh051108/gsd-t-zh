@@ -11,6 +11,12 @@
 // (model:"fable") → cite → flip marker (status=cited). Internal → grep/Read; grep-empty →
 // escalate to external (§5.1). Idempotent per §4.1 (exact normalized claim-key match only).
 //
+// M90 §2 D4-T4: Architectural-trigger wiring (protocol-class path, R-ARCH-2 "everywhere" feed).
+// After the Research phase, compute the extend-existing-code signal from result.filesEdited:
+// any file that already existed on disk → extend-class → fire the arch trigger (R-ARCH-2).
+// NAMED PRODUCER: signal comes from result.filesEdited + on-disk existence check, never seeded.
+// Contract: unproven-assumption-doctrine-contract.md §2 (R-ARCH-2, protocol-class path).
+//
 // args: { task, projectDir?, model? }
 
 export const meta = {
@@ -321,10 +327,68 @@ if (guessedClaims.length === 0) {
   }
 }
 
+// ── M90 §2 D4-T4 — Arch-Trigger (protocol-class, extend-existing-code signal) ──
+// Compute the extend-existing-code signal from result.filesEdited: files that already
+// existed on disk before this quick run → extend-class → fire the arch trigger (R-ARCH-2).
+// PRODUCER: signal is computed from real runtime inputs (filesEdited vs. on-disk check).
+// Non-blocking: best-effort; don't halt quick on trigger failure.
+let quickArchTriggerResult = null;
+if (Array.isArray(result.filesEdited) && result.filesEdited.length > 0) {
+  const filesToCheck = result.filesEdited.slice(0, 10);
+  const checkResult = await agent(
+    [
+      `For the project at \`${projectDir}\`, check which of these files existed on disk BEFORE the current quick run.`,
+      `Files to check: ${JSON.stringify(filesToCheck)}`,
+      `For each file, run: \`test -f '${projectDir}/<file>' && echo EXISTS || echo ABSENT\` (substitute the actual path).`,
+      `Return JSON: { "existingFiles": ["<file>", ...] } — list ONLY files that exist (exit 0).`,
+      `Do NOT modify any files. Read-only existence check.`,
+    ].join("\n"),
+    {
+      label: "arch-trigger-exist-check:quick",
+      phase: "Research",
+      model: "haiku",
+      schema: {
+        type: "object", required: ["existingFiles"],
+        properties: { existingFiles: { type: "array", items: { type: "string" } } },
+        additionalProperties: true,
+      },
+    }
+  ).catch(() => ({ existingFiles: [] }));
+
+  const existingFiles = Array.isArray(checkResult && checkResult.existingFiles) ? checkResult.existingFiles : [];
+  if (existingFiles.length > 0) {
+    const triggerInput = JSON.stringify({
+      type: "extend-existing-code",
+      context: `quick-task edited existing files: ${existingFiles.slice(0, 3).join(", ")}`,
+      basis: `Quick task edited existing file(s): ${existingFiles.slice(0, 3).join(", ")}`,
+    });
+    const triggerResult = await runCli(
+      projectDir,
+      "architectural-trigger",
+      ["trigger", triggerInput],
+      "gsd-t-architectural-trigger.cjs",
+      "arch-trigger:quick",
+      true,
+      "Research"
+    );
+    const triggerEnv = triggerResult.envelope || {};
+    log(`M90 arch-trigger quick: fired=${triggerEnv.fired} reason=${triggerEnv.reason || "?"} provenByAdversaryOnly=${triggerEnv.provenByAdversaryOnly || false}`);
+    quickArchTriggerResult = {
+      existingFiles,
+      fired: triggerEnv.fired || false,
+      reason: triggerEnv.reason || null,
+      provenByAdversaryOnly: triggerEnv.provenByAdversaryOnly || false,
+      stopDirective: triggerEnv.stopDirective || false,
+    };
+  }
+}
+
 phase("Verify");
 const vg = await runVerifyGate(projectDir);
 return {
   status: vg.ok ? "complete" : "verify-failed",
   result,
   verifyGate: vg.envelope,
+  // M90 §2: arch-trigger result (surfaced for verify gate R-FAIL-2 check)
+  archTriggerResult: quickArchTriggerResult,
 };
