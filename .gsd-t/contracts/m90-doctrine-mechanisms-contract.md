@@ -74,15 +74,15 @@ wired into workflows ONLY after its killing test is GREEN.
 ## §3 — Loop ledger + halt (m90-d-loop-ledger-halt)
 **Module:** `bin/gsd-t-loop-ledger.cjs`
 **Signature (frozen exports):** `{ computeSignature, appendCycle, readExitState, recordReExamination, markReExaminationRequired }`.
-- `appendCycle` keyed by a COMPUTED symptom-signature (failing assertion / surface / file-class — computed, NOT the agent's prose label); returns the updated ledger fact + halt decision.
-- `readExitState` returns `{ ok, haltedSignatures:string[], pendingSignatures:string[], reExaminationPending:boolean, haltedButNoReExamination:boolean }`.
-- `recordReExamination(signature, projectDir)` — a GENUINE re-examination; FULLY resets that signature (cycles+halted+pending). Per-signature only; blanket clear refused.
-- `markReExaminationRequired(signature, projectDir)` — PERSISTS an unresolved halt (sets halted+pending) when the debug workflow detects RUN-LOCAL non-convergence (same signature in both of its 2 cycles, below the global HALT_THRESHOLD). Detection sets; only `recordReExamination` clears.
+- `appendCycle({assertion, surface, fileClass, projectDir, milestone})` keyed by a COMPUTED symptom-signature (computed, NOT the agent's prose label); tags the signature with `milestone`; returns the updated ledger fact + halt decision.
+- `readExitState(projectDir, { milestone })` returns `{ ok, haltedSignatures:string[], pendingSignatures:string[], reExaminationPending:boolean, haltedButNoReExamination:boolean }`. **Milestone-scoped (M90 verify decision A):** when `milestone` is given, only halts tagged with THAT milestone (or untagged — fail-safe) are in scope, so one milestone's stale halt CANNOT brick another milestone's verify. Omitting `milestone` reads all (legacy).
+- `recordReExamination(signature, projectDir)` — a GENUINE re-examination; FULLY resets that signature (cycles+halted+pending+milestone-tag). Per-signature only; blanket clear refused.
+- `markReExaminationRequired({signature, projectDir, milestone})` — PERSISTS an unresolved halt (sets halted+pending, tagged with `milestone`) when the debug workflow detects RUN-LOCAL non-convergence. Detection sets; only `recordReExamination` clears.
 **Invariants:**
 - R-LOOP-1: a fix that closes signature A but opens signature B still increments (variant-spawning IS the pathology).
 - R-LOOP-2: the SAME computed signature recurring HARD-HALTS the patch path from the ledger fact (never narration) — via the global 3rd-cycle threshold OR the debug workflow's run-local cycle-2-boundary detection (`markReExaminationRequired`).
 - R-LOOP-3: on halt, emit a premise-re-examination directive routing to §2 (the architectural hook).
-- R-FAIL-3: exposes a `halted-but-no-re-examination` state for the §4 fail-closed gate. **DETECTION ≠ RESOLUTION (M90 verify decision, 2026-06-22):** the debug workflow MARKS the halt and LEAVES IT SET — it does NOT auto-clear on detection (that made the gate vacuous). The state clears ONLY via a genuine `recordReExamination`. Permanent-brick risk is bounded by run-local counting + the gitignored transient state file (a stale cross-run/cross-project halt can't reach an unrelated verify).
+- R-FAIL-3: exposes a `halted-but-no-re-examination` state for the §4 fail-closed gate. **DETECTION ≠ RESOLUTION (M90 verify decision, 2026-06-22):** the debug workflow MARKS the halt and LEAVES IT SET — it does NOT auto-clear on detection (that made the gate vacuous). The state clears ONLY via a genuine `recordReExamination`. Permanent-brick risk is bounded on THREE axes: run-local counting (cross-RUN), gitignored transient state (cross-PROJECT), and per-milestone halt tagging + milestone-scoped verify reads (cross-MILESTONE — M90 verify decision A, 2026-06-22). The verify FAIL message names the exact signature(s) + the one-line `record-re-examination` clear command, so an unresolved halt is always RECOVERABLE, never a cryptic count.
 **Verify reads:** the `halted-but-no-re-examination` state (R-FAIL → §4 fail-closed).
 
 ---

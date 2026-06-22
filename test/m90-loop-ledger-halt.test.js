@@ -257,6 +257,30 @@ describe('T4 — R-LOOP-3 directive + R-FAIL-3 fail-closed state (in-process)', 
     assert.equal(s.haltedButNoReExamination, false, 'fail-closed predicate must clear for the only pending sig');
   });
 
+  test('R-FAIL-3 REGRESSION (fix-cycle-8 Red Team HIGH): per-milestone scoping — one milestone\'s halt does NOT brick another\'s verify', () => {
+    const { markReExaminationRequired } = require('../bin/gsd-t-loop-ledger.cjs');
+    const dir = makeTmpDir();
+    try {
+      // Milestone A debug-loops and marks an unresolved halt, tagged M_A.
+      markReExaminationRequired({ signature: 'sigA', milestone: 'M_A', projectDir: dir });
+      // Milestone B's verify reads scoped to M_B → must NOT see A's halt (no cross-milestone brick).
+      assert.equal(readExitState(dir, { milestone: 'M_B' }).haltedButNoReExamination, false,
+        "Milestone B's verify must not be bricked by Milestone A's halt");
+      // Milestone A's OWN verify reads scoped to M_A → correctly STILL blocked.
+      const sA = readExitState(dir, { milestone: 'M_A' });
+      assert.equal(sA.haltedButNoReExamination, true, "Milestone A's own verify must still block on its halt");
+      assert.deepEqual(sA.pendingSignatures, ['sigA']);
+      // An UNTAGGED halt is fail-safe: visible to ANY milestone (still blocks rather than vanishing).
+      markReExaminationRequired({ signature: 'sigUntagged', projectDir: dir });
+      assert.equal(readExitState(dir, { milestone: 'M_B' }).haltedButNoReExamination, true,
+        'an untagged halt must remain visible to every milestone (fail-safe, not silently dropped)');
+      // Unscoped read (legacy callers, no milestone) sees everything.
+      assert.equal(readExitState(dir).haltedButNoReExamination, true, 'unscoped read sees all halts');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('R-FAIL-3 REGRESSION (fix-cycle-5 Red Team HIGH): recordReExamination FULLY resets the signature — re-append does NOT re-arm', () => {
     // Bug: recordReExamination cleared only reExaminationPending, leaving cycles[sig]>=threshold,
     // so the NEXT appendCycle re-armed pending instantly → the R-FAIL-3 gate re-bricked itself.

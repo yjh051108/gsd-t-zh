@@ -114,7 +114,7 @@ function statePath(projectDir) {
 function readState(projectDir) {
   const fp = statePath(projectDir);
   if (!fs.existsSync(fp)) {
-    return { cycles: {}, halted: {}, reExaminationPending: {} };
+    return { cycles: {}, halted: {}, reExaminationPending: {}, signatureMilestone: {} };
   }
   let raw;
   try {
@@ -159,6 +159,13 @@ function readState(projectDir) {
       typeof parsed.reExaminationPending !== 'object'
     ) {
       parsed.reExaminationPending = {};
+    }
+    // signatureMilestone: { [signature]: milestone } — per-signature milestone tag so a halt set
+    // while debugging milestone A does not brick milestone B's verify (M90 verify decision A,
+    // 2026-06-22). Absent/legacy → empty map; an UNTAGGED signature is visible to ALL milestones
+    // (fail-safe: an old halt with no tag still blocks rather than silently vanishing).
+    if (!isPlainObject(parsed.signatureMilestone)) {
+      parsed.signatureMilestone = {};
     }
     return parsed;
   } catch {
@@ -205,8 +212,10 @@ function writeState(projectDir, state) {
  * @param {string}  opts.surface     — file or module where failure occurs
  * @param {string}  opts.fileClass   — broad class (unit|e2e|lint|type|build|…)
  * @param {string}  [opts.projectDir] — project root (defaults to cwd)
+ * @param {string}  [opts.milestone]  — milestone tag (so a halt is scoped to its milestone; a
+ *                                       later unrelated milestone's verify won't see it)
  */
-function appendCycle({ assertion, surface, fileClass, projectDir } = {}) {
+function appendCycle({ assertion, surface, fileClass, projectDir, milestone } = {}) {
   // 1. Compute signature
   const sigResult = computeSignature({ assertion, surface, fileClass });
   if (!sigResult.ok) return sigResult;
@@ -221,6 +230,11 @@ function appendCycle({ assertion, surface, fileClass, projectDir } = {}) {
   // 3. Increment cycle count for this signature (R-LOOP-1: every variant counts)
   state.cycles[signature] = (state.cycles[signature] || 0) + 1;
   const cycles = state.cycles[signature];
+  // Tag the signature with its milestone (for per-milestone verify scoping). Only set if provided;
+  // an untagged signature stays visible to all milestones (fail-safe).
+  if (milestone && typeof milestone === 'string') {
+    state.signatureMilestone[signature] = milestone;
+  }
 
   // 4. Evaluate halt (R-LOOP-2: 3rd cycle → HARD-HALT)
   const halted = cycles >= HALT_THRESHOLD;
@@ -269,19 +283,33 @@ function appendCycle({ assertion, surface, fileClass, projectDir } = {}) {
  * `halted-but-no-re-examination` should FAIL the verify workflow.
  *
  * Returns:
- *   { ok:true, haltedSignatures:string[], reExaminationPending:boolean,
- *     haltedButNoReExamination:boolean }
+ *   { ok:true, haltedSignatures:string[], pendingSignatures:string[],
+ *     reExaminationPending:boolean, haltedButNoReExamination:boolean }
  *   | { ok:false, error }
  *
  * @param {string} [projectDir]
+ * @param {object} [opts]
+ * @param {string} [opts.milestone] — when set, scope to halts tagged with THIS milestone OR
+ *                                     untagged (fail-safe). A halt from another milestone is
+ *                                     invisible here, so it won't brick an unrelated verify
+ *                                     (M90 verify decision A, 2026-06-22).
  */
-function readExitState(projectDir) {
+function readExitState(projectDir, opts = {}) {
+  const milestone = opts && typeof opts === 'object' ? opts.milestone : undefined;
   const state = readState(projectDir);
   if (state === null) {
     return { ok: false, error: 'Loop-ledger state file is corrupt or unreadable.' };
   }
 
-  const haltedSignatures = Object.keys(state.halted).filter((k) => state.halted[k]);
+  // Milestone scoping: a signature is in-scope when no milestone filter is given, OR the signature
+  // is untagged (legacy / fail-safe — still blocks), OR its tag matches the requested milestone.
+  const inScope = (sig) => {
+    if (!milestone) return true;
+    const tag = state.signatureMilestone[sig];
+    return !tag || tag === milestone;
+  };
+
+  const haltedSignatures = Object.keys(state.halted).filter((k) => state.halted[k] && inScope(k));
   // PER-SIGNATURE: a halted signature is unresolved iff its own pending flag is still set.
   // (A global boolean let one recordReExamination clear ALL — Red Team HIGH; now each halted
   // signature must be cleared individually, so a second unresolved loop still FAILs R-FAIL-3.)
@@ -291,9 +319,9 @@ function readExitState(projectDir) {
     ok: true,
     haltedSignatures,
     pendingSignatures,
-    // Back-compat field: true iff ANY halted signature is still pending re-examination.
+    // Back-compat field: true iff ANY in-scope halted signature is still pending re-examination.
     reExaminationPending: pendingSignatures.length > 0,
-    // The §4 fail-closed predicate: at least one halted signature has no recorded re-examination.
+    // The §4 fail-closed predicate: at least one in-scope halted signature has no recorded re-examination.
     haltedButNoReExamination: pendingSignatures.length > 0,
   };
 }
@@ -343,6 +371,7 @@ function recordReExamination(arg, maybeProjectDir) {
     delete state.reExaminationPending[signature];
     delete state.halted[signature];
     delete state.cycles[signature];
+    delete state.signatureMilestone[signature]; // drop the milestone tag too (full reset)
     if (wasTracked) cleared.push(signature);
   } else {
     // No signature given: refuse a blanket clear (that was the bug). Surface the choices.
@@ -368,13 +397,13 @@ function recordReExamination(arg, maybeProjectDir) {
  * unresolved-halt so the verify R-FAIL-3 gate can see it later. Detection sets the flag; ONLY
  * recordReExamination (a genuine re-examination) clears it — NOT the act of detecting.
  *
- * @param {string|object} arg        — signature string OR { signature, projectDir }
+ * @param {string|object} arg        — signature string OR { signature, projectDir, milestone }
  * @param {string} [maybeProjectDir]
  * Returns { ok:true, signature, marked:boolean } | { ok:false, error }
  */
 function markReExaminationRequired(arg, maybeProjectDir) {
-  let signature, projectDir;
-  if (arg && typeof arg === 'object') { signature = arg.signature; projectDir = arg.projectDir; }
+  let signature, projectDir, milestone;
+  if (arg && typeof arg === 'object') { signature = arg.signature; projectDir = arg.projectDir; milestone = arg.milestone; }
   else { signature = arg; projectDir = maybeProjectDir; }
 
   if (!signature || typeof signature !== 'string') {
@@ -386,6 +415,8 @@ function markReExaminationRequired(arg, maybeProjectDir) {
   }
   state.halted[signature] = true;
   state.reExaminationPending[signature] = true;
+  // Tag with the milestone so a later unrelated milestone's verify won't see this halt.
+  if (milestone && typeof milestone === 'string') state.signatureMilestone[signature] = milestone;
   // Ensure a cycle count exists so the signature is visibly tracked.
   if (!state.cycles[signature]) state.cycles[signature] = HALT_THRESHOLD;
   try {
@@ -441,16 +472,17 @@ if (require.main === module) {
   const projectDir = flags.projectDir || process.cwd();
 
   if (subcommand === 'append-cycle') {
-    const { assertion, surface, fileClass } = flags;
+    const { assertion, surface, fileClass, milestone } = flags;
     if (!assertion || !surface || !fileClass) {
       exitErr({ ok: false, error: 'append-cycle requires --assertion, --surface, and --fileClass' });
     }
-    const result = appendCycle({ assertion, surface, fileClass, projectDir });
+    const result = appendCycle({ assertion, surface, fileClass, projectDir, milestone });
     if (!result.ok) exitErr(result);
     else exitOk(result);
 
   } else if (subcommand === 'read-exit-state') {
-    const result = readExitState(projectDir);
+    // --milestone scopes the read to that milestone's halts (+ untagged); omit = all.
+    const result = readExitState(projectDir, { milestone: flags.milestone });
     if (!result.ok) exitErr(result);
     else exitOk(result);
 
@@ -463,7 +495,7 @@ if (require.main === module) {
   } else if (subcommand === 'mark-re-examination-required') {
     // Persist an unresolved-halt for a signature (debug run-local non-convergence). Sets
     // halted+pending; ONLY record-re-examination clears it (detection != resolution).
-    const result = markReExaminationRequired({ signature: flags.signature, projectDir });
+    const result = markReExaminationRequired({ signature: flags.signature, projectDir, milestone: flags.milestone });
     if (!result.ok) exitErr(result);
     else exitOk(result);
 

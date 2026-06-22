@@ -74,6 +74,7 @@ async function generateBrief(projectDir, { kind = "execute", milestone, domain, 
 
 const projectDir = _args.projectDir || ".";
 const symptom = _args.symptom || null;
+const milestone = _args.milestone || null; // tags loop-ledger halts so they scope to this milestone
 
 const DEBUG_CYCLE_SCHEMA = {
   type: "object",
@@ -360,6 +361,7 @@ for (let cycle = 1; cycle <= 2; cycle++) {
        "--assertion", assertionArg,
        "--surface", surfaceArg,
        "--fileClass", "unit",
+       ...(milestone ? ["--milestone", milestone] : []),
        "--projectDir", projectDir],
       "gsd-t-loop-ledger.cjs",
       `loop-ledger-append-cycle-${cycle}`,
@@ -400,7 +402,7 @@ if (nonConvergentSigs.length > 0) {
     await runCli(
       projectDir,
       "loop-ledger",
-      ["mark-re-examination-required", "--signature", sig, "--projectDir", projectDir],
+      ["mark-re-examination-required", "--signature", sig, ...(milestone ? ["--milestone", milestone] : []), "--projectDir", projectDir],
       "gsd-t-loop-ledger.cjs",
       "loop-ledger-mark-re-examination-required",
       true,

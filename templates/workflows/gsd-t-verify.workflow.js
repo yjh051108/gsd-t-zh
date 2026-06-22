@@ -420,7 +420,7 @@ log(`M90 R-FAIL-2 gate: PASS — ${m90ArchTriggerGate.deScopedPass ? "de-scoped 
 const m90LoopLedgerGate = await runCli(
   projectDir,
   "loop-ledger",
-  ["read-exit-state", "--projectDir", projectDir],
+  ["read-exit-state", ...(milestone ? ["--milestone", milestone] : []), "--projectDir", projectDir],
   "gsd-t-loop-ledger.cjs",
   "m90-r-fail-3-gate",
   true,
@@ -451,8 +451,17 @@ if (exitEnv && exitEnv.ok === false) {
   log(`M90 R-FAIL-3 gate: PASS (de-scoped — loop-ledger module absent / not wired)`);
 } else if (exitEnv && exitEnv.ok && exitEnv.haltedButNoReExamination) {
   m90LoopLedgerPass = false;
-  m90LoopLedgerNote = `R-FAIL-3: loop-ledger has ${(exitEnv.pendingSignatures || exitEnv.haltedSignatures || []).length} halted-but-no-re-examination signature(s) — re-examine the premise per §3.2`;
-  log(`M90 R-FAIL-3 gate FAIL — haltedButNoReExamination=true (§4 fail-closed)`);
+  // RECOVERABILITY (M90 verify decision A): name the exact signature(s) + the one-line clear
+  // command, so a halt is resolvable — never a cryptic count with no remedy (the cross-milestone
+  // brick was unrecoverable because the FAIL note printed only a number).
+  const pend = exitEnv.pendingSignatures || exitEnv.haltedSignatures || [];
+  const clearCmds = pend
+    .map((s) => `gsd-t loop-ledger record-re-examination --signature ${s} --projectDir ${projectDir}`)
+    .join("  |  ");
+  m90LoopLedgerNote =
+    `R-FAIL-3: ${pend.length} unresolved debug-loop halt(s) for this milestone — re-examine the premise per §3.2, then clear: ${clearCmds}`;
+  log(`M90 R-FAIL-3 gate FAIL — unresolved halt(s): ${pend.join(", ")}`);
+  log(`To resolve after re-examination: ${clearCmds}`);
 } else {
   m90LoopLedgerPass = true;
   m90LoopLedgerNote = `no halted-but-no-re-examination state (haltedButNoReExamination=${(exitEnv && exitEnv.haltedButNoReExamination) || false})`;
