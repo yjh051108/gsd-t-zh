@@ -1,6 +1,137 @@
 # Integration Points
 
-## Current State: M89 — Auto-Research: KNOWN-vs-GUESSED per-claim verification at every workflow phase + in conversation (RE-DEFINED 2026-06-18 — premise corrected after plan pre-mortem cycle-2 / 2 CRITICALs; re-plan next; risk-first, 4 file-disjoint domains, 2 waves; Wave 1 = D1 prove-or-kill A1 classifier + D2 contract/stage concurrent; Wave 2 = D3 upper-phase+verify + D4 worker-workflows, gated on A1 GREEN). M87 PAUSED for M89 (user-prioritized 2026-06-18). M89 active.
+## Current State: M90 — The Unproven-Assumption Doctrine (PLANNED 2026-06-22 — risk-first, 4 file-disjoint domains, 3 waves). Plan hardened: traceability-gate GREEN (exit 0, 0 violations, 24 behavioral, 7 headline). Supersedes/absorbs M89 (its factual slice = D3/R-FACT). M87 resumes after M90's relevant slices land.
+
+### M90 Architecture (LOCKED at discuss — `.gsd-t/discuss/M90-approach-sourced.md`)
+**Externalize + force, never introspect.** The decisive sourced finding: a model cannot reliably self-grade its own assumption (verbalized confidence ≈ coin-flip; RLHF makes calibration ~10× worse; self-critique degrades plan quality) — which root-causes the binvoice + M87 + M89 saga. So the model NEVER grades itself: a DETERMINISTIC trigger fires an EXTERNAL response (blind-adversary plan-review on a separate context/`fable` model + executable spike), and research is FORCED by protocol (not confidence-gated) for the time-sensitive/external class. Extends M83 pre-mortem + Red-Team-on-fable; invents no new introspection. The architectural-DETECTION trigger ships EXPERIMENTAL/measured (the one piece with no published precedent — instrumented, never claimed).
+
+### M90 Seam contract
+`.gsd-t/contracts/m90-doctrine-mechanisms-contract.md` v1.0.0 PROPOSED (firms to STABLE when Wave-1 prove-or-kill clears) — the single seam pinning the FROZEN JSON-envelope signatures of all three mechanisms so the integrate domain (D4) wires them WITHOUT any Wave-1/2 domain touching a shared file: §1 factual classifier (`bin/gsd-t-research-gate.cjs` `classify(gap)`, vendor-list DELETED, regex-knows-own-paths + LLM-judges-rest + time-anchored override, §7 fail-closed cite gate PRESERVED), §2 architectural trigger + response (`bin/gsd-t-architectural-trigger.cjs` + `blind-adversary-subagent.md`), §3 loop ledger + halt (`bin/gsd-t-loop-ledger.cjs`), §4 fail-closed integration points, the wiring-seam-ownership table (D4 = sole writer of ALL shared surfaces). The full doctrine spine (§4/§5/§6) lands in the NEW `unproven-assumption-doctrine-contract.md` (D4-T1, absorbs `auto-research-contract.md` v1.3.3). **Stability rule:** producers FREEZE their exported signatures when Wave 1/2 closes; D4 wires against the frozen shapes — a post-freeze signature change is a contract violation.
+
+### M90 task-ID rename (plan-phase correction)
+The partition emitted task IDs in the LETTER form `M90-DA/DL/DF/DC-Tn`. The task-graph parser regex is `^###\s+([A-Z]\d+-D\d+-T\d+)` — a **letter after `D` silently parses 0 tasks** (the file-disjointness oracle + traceability gate would see an empty M90). Plan renamed to the parser-canonical digit form, preserving the wave structure: **D1 = arch-trigger-response (DA)**, **D2 = loop-ledger-halt (DL)**, **D3 = factual-redesign (DF)**, **D4 = contract-doctrine-integrate (DC)**. Cross-domain deps in D4 reference the renamed IDs.
+
+### M90 Wave Plan (risk-first — prove-or-kill before wiring)
+
+```
+WAVE 1 — prove-or-kill (parallel, file-disjoint, zero shared files). HIGHEST RISK FRONT-LOADED:
+  D1 arch-trigger-response (M90-D1)      D2 loop-ledger-halt (M90-D2)
+    bin/gsd-t-architectural-trigger.cjs    bin/gsd-t-loop-ledger.cjs
+    + blind-adversary-subagent.md (fable)  + computed symptom-signature + 3-cycle hard-halt
+    + divergence-sampling + extend-class   + premise-re-examination directive + R-FAIL-3 state
+    + spike/adversary response interface   + killing test M90-D2-T6 (must FIRE not narrate)
+    + measurement sink (no-claim)
+    + killing test M90-D1-T6 (R1 exit)
+        │                                       │
+        ▼  KILL GATE: M90-D1-T6 GREEN —          ▼  GATE: M90-D2-T6 GREEN — 3 same-signature
+        │  trigger fires on divergent /          │  cycles HARD-HALT deterministically (exit-
+        │  extend, silent on convergent,         │  state, not prose). RED = design defect →
+        │  deterministically. RED → HALT for     │  STOP + escalate (non-converging-Red-Team
+        │  R1 re-scope DOWN to factual-only      │  trap; do not keep patching).
+        │  (D3 then carries the milestone).      │
+        │  Wave 1 touches ONLY net-new files — no shared workflow contaminated if a gate fails.
+        │
+WAVE 2 — edit-in-place (gated on Wave 1 clearing). LOWEST RISK:
+        ▼
+  D3 factual-redesign (M90-D3)
+    bin/gsd-t-research-gate.cjs (EDIT IN PLACE — M89 code on disk)
+    + DELETE EXTERNAL_VENDOR_NOUNS/EXTERNAL_API_TERMS/hasStrongExternal (SC-NO-FINITE-LIST)
+    + closed-internal + judge routing + time-anchored override (GUESSED:stale)
+    + KEEP §7 fail-closed cite gate (SC-FAIL-CLOSED)
+    + corpus + classifier test redesign (≥10 never-seen externals → judge, none silent-internal;
+      held-out guard; test count ≥ ed03a8d baseline 1824/0 — SC-FACTUAL-PRESERVED)
+        │
+        ▼  GATE: M90-D3 suite green at ≥ baseline + the vendor-deletion negative test passes.
+        │
+WAVE 3 — integrate seam (single-owner of ALL shared surfaces; nothing parallel-written):
+        ▼
+  D4 contract-doctrine-integrate (M90-D4) — serial T1→T2→T3→T4→T5→T6→T7
+    T1 unproven-assumption-doctrine-contract.md v1.0.0 STABLE (§4 fail-closed / §5 self-obedience
+       / §6 guard map; pins all 3 envelopes; absorbs auto-research v1.3.3) [Headline]
+    T2 bin/gsd-t.js dispatch + PROJECT/GLOBAL_BIN_TOOLS + tier-policy fable entry
+    T3 wire D-LOOP halt into gsd-t-debug.workflow.js (runtime-native, RUN in sandbox)
+    T4 wire D-ARCH trigger (IFF M90-D1-T6 green) + D-FACTUAL classify into phase/execute/quick
+    T5 gsd-t-verify.workflow.js FAILS on the 3 flagged states + triad prompts read them [Headline]
+    T6 doc-ripple (CLAUDE-global doctrine, requirements, help, README, GSD-T-README, pkg 4.6.11→4.7.10)
+    T7 guard-map [RULE]→enforcement lint + tier-policy drift lint (SC-SELF-OBEDIENCE)
+        │
+        ▼
+       VERIFY (triad + §4 fail-closed reads) → COMPLETE-MILESTONE → tag v4.7.10 (minor)
+```
+
+### M90 Wave Groupings
+
+| Wave | Domains | Parallel? | Gate to next |
+|------|---------|-----------|--------------|
+| **W1** | D1 arch-trigger-response (M90-D1-T1..T6) · D2 loop-ledger-halt (M90-D2-T1..T6) | concurrent, file-disjoint (D1 = `bin/gsd-t-architectural-trigger.cjs` + `blind-adversary-subagent.md` + test + fixture; D2 = `bin/gsd-t-loop-ledger.cjs` + test — zero overlap) | **BOTH killing tests GREEN.** M90-D1-T6: trigger fires on divergent/extend, silent on convergent, deterministic — RED → HALT + R1 re-scope DOWN to factual-only. M90-D2-T6: 3 same-signature cycles HARD-HALT from exit-state — RED → STOP + escalate (design defect). |
+| **W2** | D3 factual-redesign (M90-D3-T1..T5) | runs alone, gated on W1 clearing (edit-in-place island) | **D3 suite green at test count ≥ ed03a8d baseline (1824/0)** + the vendor-deletion negative test (≥10 never-seen externals → judge, none silent-internal) passes. If W1 R1-exited to factual-only, D3 CARRIES the milestone. |
+| **W3** | D4 contract-doctrine-integrate (M90-D4-T1..T7) | runs alone, serial single-owner of ALL shared surfaces (gated on W1+W2 green) | all 7 D4 tasks complete + M71 + M85 lints green + the §4 fail-closed verify run FAILS on each seeded flagged state and PASSES when clear + the guard-map [RULE]→enforcement lint green. |
+
+### M90 Cross-Domain Dependencies
+
+| Consumer | Depends on | Via |
+|----------|-----------|-----|
+| D3 (all) | W1 GREEN (M90-D1-T6 + M90-D2-T6) — risk-first build order | gate; D3 reads the §1 envelope shape (pinned by the mechanisms contract), writes only its own classifier |
+| D4-T1 doctrine contract | the FROZEN §1/§2/§3 signatures (M90-D1-T6, M90-D2-T6, M90-D3-T5) | pins the three envelope shapes verbatim; never edits producer source |
+| D4-T2 dispatch | `bin/gsd-t-architectural-trigger.cjs` + `bin/gsd-t-loop-ledger.cjs` exist (W1) | dispatch cases + bin-tool arrays route to the modules |
+| D4-T3 debug-wire | D2 frozen append-cycle/read-exit-state signature | inline `runCli` agent-Bash helper into `gsd-t-debug.workflow.js` |
+| D4-T4 phase/worker-wire | D3 classifier (always) + D1 trigger (IFF M90-D1-T6 green; else factual-only per R1 re-scope) | inline `runCli` into `gsd-t-phase`/`gsd-t-execute`/`gsd-t-quick` |
+| D4-T5 verify-fail-closed | §1 uncited-external marker (D3) + §2 proven-by-adversary-only flag (D1) + §3 halted-but-no-re-examination state (D2) | `gsd-t-verify.workflow.js` reads the 3 flagged states; FAILS on any |
+
+### M90 Integrate-Time Seams (D4 single-owned — NOT cross-domain co-authored)
+
+| Seam | File | Owner | Why no conflict |
+|------|------|-------|-----------------|
+| Doctrine contract + absorbed pointer | `.gsd-t/contracts/unproven-assumption-doctrine-contract.md`, `.gsd-t/contracts/auto-research-contract.md` | D4 (M90-D4-T1) | D4 is the sole writer; producers only READ the §1/§2/§3 envelope shapes. |
+| CLI dispatch + bin-tool arrays + tier policy | `bin/gsd-t.js`, `bin/gsd-t-model-tier-policy.cjs` | D4 (M90-D4-T2) | single-owner; routes to D1/D2 modules (must exist first — W1 dep). |
+| Debug-halt wire | `templates/workflows/gsd-t-debug.workflow.js` | D4 (M90-D4-T3) | single-owner; D2 owns NO workflow. |
+| Trigger+classify wire | `templates/workflows/gsd-t-phase.workflow.js`, `gsd-t-execute.workflow.js`, `gsd-t-quick.workflow.js` | D4 (M90-D4-T4) | single-owner; D1/D3 own NO workflow. |
+| Verify fail-closed + triad prompts | `templates/workflows/gsd-t-verify.workflow.js`, `red-team/qa/pre-mortem-subagent.md` | D4 (M90-D4-T5) | single-owner of every shared surface. |
+| Doc ripple + version bump | `templates/CLAUDE-global.md`, `docs/requirements.md`, `commands/gsd-t-help.md`, `README.md`, `GSD-T-README.md`, `package.json` | D4 (M90-D4-T6) | single-owner; Document Ripple Completion Gate (live `~/.claude/CLAUDE.md` matched). |
+
+### M90 Load-Bearing Serial Constraints
+
+1. **W1 before W2 before W3.** D1/D2 are the prove-or-kill; D3 is gated on W1; D4 is gated on W1+W2. No shared workflow file is edited until D4 (W3).
+2. **M90-D1-T6 governs the trigger wire (D4-T4).** If the architectural trigger cannot fire deterministically, the milestone re-scopes DOWN to factual-only — D4-T4 wires classify only, recorded in the contract (the doctrine applied to itself — SC-SELF-OBEDIENCE).
+3. **Non-converging gate = escalate, never patch.** If D2's halt won't fire, or any W1 killing test spawns variant-after-variant (>2 cycles same signature), that IS the M90 pathology — STOP + escalate, do not keep patching.
+4. **Workflow edits stay sandbox-clean (D4).** No `require`/`fs`/`process`; `args` is a JSON STRING; CLI via the inline `runCli` agent-Bash helper. M71 + M85 lints stay green; each edited workflow RUNS to completion in the sandbox (not `node --check`).
+5. **Producers freeze signatures at W1/W2 close.** D4 wires against the frozen §1/§2/§3 envelopes; a post-freeze change breaks the integrate seam (contract violation).
+
+### M90 File-Disjointness (validated via `gsd-t parallel --dry-run` + per-task Touches scan — 29 distinct owned files, zero cross-domain overlap)
+
+| Domain | Files Owned |
+|--------|-------------|
+| D1 arch-trigger-response | `bin/gsd-t-architectural-trigger.cjs`, `templates/prompts/blind-adversary-subagent.md`, `test/m90-architectural-trigger.test.js`, `test/fixtures/m90-arch-divergence-corpus.json` |
+| D2 loop-ledger-halt | `bin/gsd-t-loop-ledger.cjs`, `test/m90-loop-ledger-halt.test.js` |
+| D3 factual-redesign | `bin/gsd-t-research-gate.cjs`, `test/m89-research-classifier-corpus.test.js`, `test/fixtures/m89-labeled-corpus.json` |
+| D4 contract-doctrine-integrate | `.gsd-t/contracts/unproven-assumption-doctrine-contract.md`, `.gsd-t/contracts/auto-research-contract.md`, `templates/workflows/gsd-t-debug.workflow.js`, `templates/workflows/gsd-t-execute.workflow.js`, `templates/workflows/gsd-t-phase.workflow.js`, `templates/workflows/gsd-t-quick.workflow.js`, `templates/workflows/gsd-t-verify.workflow.js`, `bin/gsd-t.js`, `bin/gsd-t-model-tier-policy.cjs`, `templates/prompts/red-team-subagent.md`, `templates/prompts/qa-subagent.md`, `templates/prompts/pre-mortem-subagent.md`, `templates/CLAUDE-global.md`, `docs/requirements.md`, `commands/gsd-t-help.md`, `README.md`, `GSD-T-README.md`, `package.json`, `test/m90-guardmap-rule-traceability.test.js`, `test/m90-tier-policy-lint.test.js` |
+
+D1/D4 split `templates/prompts/` — D1 owns `blind-adversary-subagent.md` only; D4 owns the three triad prompts. No file appears in two Files-Owned blocks.
+
+### M90 Acceptance-Criteria → Domain Map
+
+| Success criterion | Owner | Killing test |
+|----|-------|--------------|
+| SC-ARCH-TRIGGER (trigger fires on unproven architectural premise) | D1 | M90-D1-T6 — divergent→fire / convergent→silent / extend→fire, deterministic; RED → R1 re-scope DOWN |
+| SC-LOOP-HOOK-FIRES (3rd same-signature cycle HARD-HALTS, not narrated) | D2 | M90-D2-T6 — 3-cycle halt from exit-state + variant-B increment + directive + R-FAIL-3 state |
+| SC-NO-FINITE-LIST (no enumerated open category; ≥10 never-seen externals → judge) | D3 | M90-D3-T1 + M90-D3-T5 — vendor-list deleted + vendor-deletion negative test |
+| SC-FACTUAL-PRESERVED (classifier green at ≥ ed03a8d baseline 1824/0) | D3 | M90-D3-T5 — suite ≥ baseline, held-out guard retained |
+| SC-FAIL-CLOSED (verify FAILS on uncited / proven-by-adversary-only / halted-but-no-re-examination) | D4 | M90-D4-T5 — seeded-state verify run FAILS each, PASSES when clear |
+| SC-RESEARCH-GATE (sourced approach with ≥1 citation per mechanism) | DISCUSS (banked) | `.gsd-t/discuss/M90-approach-sourced.md` — satisfied at discuss; D4-T1 absorbs into the contract |
+| SC-SELF-OBEDIENCE (doctrine enforced on M90's own artifacts) | D4 | M90-D4-T7 — guard-map [RULE]→enforcement lint + tier-policy drift lint |
+
+### M90 Abbreviation Key
+
+| Abbrev | Domain | Wave |
+|--------|--------|------|
+| D1 | arch-trigger-response (was DA) | 1 (prove-or-kill) |
+| D2 | loop-ledger-halt (was DL) | 1 (prove-or-kill) |
+| D3 | factual-redesign (was DF) | 2 (edit-in-place) |
+| D4 | contract-doctrine-integrate (was DC) | 3 (integrate seam) |
+
+---
+
+## Prior State: M89 — Auto-Research: KNOWN-vs-GUESSED per-claim verification at every workflow phase + in conversation (RE-DEFINED 2026-06-18 — premise corrected after plan pre-mortem cycle-2 / 2 CRITICALs; re-plan next; risk-first, 4 file-disjoint domains, 2 waves; Wave 1 = D1 prove-or-kill A1 classifier + D2 contract/stage concurrent; Wave 2 = D3 upper-phase+verify + D4 worker-workflows, gated on A1 GREEN). M87 PAUSED for M89 (user-prioritized 2026-06-18). M89 active.
 
 ### M89 Premise correction (cycle-2 rethink)
 The original "deterministic trigger that DETECTS a gap and REPLACES LLM should-I-research discretion" overclaimed — **detecting you need info is itself a judgment**. Re-scoped: M89 = **deterministic CLASSIFY (§1) + cite-or-fail ENFORCE (§5/§7) wrapped around an LLM-PROMPTED DETECT step (§6.5 Stated Claims)**. Unit of work = a load-bearing CLAIM, not "a gap": the agent tags each claim KNOWN vs GUESSED (three guess-types: unknown / assumed / stale, §1.3). Determinism lives in CLASSIFY + ENFORCE, not DETECT. Cycle-2 CRITICALs fold in as the §6.5 DETECT/Stated-Claims seam (SC2) + the §7 external-claim MARKER so ENFORCE can fire even on a never-cited guess (SC4/A5).
