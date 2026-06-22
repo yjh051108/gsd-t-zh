@@ -1,10 +1,17 @@
 # Contract: Auto-Research Gate + Web-Research Stage (M89)
 
 ## Version: 1.3.3
-## Status: STABLE
+## Status: ABSORBED-SUPERSEDED — M90 unproven-assumption-doctrine-contract.md v1.0.0
 ## Owner: m89-d2-research-stage-and-contract
-## Consumers: m89-d1-research-classifier-core, m89-d3-wiring-upper-phase-and-gate, m89-d4-wiring-worker-workflows
+## Canonical Home: `.gsd-t/contracts/unproven-assumption-doctrine-contract.md` §1 (FACTUAL slice)
+## Consumers: m89-d1-research-classifier-core, m89-d3-wiring-upper-phase-and-gate, m89-d4-wiring-worker-workflows, m90-d-contract-doctrine-integrate
 ## Created: 2026-06-18 (M89 partition)
+
+> **M90 ABSORBED (2026-06-22):** This contract is absorbed and superseded by
+> `.gsd-t/contracts/unproven-assumption-doctrine-contract.md` v1.0.0 §1. All §§1–7 are
+> preserved verbatim there as the factual classifier (R-FACT) slice. Consumer references
+> should point to the doctrine contract. This file is retained as a redirect and changelog
+> for historical traceability.
 
 ## Changelog
 - **v1.3.3 (2026-06-20 — M89 FINAL classifier rule: remove ALL "wins outright → internal" overrides, PATCH):**

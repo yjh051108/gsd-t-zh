@@ -1264,6 +1264,10 @@ const GLOBAL_BIN_TOOLS = [
   "gsd-t-model-profile.cjs",
   // M89 — Auto-research gate classifier (internal vs external claim routing; no LLM call).
   "gsd-t-research-gate.cjs",
+  // M90 D1 — Architectural-assumption trigger (divergence-sampling + extend-signal; §2).
+  "gsd-t-architectural-trigger.cjs",
+  // M90 D2 — Loop ledger (non-convergence detection + halt directive; §3).
+  "gsd-t-loop-ledger.cjs",
 ];
 
 function installGlobalBinTools() {
@@ -2569,6 +2573,12 @@ const PROJECT_BIN_TOOLS = [
   // propagated to each registered project's bin/ so the workflow runCli fallback resolves
   // downstream — per [[project_global_bin_propagation_gap]]).
   "gsd-t-research-gate.cjs",
+  // M90 D1 — Architectural-assumption trigger (divergence-sampling + extend-signal; §2).
+  // Propagated so project-local runCli helpers can invoke it without the global binary.
+  "gsd-t-architectural-trigger.cjs",
+  // M90 D2 — Loop ledger (non-convergence detection + halt directive; §3).
+  // Propagated so project-local runCli helpers (gsd-t-debug.workflow.js) can invoke it.
+  "gsd-t-loop-ledger.cjs",
 ];
 
 // Files that older versions of this installer copied into project bin/ but
@@ -4345,8 +4355,10 @@ function showHelp() {
   log(`  ${CYAN}graph${RESET}          Code graph operations (index, status, query)`);
   log(`  ${CYAN}headless${RESET}       Non-interactive execution via claude -p + fast state queries`);
   log(`  ${CYAN}design-build${RESET}   Deterministic design→code pipeline (elements → widgets → pages)`);
-  log(`  ${CYAN}research-gate${RESET}  Classify a guessed claim as internal (grep) or external (web-research)`);
-  log(`  ${CYAN}help${RESET}           Show this help\n`);
+  log(`  ${CYAN}research-gate${RESET}         Classify a guessed claim as internal (grep) or external (web-research)`);
+  log(`  ${CYAN}architectural-trigger${RESET} Fire the arch-assumption trigger (divergence-sampling | extend-signal)`);
+  log(`  ${CYAN}loop-ledger${RESET}           Record a debug cycle, read exit-state, or clear re-examination flag`);
+  log(`  ${CYAN}help${RESET}                  Show this help\n`);
   log(`${BOLD}Examples:${RESET}`);
   log(`  ${DIM}$${RESET} npx @tekyzinc/gsd-t install`);
   log(`  ${DIM}$${RESET} npx @tekyzinc/gsd-t init my-saas-app`);
@@ -4706,6 +4718,35 @@ if (require.main === module) {
       const js = path.join(__dirname, "gsd-t-research-gate.cjs");
       if (!require("node:fs").existsSync(js)) {
         error(`gsd-t-research-gate.cjs not found at ${js} — install or build M89-D1 first`);
+        process.exit(1);
+      }
+      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
+        stdio: "inherit",
+      });
+      process.exit(res.status == null ? 1 : res.status);
+    }
+    case "architectural-trigger": {
+      // M90 D1 — `gsd-t architectural-trigger <subcommand>` thin dispatcher to
+      // the architectural-assumption trigger (divergence-sampling + extend-signal; §2).
+      const { spawnSync } = require("child_process");
+      const js = path.join(__dirname, "gsd-t-architectural-trigger.cjs");
+      if (!require("node:fs").existsSync(js)) {
+        error(`gsd-t-architectural-trigger.cjs not found at ${js} — install or build M90-D1 first`);
+        process.exit(1);
+      }
+      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
+        stdio: "inherit",
+      });
+      process.exit(res.status == null ? 1 : res.status);
+    }
+    case "loop-ledger": {
+      // M90 D2 — `gsd-t loop-ledger <subcommand>` thin dispatcher to the loop-ledger
+      // (non-convergence detection + halt; §3). Subcommands: append-cycle, read-exit-state,
+      // record-re-examination.
+      const { spawnSync } = require("child_process");
+      const js = path.join(__dirname, "gsd-t-loop-ledger.cjs");
+      if (!require("node:fs").existsSync(js)) {
+        error(`gsd-t-loop-ledger.cjs not found at ${js} — install or build M90-D2 first`);
         process.exit(1);
       }
       const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
