@@ -1,0 +1,76 @@
+{"firePath":"protocol-class","fired":true,"basis":"existing classifier approach","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:25:39.336Z"}
+{"firePath":"protocol-class","fired":true,"basis":"current approach","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:25:42.907Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"CORPUS-D1 test basis","mode":"spike","divergenceScore":0.9710144927536232,"_emittedAt":"2026-06-22T16:28:47.573Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"CORPUS-D2 test basis","mode":"spike","divergenceScore":0.8947368421052632,"_emittedAt":"2026-06-22T16:28:47.576Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"CORPUS-D3 test basis","mode":"spike","divergenceScore":0.95,"_emittedAt":"2026-06-22T16:28:47.576Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"CORPUS-C1 test basis","mode":null,"divergenceScore":0.6086956521739131,"_emittedAt":"2026-06-22T16:28:47.576Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"CORPUS-C2 test basis","mode":null,"divergenceScore":0.5714285714285714,"_emittedAt":"2026-06-22T16:28:47.576Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"CORPUS-C3 test basis","mode":null,"divergenceScore":0.6,"_emittedAt":"2026-06-22T16:28:47.576Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"CORPUS-D1 divergent basis","mode":"spike","divergenceScore":0.9710144927536232,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"CORPUS-D2 divergent basis","mode":"spike","divergenceScore":0.8947368421052632,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"CORPUS-D3 divergent basis","mode":"spike","divergenceScore":0.95,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"CORPUS-C1 convergent basis","mode":null,"divergenceScore":0.6086956521739131,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"CORPUS-C2 convergent basis","mode":null,"divergenceScore":0.5714285714285714,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"CORPUS-C3 convergent basis","mode":null,"divergenceScore":0.6,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"HO-D1 held-out basis","mode":"spike","divergenceScore":0.9701492537313433,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"HO-D2 held-out basis","mode":"spike","divergenceScore":0.9545454545454546,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"HO-D3 held-out basis","mode":"spike","divergenceScore":0.9696969696969697,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"HO-C1 held-out basis","mode":null,"divergenceScore":0.6666666666666667,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"HO-C2 held-out basis","mode":null,"divergenceScore":0.6666666666666667,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"HO-C3 held-out basis","mode":null,"divergenceScore":0.6190476190476191,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"protocol-class","fired":true,"basis":"the existing classifier's approach is correct and can be extended","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"protocol-class","fired":true,"basis":"existing verify logic is correct","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:28:47.577Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"concurrent write handling approach","mode":"spike","divergenceScore":0.962962962962963,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"protocol-class","fired":true,"basis":"the existing regex-based classifier approach is correct — we just need to add more patterns for the cases it misses","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"protocol-class","fired":true,"basis":"the WebView rendering approach is fundamentally correct — each fix builds on the previous to handle more iOS edge cases","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"protocol-class","fired":true,"basis":"some basis","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"protocol-class","fired":true,"basis":"PayPal invoice total rounding behaves as documented","mode":"adversary-only","divergenceScore":null,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"protocol-class","fired":true,"basis":"premise X is true","mode":"adversary-only","divergenceScore":null,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"protocol-class","fired":true,"basis":"some runtime behavior premise","mode":"adversary-only","divergenceScore":null,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"concurrency approach","mode":"spike","divergenceScore":0.9523809523809523,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"protocol-class","fired":true,"basis":"some premise","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"concurrency mechanism","mode":"spike","divergenceScore":0.9545454545454546,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"some approach","mode":"spike","divergenceScore":0.9166666666666666,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"concurrency control mechanism","mode":"spike","divergenceScore":0.9523809523809523,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"concurrency control mechanism","mode":"spike","divergenceScore":0.9523809523809523,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"concurrency control mechanism","mode":"spike","divergenceScore":0.9523809523809523,"_emittedAt":"2026-06-22T16:28:47.578Z"}
+{"firePath":"protocol-class","fired":true,"basis":"the existing classifier approach","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:28:47.579Z"}
+{"firePath":"protocol-class","fired":true,"basis":"the existing classifier approach","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:28:47.579Z"}
+{"firePath":"protocol-class","fired":true,"basis":"existing approach is correct","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:28:47.714Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"CORPUS-D1 test basis","mode":"spike","divergenceScore":0.9710144927536232,"_emittedAt":"2026-06-22T16:29:05.252Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"CORPUS-D2 test basis","mode":"spike","divergenceScore":0.8947368421052632,"_emittedAt":"2026-06-22T16:29:05.253Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"CORPUS-D3 test basis","mode":"spike","divergenceScore":0.95,"_emittedAt":"2026-06-22T16:29:05.253Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"CORPUS-C1 test basis","mode":null,"divergenceScore":0.6086956521739131,"_emittedAt":"2026-06-22T16:29:05.253Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"CORPUS-C2 test basis","mode":null,"divergenceScore":0.5714285714285714,"_emittedAt":"2026-06-22T16:29:05.253Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"CORPUS-C3 test basis","mode":null,"divergenceScore":0.6,"_emittedAt":"2026-06-22T16:29:05.253Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"CORPUS-D1 divergent basis","mode":"spike","divergenceScore":0.9710144927536232,"_emittedAt":"2026-06-22T16:29:05.254Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"CORPUS-D2 divergent basis","mode":"spike","divergenceScore":0.8947368421052632,"_emittedAt":"2026-06-22T16:29:05.254Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"CORPUS-D3 divergent basis","mode":"spike","divergenceScore":0.95,"_emittedAt":"2026-06-22T16:29:05.254Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"CORPUS-C1 convergent basis","mode":null,"divergenceScore":0.6086956521739131,"_emittedAt":"2026-06-22T16:29:05.254Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"CORPUS-C2 convergent basis","mode":null,"divergenceScore":0.5714285714285714,"_emittedAt":"2026-06-22T16:29:05.254Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"CORPUS-C3 convergent basis","mode":null,"divergenceScore":0.6,"_emittedAt":"2026-06-22T16:29:05.254Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"HO-D1 held-out basis","mode":"spike","divergenceScore":0.9701492537313433,"_emittedAt":"2026-06-22T16:29:05.254Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"HO-D2 held-out basis","mode":"spike","divergenceScore":0.9545454545454546,"_emittedAt":"2026-06-22T16:29:05.254Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"HO-D3 held-out basis","mode":"spike","divergenceScore":0.9696969696969697,"_emittedAt":"2026-06-22T16:29:05.254Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"HO-C1 held-out basis","mode":null,"divergenceScore":0.6666666666666667,"_emittedAt":"2026-06-22T16:29:05.254Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"HO-C2 held-out basis","mode":null,"divergenceScore":0.6666666666666667,"_emittedAt":"2026-06-22T16:29:05.254Z"}
+{"firePath":"divergence-sampling","fired":false,"basis":"HO-C3 held-out basis","mode":null,"divergenceScore":0.6190476190476191,"_emittedAt":"2026-06-22T16:29:05.255Z"}
+{"firePath":"protocol-class","fired":true,"basis":"the existing classifier's approach is correct and can be extended","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:29:05.255Z"}
+{"firePath":"protocol-class","fired":true,"basis":"existing verify logic is correct","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:29:05.255Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"concurrent write handling approach","mode":"spike","divergenceScore":0.962962962962963,"_emittedAt":"2026-06-22T16:29:05.255Z"}
+{"firePath":"protocol-class","fired":true,"basis":"the existing regex-based classifier approach is correct — we just need to add more patterns for the cases it misses","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:29:05.255Z"}
+{"firePath":"protocol-class","fired":true,"basis":"the WebView rendering approach is fundamentally correct — each fix builds on the previous to handle more iOS edge cases","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:29:05.255Z"}
+{"firePath":"protocol-class","fired":true,"basis":"some basis","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:29:05.255Z"}
+{"firePath":"protocol-class","fired":true,"basis":"PayPal invoice total rounding behaves as documented","mode":"adversary-only","divergenceScore":null,"_emittedAt":"2026-06-22T16:29:05.255Z"}
+{"firePath":"protocol-class","fired":true,"basis":"premise X is true","mode":"adversary-only","divergenceScore":null,"_emittedAt":"2026-06-22T16:29:05.255Z"}
+{"firePath":"protocol-class","fired":true,"basis":"some runtime behavior premise","mode":"adversary-only","divergenceScore":null,"_emittedAt":"2026-06-22T16:29:05.255Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"concurrency approach","mode":"spike","divergenceScore":0.9523809523809523,"_emittedAt":"2026-06-22T16:29:05.256Z"}
+{"firePath":"protocol-class","fired":true,"basis":"some premise","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:29:05.256Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"concurrency mechanism","mode":"spike","divergenceScore":0.9545454545454546,"_emittedAt":"2026-06-22T16:29:05.256Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"some approach","mode":"spike","divergenceScore":0.9166666666666666,"_emittedAt":"2026-06-22T16:29:05.256Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"concurrency control mechanism","mode":"spike","divergenceScore":0.9523809523809523,"_emittedAt":"2026-06-22T16:29:05.256Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"concurrency control mechanism","mode":"spike","divergenceScore":0.9523809523809523,"_emittedAt":"2026-06-22T16:29:05.256Z"}
+{"firePath":"divergence-sampling","fired":true,"basis":"concurrency control mechanism","mode":"spike","divergenceScore":0.9523809523809523,"_emittedAt":"2026-06-22T16:29:05.256Z"}
+{"firePath":"protocol-class","fired":true,"basis":"the existing classifier approach","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:29:05.256Z"}
+{"firePath":"protocol-class","fired":true,"basis":"the existing classifier approach","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:29:05.256Z"}
+{"firePath":"protocol-class","fired":true,"basis":"existing approach is correct","mode":"spike","divergenceScore":null,"_emittedAt":"2026-06-22T16:29:06.545Z"}
