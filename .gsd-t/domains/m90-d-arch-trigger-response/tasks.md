@@ -110,14 +110,25 @@ SILENT on convergent ones, the extend-existing-code path fires, and bad input �
 silent, repeatably), this test FAILS and the milestone HALTS for R1 re-scope DOWN to
 factual-only (D3 then carries M90). The trigger is wired into workflows (D4-T4) ONLY after
 this test is GREEN.
+**HELD-OUT REAL-CASE SPLIT (pre-mortem HIGH, shallow-test / tautology trap):** the fixture corpus
+is authored by THIS domain (it owns both the trigger module AND the fixture), so a test that only
+asserts "every self-labeled divergent row fires" is a tautology against threshold-tuned synthetic
+rows with no independent ground truth. The corpus MUST include a HELD-OUT split: ≥3 divergent and
+≥3 convergent rows drawn from the THREE REAL SAGA RETROS (binvoice FB-modal whack-a-mole, GSD-T
+M87 plan loop, GSD-T M89 verify loop — the recorded cases named in the partition as the seed),
+NOT synthetic rows tuned to the threshold. Mirror the existing M89 corpus's held-out
+generalization guard ("passes the seen/tuned set, FAILS the held-out real set" = test FAILURE).
+Without the held-out real-case split, the prove-or-kill gate is not falsifiable and may NOT gate
+wiring.
 - **Files**: `test/m90-architectural-trigger.test.js`, `test/fixtures/m90-arch-divergence-corpus.json`, `bin/gsd-t-architectural-trigger.cjs`
 - **Touches**: `test/m90-architectural-trigger.test.js`, `test/fixtures/m90-arch-divergence-corpus.json`
-- **Test**: `test/m90-architectural-trigger.test.js` (node --test) — the killing test IS this file; it exercises the full trigger end-to-end against ≥6 fixture cases (≥3 divergent → fire, ≥3 convergent → silent) + the extend path + bad input. Run: `node --test test/m90-architectural-trigger.test.js`.
+- **Test**: `test/m90-architectural-trigger.test.js` (node --test) — the killing test IS this file; it exercises the full trigger end-to-end against ≥6 tuned fixture cases (≥3 divergent → fire, ≥3 convergent → silent) PLUS a HELD-OUT real-saga split (≥3 divergent + ≥3 convergent rows from the binvoice/M87/M89 retros) that the trigger must classify correctly, PLUS the extend path + bad input. The held-out rows are NOT used to tune the threshold; failing them = test FAILURE (generalization guard). Run: `node --test test/m90-architectural-trigger.test.js`.
 - **Acceptance criteria**: (SC-ARCH-TRIGGER)
-  - Every divergent corpus row fires; every convergent row stays silent — deterministically across repeated runs.
+  - Every tuned divergent corpus row fires; every tuned convergent row stays silent — deterministically across repeated runs.
+  - The HELD-OUT real-saga split (≥3 divergent + ≥3 convergent from binvoice/M87/M89 retros) is classified correctly WITHOUT being used to tune the threshold; a held-out miss FAILS the test (anti-tautology generalization guard, mirroring the M89 corpus).
   - The extend-existing-code path fires (R-ARCH-2 demonstrated on a seeded case from the three-saga retros).
   - Bad input → `{ ok:false }` + non-zero exit.
-  - RED here = HALT the milestone for R1 re-scope DOWN (the prove-or-kill exit, sourced finding: architectural DETECTION has no published precedent).
+  - RED here (incl. a held-out generalization failure) = HALT the milestone for R1 re-scope DOWN (the prove-or-kill exit, sourced finding: architectural DETECTION has no published precedent).
 - **Dependencies**: M90-D1-T5.
 
 ## Dependency / gating

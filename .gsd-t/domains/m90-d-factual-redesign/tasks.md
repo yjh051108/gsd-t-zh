@@ -23,21 +23,45 @@ SKR intrinsic self-knowledge gate (https://arxiv.org/abs/2310.05002), Self-RAG
 
 ## Wave 2 — edit-in-place (GATED on Wave 1 prove-or-kill clearing; LOWEST RISK)
 
-### M90-D3-T1 — DELETE the vendor-list machinery (R-FACT-1) [Headline]
+### M90-D3-T0 — Baseline known-answer test against CURRENT code (R-FACT-0, the doctrine in action) [Headline]
 **Headline:** true
-Remove `EXTERNAL_VENDOR_NOUNS` (`:146`), `EXTERNAL_API_TERMS` (`:166`), and every
-`hasStrongExternal`/`matchedVendor`/`matchedApiTerm` path that consumes them (`:207`–`:227+`).
-Grep for ALL requirers first; inline-then-delete so nothing dangles. The regex now asserts
-INTERNAL only on a concrete own-repo path/file (a CLOSED, knowable set) — this is the exact
-frozen-belief bug M90 exists to kill (an OPEN category was hardcoded as a finite list).
+**The premise-grounding gate** (pre-mortem CRITICAL #1). BEFORE touching the classifier, write a
+baseline known-answer test that runs the CURRENT `bin/gsd-t-research-gate.cjs` against ≥10
+out-of-any-prior-list / never-seen external references (GitHub/Slack/OpenAI/Plaid/Twilio/a
+freshly-invented vendor name) and CAPTURES the actual `class`/`route` for each. This grounds D3's
+premise on disk: the partition claimed unseen vendors "silently route internal" — verified FALSE
+(all route `ambiguous→judge`; the vendor list only upgrades to `external→web`, its absence never
+routes internal; M89 already removed all wins-outright→internal overrides per auto-research-contract
+v1.3.3). This task asserts that ground truth as a regression baseline, and DECIDES R-FACT-1: if NO
+unseen vendor routes silently-internal today (expected), R-FACT-1 is a documented no-op/tightening,
+NOT a deletion — D3 does not commit M90's forbidden act of building on a falsified premise.
+- **Files**: `test/m89-research-classifier-corpus.test.js`, `bin/gsd-t-research-gate.cjs`
+- **Touches**: `test/m89-research-classifier-corpus.test.js`
+- **Test**: `test/m89-research-classifier-corpus.test.js` (node --test) — feeds ≥10 never-seen external refs to the CURRENT classifier and asserts NONE returns `class:"internal"` (each routes to `judge`/`web`); records the baseline. If any DOES route internal, that concrete input is captured as the real defect R-FACT-1 must fix. Run: `node --test test/m89-research-classifier-corpus.test.js`.
+- **Acceptance criteria**: (SC-NO-FINITE-LIST baseline, premise-corrected)
+  - A baseline test runs the CURRENT code against ≥10 unseen vendors (incl. a freshly-invented name) and asserts NONE routes silently-internal — establishing the on-disk ground truth.
+  - The captured baseline routing is recorded as a regression anchor for T1/T5.
+  - If a concrete unseen vendor IS found to misroute internal, it is captured as the falsifiable defect that justifies R-FACT-1's change; otherwise R-FACT-1 is recorded as a no-op/tightening.
+- **Dependencies**: M90-D1-T6, M90-D2-T6 (Wave 1 GREEN gate). First task of this domain.
+
+### M90-D3-T1 — Resolve the vendor list's ACTUAL role (R-FACT-1, premise-corrected)
+Per the R-FACT-0 baseline (NOT the falsified silent-miss premise): the vendor list does not cause
+a silent-miss — its absence never routes internal. Its real effect is *upgrading* a vendor+API
+match to high-confidence `external→web`, skipping the judge. Resolve its role with the baseline as
+the gate: (a) confirm `internal` is asserted ONLY on a concrete own-repo path/anchor (a CLOSED,
+knowable set) — already true, assert it; (b) delete or TIGHTEN the vendor-upgrade machinery ONLY if
+T0's baseline proved a concrete defect (a real unseen vendor that misroutes); if no defect, keep the
+upgrade path and record the corrected rationale (deleting it would DOWNGRADE known vendors from
+`web` to `ambiguous→judge` — a regression, not a fix). Grep ALL requirers first; never leave a
+dangling ref.
 - **Files**: `bin/gsd-t-research-gate.cjs`
 - **Touches**: `bin/gsd-t-research-gate.cjs`
-- **Test**: `test/m89-research-classifier-corpus.test.js` — a grep/AST assertion that `EXTERNAL_VENDOR_NOUNS` / `EXTERNAL_API_TERMS` / `hasStrongExternal` no longer appear in the source; the vendor-deletion negative test (an out-of-list vendor like GitHub/Slack/OpenAI no longer string-matches → routes to judge, never silent-internal).
-- **Acceptance criteria**: (SC-NO-FINITE-LIST)
-  - `EXTERNAL_VENDOR_NOUNS`, `EXTERNAL_API_TERMS`, and all consuming match paths are removed (no dangling refs — full grep done first).
-  - The recognition layer enumerates NO open category — `internal` is asserted ONLY on a concrete own-repo path/file.
-  - An out-of-list/never-seen vendor (GitHub/Slack/OpenAI/a freshly-invented name) is NOT string-matched to external/internal — it routes to judge/research.
-- **Dependencies**: M90-D1-T6, M90-D2-T6 (Wave 1 GREEN gate). First task of this domain.
+- **Test**: `test/m89-research-classifier-corpus.test.js` — assert the layer enumerates NO open category for the INTERNAL decision (`internal` requires a positive own-repo path/anchor — never the mere absence of a vendor); the T0 baseline routing is preserved or improved (no unseen vendor regresses to internal); any vendor-machinery change leaves no dangling ref.
+- **Acceptance criteria**: (SC-NO-FINITE-LIST, premise-corrected)
+  - The recognition layer enumerates NO open category for the `internal` decision — `internal` is asserted ONLY on a concrete own-repo path/anchor (asserted by test, against current + post-change code).
+  - The vendor-upgrade machinery is changed ONLY if T0 proved a concrete defect; otherwise kept with the corrected rationale recorded (no deletion-on-false-premise). No dangling refs after any change.
+  - The T0 baseline holds or improves — no unseen vendor regresses to silently-internal.
+- **Dependencies**: M90-D3-T0.
 
 ### M90-D3-T2 — Closed-internal + judge routing (R-FACT-2)
 Internal ONLY on the closed own-repo path/file set; everything not-confidently-internal →

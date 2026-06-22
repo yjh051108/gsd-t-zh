@@ -8,9 +8,9 @@ their STABLE exposed signatures; do not edit them.
 
 ## Wave 3, after the proofs land (NON-NEGOTIABLE order)
 Wire ONLY signatures that already cleared their killing test:
-- D-ARCH trigger — only if M90-DA-T6 (prove-or-kill) is GREEN. If R1 re-scoped DOWN to
+- D-ARCH trigger — only if M90-D1-T6 (prove-or-kill) is GREEN. If R1 re-scoped DOWN to
   factual-only, wire only D-FACTUAL + D-LOOP (or D-FACTUAL alone) — do NOT wire a noisy trigger.
-- D-LOOP halt — only if M90-DL-T6 (must-FIRE) is GREEN.
+- D-LOOP halt — only if M90-D2-T6 (must-FIRE) is GREEN.
 - D-FACTUAL classifier — Wave 2 must be GREEN.
 
 ## Runtime-native invariant (M81 / TD-113 — HARD)
