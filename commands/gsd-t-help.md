@@ -74,6 +74,8 @@ HEADLESS (CI/CD)                                                       CLI
   headless --debug-loop  Compaction-proof test-fix-retest loop (fresh sessions)
   parallel            Task-level parallel dispatch with mode-aware gating (M44)
   research-gate       Classify a guessed claim: internal (grep) / external (web) / ambiguous (LLM judge) [M89]
+  architectural-trigger  Fire the architectural-assumption trigger (divergence-sampling or extend-existing-code) [M90]
+  loop-ledger         Record a debug cycle, read exit state, detect non-convergence (premise-re-examination) [M90]
 
 BACKLOG                                                                Manual
 ───────────────────────────────────────────────────────────────────────────────
@@ -524,6 +526,20 @@ Use these when user asks for help on a specific command:
 - **CLI**: `gsd-t research-gate classify "<guessed claim text>"`. Emits `{ok, gap, class, route, reason}` where `class` ∈ {internal, external, ambiguous} and `route` ∈ {grep, web, judge}. Exit 0 on classify · 1 on bad input.
 - **Classification rules (string facts only — the v1.3.2 4-step priority)**: (1) a CONCRETE REPO PATH (`bin/x.cjs` / `*.workflow.js` / `gsd-t-*` / `templates/…`) → `internal` (a path is decisive, beats everything). (2) a STRONG EXTERNAL signal (unambiguous vendor proper-noun + API/protocol term) → at least ambiguous: with ANY anchor phrase present → `ambiguous`; with no anchor → `external`. NO anchor phrase ("this repo" / "exit code" / "who owns") may override a strong external signal — only a concrete path can. (3) an anchor with NO strong external → `internal`. (4) else → `ambiguous`. An `ambiguous` claim → LLM judge → uncertain→research (§1.1/§5.1, owned by D3/D4). The regex never guesses a paraphrase's semantic class.
 - **Contract**: `.gsd-t/contracts/auto-research-contract.md` v1.3.2 STABLE.
+
+### architectural-trigger (M90)
+- **Summary**: Deterministic architectural-assumption trigger (M90 §2). Two fire paths: **R-ARCH-1** (divergence-sampling — N fresh-context producer answers → divergence score; competition-arm only, EXPERIMENTAL+MEASURED) and **R-ARCH-2** (protocol-class — any task whose `**Touches**` lists an EXISTING file triggers unconditionally; everywhere feed). Fires produce an instrumentation record in `.gsd-t/metrics/arch-trigger-events.jsonl`; a `provenByAdversaryOnly=true` flag from either path surfaces at the §4 fail-closed verify gate (R-FAIL-2). The module NEVER asserts it works — it emits measurement data only.
+- **Files**: `bin/gsd-t-architectural-trigger.cjs`. Contract: `.gsd-t/contracts/unproven-assumption-doctrine-contract.md` §2. Blind-adversary prompt: `templates/prompts/blind-adversary-subagent.md`. Model: `fable` (M85 RULE-ARCH-TIER).
+- **Use when**: Workflows detect that a task extends existing code (R-ARCH-2 everywhere feed) or that competition producers diverged (R-ARCH-1 competition-arm only). Called automatically by `gsd-t-execute`, `gsd-t-quick`, and `gsd-t-phase` competition arm via inline runCli helper (M81 runtime-native).
+- **CLI**: `gsd-t architectural-trigger trigger '<JSON>'`. JSON shapes: `{"type":"extend-existing-code","context":"...","basis":"..."}` or `{"type":"divergence-sampling","answers":[...],"basis":"..."}`. Emits `{ok, firePath, fired, basis, reason, ...}`. Exit 0 on success · 1 on bad input.
+- **Contract**: `.gsd-t/contracts/unproven-assumption-doctrine-contract.md` §2 v1.0.0 STABLE.
+
+### loop-ledger (M90)
+- **Summary**: Cross-process non-convergence detector (M90 §3). Records each debug cycle (symptom-signature + surface + fileClass), computes a stable signature, and detects when the SAME computed signature appears across cycles (non-convergence). After all cycles, `read-exit-state` returns `haltedButNoReExamination=true` when non-convergence is proven — the debug workflow exits with a PREMISE_RE_EXAMINATION directive (option b, re-anchored to the cycle-2 boundary) instead of the generic `needs-human`. A `haltedButNoReExamination=true` state that reaches verify triggers R-FAIL-3 (fail-closed).
+- **Files**: `bin/gsd-t-loop-ledger.cjs`. Contract: `.gsd-t/contracts/unproven-assumption-doctrine-contract.md` §3. Ledger stored at `.gsd-t/ledgers/loop-ledger.jsonl` (per project).
+- **Use when**: Debug workflow calls `append-cycle` after each iteration and `read-exit-state` after the loop. NOT called manually — the debug workflow wires it via inline runCli helper.
+- **CLI**: `gsd-t loop-ledger append-cycle --assertion "<symptom>" --surface "<file>" --fileClass unit --projectDir <dir>`. `gsd-t loop-ledger read-exit-state --projectDir <dir>`. Exit 0 on success.
+- **Contract**: `.gsd-t/contracts/unproven-assumption-doctrine-contract.md` §3 v1.0.0 STABLE.
 
 ## Unknown Command
 

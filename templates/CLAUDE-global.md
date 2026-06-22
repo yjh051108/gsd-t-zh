@@ -365,28 +365,35 @@ If not specified, use Level 3.
 
 ## Workflow Preferences (Defaults — override in project CLAUDE.md)
 
-### Claim Verification Policy (M89 — KNOWN-vs-GUESSED trigger)
+### Unproven-Assumption Doctrine (M90 — governed, enforced — supersedes M89 advisory prose)
 
-For every load-bearing claim you rely on in a phase, tag it:
+**Contract:** `.gsd-t/contracts/unproven-assumption-doctrine-contract.md` v1.0.0 STABLE
 
-- **`[KNOWN]`** — you verified it (repo-internal-evident via grep/Read, or cited this session).
+Never act on an unproven assumption — FACTUAL OR ARCHITECTURAL. Three enforced mechanisms:
+
+**§1 — Factual Classifier (`gsd-t research-gate classify "<claim>"`):**
+For every load-bearing claim, tag it:
+- **`[KNOWN]`** — verified (repo-internal-evident via grep/Read, or cited this session).
 - **`[GUESSED:unknown]`** — you lack the fact outright.
-- **`[GUESSED:assumed]`** — you ASSERT a shape / value / behavior you NEVER verified. "Plausible" and
-  "would make sense" are NOT `KNOWN`.
-- **`[GUESSED:stale]`** — you KNEW it, but it is an external/time-varying fact (API shape, rate limit,
-  library version, SDK behavior) that may have changed. **DEFAULT = fail-toward-verify**: any such
-  external fact without a FRESH cited source is treated as stale → research.
+- **`[GUESSED:assumed]`** — you ASSERT a shape / value / behavior you NEVER verified.
+- **`[GUESSED:stale]`** — external/time-varying fact that may have changed.
 
-**A `[GUESSED:*]` claim is then CLASSIFIED (`gsd-t research-gate classify "<claim>"`) — a MECHANICAL
-string-fact filter returning one of THREE classes (v1.3.2):**
-- **`class: external`** → web-research stage runs (`model: "fable"`), writes a `## Verified Facts (auto-research)` block (URL + fetch date) into the artifact. A classify-time ENFORCE marker `<!-- auto-research-claim: class=external key=<key> status=uncited -->` is written; the verify gate FAILs if it stays `status=uncited`.
-- **`class: internal`** → grep/Read only; no web. Escalate to external only if grep returns nothing.
-- **`class: ambiguous`** → the regex found no decisive STRING FACT, so it does NOT guess — the claim is
-  routed to an **LLM judge** (`model: "fable"`) that decides internal/external/uncertain in natural
-  language. **uncertain → research** (when unsure, verify — never guess-internal). This covers a
-  proper-noun-LESS external assertion, a vendor name with no API term, a bare symbol, or a generic anchor
-  phrase ("exit code"/"who owns") whose real subject is an external vendor — none of which is a string
-  fact, so none is regex's to place.
+A `[GUESSED:*]` claim is then CLASSIFIED — mechanical string-fact filter, three classes:
+- **`class: external`** → research agent (`model: "fable"`) writes a `## Verified Facts (auto-research)` block (URL + fetch date); ENFORCE marker `<!-- auto-research-claim: class=external key=<key> status=uncited -->` is written; verify FAILs if it stays `status=uncited` (R-FAIL-1).
+- **`class: internal`** → grep/Read only; escalate to external if grep empty.
+- **`class: ambiguous`** → LLM judge (`model: "fable"`) decides; uncertain → research (never guess-internal).
+
+**§2 — Architectural Trigger (`gsd-t architectural-trigger trigger '<JSON>'`):**
+Two fire paths — both INSTRUMENTED (fire-rate emitted to `.gsd-t/metrics/arch-trigger-events.jsonl`):
+- **R-ARCH-1 (divergence-sampling, competition-arm-only, EXPERIMENTAL+MEASURED):** N fresh-context producer outputs → divergence score → fires on high variance. NEVER claimed to work — measured.
+- **R-ARCH-2 (protocol-class, everywhere):** a task whose `**Touches**` lists an EXISTING file → extend-class → trigger fires unconditionally. COMPUTED from real runtime inputs.
+
+If the trigger fires with `provenByAdversaryOnly=true` and it is never resolved, verify FAILs (R-FAIL-2).
+
+**§3 — Loop Ledger (`gsd-t loop-ledger append-cycle/read-exit-state`):**
+Debug workflow calls `append-cycle` each iteration. When the SAME computed symptom-signature appears across both cycles (cycle-2 boundary), `read-exit-state` returns `haltedButNoReExamination=true` → workflow exits with **PREMISE_RE_EXAMINATION directive** (option b, not generic needs-human). Verify FAILs if this flag is unresolved (R-FAIL-3).
+
+**§4 — Fail-Closed (verify gates):** R-FAIL-1/2/3 ALWAYS FAIL, never warn-and-proceed. When a mechanism is R1-de-scoped (not wired), the corresponding check is a DOCUMENTED no-op-PASS distinguishable from wired-but-broken.
 
 **SC6 — Conversation-scope directive:** when answering the USER about an external or time-varying fact
 (API behavior, library version, pricing, rate limits, current best-practice), verify-or-flag before
