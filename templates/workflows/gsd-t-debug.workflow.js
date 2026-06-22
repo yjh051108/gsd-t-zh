@@ -13,6 +13,16 @@
 // (model: cycle===1?"opus":(overrides["debug-cycle-2"]??"fable")) is PRESERVED; the research
 // stage is a SEPARATE agent() with its own bare "fable" literal. Idempotent per §4.1.
 //
+// M90 §3 D4-T3: Loop-ledger halt wired via inline runCli helper (option b).
+// After each cycle, append-cycle is called with the symptom as the assertion, the primary
+// edited file as the surface, and "unit" as the fileClass. After cycle 2 (end of loop),
+// read-exit-state is called; if haltedButNoReExamination=true (the same computed signature
+// appeared across both cycles — the ledger proves non-convergence), the workflow exits at
+// the cycle-2 boundary with the ledger's PREMISE_RE_EXAMINATION directive rather than the
+// generic `needs-human`. This is option (b): re-anchor the halt to the cycle-2 boundary,
+// keeping the existing 2-cycle cap unchanged and only changing the EXIT REASON when the
+// ledger fact proves non-convergence. Contract: unproven-assumption-doctrine-contract.md §3.2.
+//
 // args: { symptom, projectDir? }
 
 export const meta = {
@@ -327,6 +337,72 @@ for (let cycle = 1; cycle <= 2; cycle++) {
   if (lastResult.resolved) {
     return { status: "complete", cyclesUsed: cycle, finalResult: lastResult };
   }
+
+  // M90 §3 D4-T3 — append-cycle to the loop-ledger (option b: re-anchor halt to cycle-2 boundary).
+  // The symptom IS the assertion (the failing test/check); the primary edited file is the surface.
+  // The ledger tracks computed signatures cross-process — next cycle's append-cycle accumulates correctly.
+  // Uses the same runCli helper (inline agent()-Bash, no require/fs — M81 runtime-native invariant).
+  {
+    const primarySurface = (Array.isArray(lastResult.filesEdited) && lastResult.filesEdited.length > 0)
+      ? lastResult.filesEdited[0]
+      : "unknown";
+    const assertionArg = (symptom || "unknown-symptom").slice(0, 500);
+    const surfaceArg = String(primarySurface).slice(0, 200);
+    const ledgerAppend = await runCli(
+      projectDir,
+      "loop-ledger",
+      ["append-cycle",
+       "--assertion", assertionArg,
+       "--surface", surfaceArg,
+       "--fileClass", "unit",
+       "--projectDir", projectDir],
+      "gsd-t-loop-ledger.cjs",
+      `loop-ledger-append-cycle-${cycle}`,
+      true,
+      `Cycle ${cycle}`
+    );
+    if (ledgerAppend.envelope) {
+      const env = ledgerAppend.envelope;
+      log(`M90 loop-ledger cycle ${cycle}: sig=${String(env.signature || "?").slice(0, 16)} cycles=${env.cycles} halted=${env.halted}`);
+    }
+  }
+}
+
+// M90 §3 D4-T3 (option b) — after cycle 2, read-exit-state.
+// If the ledger proves non-convergence (haltedButNoReExamination=true), exit with the
+// premise-re-examination directive. This is REACHABLE: if the same computed symptom-signature
+// appeared in both cycles, haltedButNoReExamination will be true.
+const ledgerState = await runCli(
+  projectDir,
+  "loop-ledger",
+  ["read-exit-state", "--projectDir", projectDir],
+  "gsd-t-loop-ledger.cjs",
+  "loop-ledger-read-exit-state",
+  true,
+  "Cycle 2"
+);
+
+const exitEnv = ledgerState.envelope || {};
+if (exitEnv.ok && exitEnv.haltedButNoReExamination) {
+  // The ledger fact: same computed symptom-signature across both cycles → NON-CONVERGENCE.
+  // Exit with the premise-re-examination directive (NOT generic needs-human).
+  // This is option (b): the halt is the cycle-2 boundary exit reason, not a 3rd cycle.
+  log("M90 loop-ledger: non-convergence detected — same symptom-signature across both cycles.");
+  log("PREMISE_RE_EXAMINATION: the fix strategy has not converged. Re-examine the premise, not patch further.");
+  return {
+    status: "premise-re-examination",
+    reason: "M90 §3 R-LOOP-2: same computed symptom-signature across both debug cycles. " +
+      "The fix strategy is non-converging. Per the Unproven-Assumption Doctrine (option b), " +
+      "this workflow exits with a PREMISE_RE_EXAMINATION directive instead of dispatching a 3rd patch. " +
+      "Action required: stop patching, research how others solved this class of problem, re-examine the premise.",
+    directive: "PREMISE_RE_EXAMINATION",
+    routeTo: "architectural-hook",
+    module: "bin/gsd-t-architectural-trigger.cjs",
+    contract: ".gsd-t/contracts/unproven-assumption-doctrine-contract.md §3.2",
+    cyclesUsed: 2,
+    finalResult: lastResult,
+    haltedSignatures: exitEnv.haltedSignatures || [],
+  };
 }
 
 return {
