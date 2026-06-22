@@ -667,3 +667,15 @@ A SEPARATE **Realism agent** the Red Team argues scope with (adversarial-collabo
 ### Relation
 - Lives in `templates/prompts/red-team-subagent.md` + a NEW realism-subagent protocol + the verify workflow triad-synthesis stage. The verify-time dual of the pre-mortem/debug-cycle caps. See memory `feedback_red_team_realism_gate`.
 - Scope: ~1–2 domains (realism-subagent protocol + red-team protocol update + verify-workflow wiring + deferred-ledger + contract/docs), 1 wave.
+
+## 40. complete-milestone must DETERMINISTICALLY archive+sweep the completed milestone's domain dirs (stale-domain accumulation)
+
+**Added**: 2026-06-22
+**Type**: tech debt (workflow-enforcement) | **App**: gsd-t | **Category**: cli/command
+**Scheduled**: implement AFTER M90 is complete AND shipped (CPUA) — user directive 2026-06-22.
+**Origin**: 2026-06-22, M90 plan-phase `gsd-t parallel --dry-run` surfaced 77 stale domain dirs in `.gsd-t/domains/` from ~30 already-completed/archived milestones (m43–m67 prefixed + unprefixed legacy), polluting the file-disjointness oracle. Manually pruned them (commit `5b48384`, kept the 12 in-flight: m90-*/M87/m89-*). That manual sweep is a SYMPTOM — the root cause is permanent.
+- **Root cause (verified on disk):** `commands/gsd-t-complete-milestone.md` Step 7 (lines 404-405) is **prose-only** — "1. Archive current domains → `.gsd-t/milestones/{name}/domains/`  2. Clear `.gsd-t/domains/` (empty, ready for next partition)" — with NO deterministic enforcement. A Level-3 autonomous agent skipped/partially-did the clear every milestone for ~30 milestones. Classic prompt-based-blocking-doesn't-work ([[feedback_deterministic_orchestration]]).
+- **Fix:** a deterministic helper (`bin/gsd-t-archive-domains.cjs` or fold into an existing complete-milestone gate) that, at complete-milestone time, (a) copies the just-completed milestone's domain dirs → `.gsd-t/milestones/{name}-{date}/domains/`, then (b) `git rm`s them from `.gsd-t/domains/`, leaving ONLY domains belonging to still-active (defined-but-incomplete) milestones. Must be IDEMPOTENT and identify "this milestone's domains" precisely (the partition's domain set for the completing milestone — NOT a blanket wipe, since a later milestone may legitimately have live domains, e.g. M90 completing while M87/M88 are still queued). Verify with a test: seed N stale + M live domains, run the sweep, assert exactly the completed set is archived+removed and the live set untouched.
+- **Containment guard:** apply the destructive-path rule ([[feedback_destructive_path_ops_containment]]) — the recursive remove must refuse any path resolving outside `.gsd-t/domains/` or equal to it.
+- **Doc-ripple:** Step 7 prose → "runs `bin/gsd-t-archive-domains.cjs` (deterministic)"; complete-milestone command + GSD-T-README + CHANGELOG.
+- Scope: ~1 domain (the helper + its test + complete-milestone wiring + doc-ripple), 1 wave. Small, localized — hands-on fix, not a headless spawn ([[feedback_dont_keep_spawning_milestones]]).
