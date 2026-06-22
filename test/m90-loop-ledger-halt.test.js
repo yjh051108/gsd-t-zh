@@ -81,12 +81,16 @@ describe('T1 — computeSignature', () => {
     assert.equal(a.signature, b.signature, 'Same inputs → byte-identical key');
   });
 
-  test('different surface → different signature key', () => {
-    const a = computeSignature({ assertion: 'test fails', surface: 'auth.js',  fileClass: 'unit' });
-    const b = computeSignature({ assertion: 'test fails', surface: 'db.js',    fileClass: 'unit' });
+  test('R-LOOP-1: SAME symptom + DIFFERENT surface → SAME signature key (variant-spawning accumulates)', () => {
+    // The whack-a-mole pathology M90 exists to catch: same symptom, a different file each cycle.
+    // The loop identity is the SYMPTOM (assertion), NOT the changing file — so these MUST share a
+    // signature and accumulate toward the halt. (Was the inverse assertion, which violated R-LOOP-1
+    // and let the binvoice loop escape the gate — Red Team HIGH, M90 verify.)
+    const a = computeSignature({ assertion: 'test fails', surface: 'auth.js', fileClass: 'unit' });
+    const b = computeSignature({ assertion: 'test fails', surface: 'db.js',   fileClass: 'unit' });
     assert.ok(a.ok);
     assert.ok(b.ok);
-    assert.notEqual(a.signature, b.signature, 'Different surface → different key');
+    assert.equal(a.signature, b.signature, 'same symptom + different surface → SAME key (variant-spawning counts)');
   });
 
   test('different assertion → different key', () => {
@@ -103,6 +107,25 @@ describe('T1 — computeSignature', () => {
     assert.ok(a.ok);
     assert.ok(b.ok);
     assert.notEqual(a.signature, b.signature);
+  });
+
+  test('R-LOOP-1 WHACK-A-MOLE (Red Team HIGH, M90 verify): same symptom + 3 different files → HARD-HALT', () => {
+    // The binvoice pathology, end-to-end: each cycle edits a DIFFERENT file chasing the SAME symptom.
+    // Must accumulate to the threshold and HALT — not escape as 3 distinct cycles=1 signatures.
+    const dir = makeTmpDir();
+    try {
+      const sym = 'FB modal scrape fails';
+      let last;
+      for (const f of ['scraper.js', 'modal.js', 'dom.js']) {
+        last = appendCycle({ assertion: sym, surface: f, fileClass: 'unit', projectDir: dir });
+        assert.ok(last.ok);
+      }
+      assert.equal(last.cycles, 3, 'variant-spawning on one symptom accumulates to 3 (not 3×cycles=1)');
+      assert.equal(last.halted, true, 'HARD-HALT fires on the 3rd same-symptom cycle');
+      assert.equal(readExitState(dir).haltedButNoReExamination, true, 'the whack-a-mole loop is CAUGHT by R-FAIL-3');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('prose-label fields do NOT influence the key (only the 3 structural inputs matter)', () => {

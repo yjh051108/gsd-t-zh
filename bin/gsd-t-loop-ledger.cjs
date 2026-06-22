@@ -74,10 +74,16 @@ function computeSignature({ assertion, surface, fileClass }) {
   const bad = validateSignatureInputs({ assertion, surface, fileClass });
   if (bad) return { ok: false, error: bad };
 
+  // R-LOOP-1: key the loop on the STABLE discriminator — the SYMPTOM (assertion) only — NOT the
+  // file being edited. Variant-spawning (same symptom, a different file each cycle = the binvoice
+  // whack-a-mole M90 exists to catch) MUST accumulate toward the halt. Keying on surface/fileClass
+  // gave each variant a distinct signature stuck at cycles=1, so the halt never fired (Red Team
+  // HIGH, M90 verify). surface/fileClass remain accepted (caller context) but are NOT part of the
+  // loop identity. fileClass is folded in as a coarse bucket so a unit-test loop and a lint loop on
+  // the same assertion text stay distinct, but the changing file does not.
   const canonical = [
     assertion.trim().toLowerCase(),
-    surface.trim().toLowerCase(),
-    fileClass.trim().toLowerCase(),
+    (fileClass || '').trim().toLowerCase(),
   ].join('\x00');
 
   const signature = crypto.createHash('sha256').update(canonical).digest('hex');
@@ -88,6 +94,8 @@ function validateSignatureInputs({ assertion, surface, fileClass }) {
   if (!assertion || typeof assertion !== 'string' || !assertion.trim()) {
     return 'assertion must be a non-empty string';
   }
+  // surface is accepted for caller context but is NOT part of the loop identity (R-LOOP-1):
+  // requiring it stays for back-compat, but it no longer keys the signature.
   if (!surface || typeof surface !== 'string' || !surface.trim()) {
     return 'surface must be a non-empty string';
   }
@@ -147,11 +155,12 @@ function readState(projectDir) {
     // M90 verify). Migrate legacy shapes: a legacy `true` boolean → mark every currently-halted
     // signature pending (fail-closed); a legacy `false`/absent → empty map.
     if (typeof parsed.reExaminationPending === 'boolean') {
+      // Legacy boolean → per-sig map. FAIL CLOSED: a halted signature is treated as still-pending
+      // regardless of the legacy boolean value (even `false`) — a halted-but-unresolved sig must
+      // NOT silently pass the gate just because an old global flag said false (Red Team LOW, M90).
       const migrated = {};
-      if (parsed.reExaminationPending === true) {
-        for (const sig of Object.keys(parsed.halted)) {
-          if (parsed.halted[sig]) migrated[sig] = true;
-        }
+      for (const sig of Object.keys(parsed.halted)) {
+        if (parsed.halted[sig]) migrated[sig] = true;
       }
       parsed.reExaminationPending = migrated;
     } else if (

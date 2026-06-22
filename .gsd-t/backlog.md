@@ -699,6 +699,7 @@ A SEPARATE **Realism agent** the Red Team argues scope with (adversarial-collabo
 - **EXPERIMENTAL — no published precedent** for reliably auto-deciding spike feasibility; expect this to need its own prove-or-kill. Likely re-opens the same convergence risk M90's verify hit, so gate it hard.
 - **Companion rule (user, 2026-06-22):** an UNSTATED requirement is a QUESTION FOR THE USER, never an assumption to spike or adversarially argue. The decider must route "is this even a requirement?" to the human, not auto-resolve it. ([[feedback_no_confabulated_examples]])
 - **Flip-on-land:** doctrine contract §2.2/§4 currently say "interface-only this milestone"; when this lands, R-FAIL-2 flips from declared-interface-only-PASS to genuinely-fireable, and the verify gate's grep-for-live-producer detects it automatically.
+- **Fold in (Red Team LOW, M90 verify fc9):** the arch-trigger instrumentation sink swallows write errors (best-effort append) — when a live producer exists, an unwritable sink → R-FAIL-2 count stays 0 → fail-OPEN. The live-producer wiring must make the sink write fail-closed (or verify must detect an unwritable/absent sink as a hard error, not a 0-count pass).
 - Scope: ~1–2 domains (the spike-feasibility decider + blind-adversary wiring + the human-ask routing for unstated requirements + R-FAIL-2 live-fire test), multi-wave, EXPERIMENTAL.
 
 ## 43. Classifier mis-routes an external SDK fact to internal/grep when a repo path co-occurs (M90 D3 MEDIUM edge)
