@@ -241,13 +241,56 @@ describe('T4 — R-LOOP-3 directive + R-FAIL-3 fail-closed state (in-process)', 
     assert.equal(s.reExaminationPending, true);
   });
 
-  test('R-FAIL-3: recordReExamination clears the fail-closed state (never silently)', () => {
-    const r = recordReExamination(tmpDir);
+  test('R-FAIL-3: recordReExamination clears the fail-closed state PER-SIGNATURE (never silently, never blanket)', () => {
+    // The halted signature for `base` is the only one pending here.
+    const sig = computeSignature(base).signature;
+    // A blanket clear (no signature) is REFUSED — that was the Red Team HIGH bug.
+    const blanket = recordReExamination({ projectDir: tmpDir });
+    assert.equal(blanket.ok, false, 'blanket clear (no signature) must be refused');
+    // Per-signature clear resolves exactly that signature.
+    const r = recordReExamination(sig, tmpDir);
     assert.ok(r.ok);
+    assert.deepEqual(r.cleared, [sig]);
     const s = readExitState(tmpDir);
     assert.ok(s.ok);
-    assert.equal(s.reExaminationPending, false, 'must be cleared after re-examination recorded');
-    assert.equal(s.haltedButNoReExamination, false, 'fail-closed predicate must clear');
+    assert.equal(s.reExaminationPending, false, 'must be cleared after that signature is re-examined');
+    assert.equal(s.haltedButNoReExamination, false, 'fail-closed predicate must clear for the only pending sig');
+  });
+
+  test('R-FAIL-3 REGRESSION (Red Team HIGH): clearing ONE halted signature must NOT clear a second unresolved loop', () => {
+    // Two DISTINCT non-converging loops, both halted in the same project state.
+    const dir = makeTmpDir();
+    try {
+      const loopA = { assertion: 'A fails', surface: 'a.js', fileClass: 'unit', projectDir: dir };
+      const loopB = { assertion: 'B fails', surface: 'b.js', fileClass: 'unit', projectDir: dir };
+      for (let i = 0; i < 3; i++) appendCycle(loopA);
+      for (let i = 0; i < 3; i++) appendCycle(loopB);
+      const sigA = computeSignature(loopA).signature;
+      const sigB = computeSignature(loopB).signature;
+
+      let s = readExitState(dir);
+      assert.equal(s.haltedSignatures.length, 2, 'both loops halted');
+      assert.equal(s.haltedButNoReExamination, true, 'both unresolved → gate FAILs');
+
+      // Re-examine ONLY loop A.
+      const r = recordReExamination(sigA, dir);
+      assert.ok(r.ok);
+      assert.deepEqual(r.cleared, [sigA]);
+
+      s = readExitState(dir);
+      // The bug: a global boolean would now report clear for BOTH → gate silently PASSES.
+      // The fix: loop B is still pending → gate must STILL FAIL.
+      assert.equal(s.haltedButNoReExamination, true,
+        'loop B still unresolved — gate must NOT pass after clearing only A (the silent-degradation the bug caused)');
+      assert.deepEqual(s.pendingSignatures, [sigB]);
+
+      // Resolve B too → now clear.
+      recordReExamination(sigB, dir);
+      s = readExitState(dir);
+      assert.equal(s.haltedButNoReExamination, false, 'both resolved → gate passes');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

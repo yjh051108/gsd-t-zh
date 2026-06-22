@@ -35,6 +35,8 @@
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
+const fs = require("node:fs");
+const os = require("node:os");
 const { spawnSync } = require("node:child_process");
 
 // ---------------------------------------------------------------------------
@@ -520,6 +522,39 @@ describe("Measurement instrumentation — fire emits record, no self-efficacy cl
       true,
       "divergence-sampling envelope MUST contain experimental:true (the R-ARCH-1 path is experimental+measured)"
     );
+  });
+
+  test("REGRESSION (Red Team CRITICAL): provenByAdversaryOnly is PERSISTED to the sink the R-FAIL-2 verify gate scans", () => {
+    // The verify R-FAIL-2 gate scans .gsd-t/metrics/arch-trigger-events.jsonl for
+    // provenByAdversaryOnly===true. If the producer never writes that field, the gate count is
+    // always 0 → the §4 fail-closed gate is vacuous (can never fire) — the exact hollow-gate
+    // failure M90 exists to prevent. This proves the field reaches the sink.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m90-arch-sink-"));
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(dir);
+      // extend-existing-code with spikeFeasible:false → resolveResponseMode sets
+      // provenByAdversaryOnly:true (R-ARCH-5). It MUST land in the persisted record.
+      const result = resolve({
+        type: "extend-existing-code",
+        context: "extending bin/foo.js",
+        basis: "the existing parser is fine, just patch it",
+        responseOpts: { spikeFeasible: false },
+      });
+      assert.ok(result.ok, `ok:false: ${JSON.stringify(result)}`);
+      assert.strictEqual(result.provenByAdversaryOnly, true, "envelope flag (sanity)");
+
+      const sink = path.join(dir, ".gsd-t", "metrics", "arch-trigger-events.jsonl");
+      assert.ok(fs.existsSync(sink), "instrumentation sink must be written");
+      const records = fs.readFileSync(sink, "utf8").trim().split(/\r?\n/).map((l) => JSON.parse(l));
+      const last = records[records.length - 1];
+      assert.ok("provenByAdversaryOnly" in last, "PERSISTED record MUST carry provenByAdversaryOnly (R-FAIL-2 scans for it)");
+      assert.strictEqual(last.provenByAdversaryOnly, true, "the persisted flag must be true so the gate can actually fire");
+      assert.ok("mode" in last, "persisted record carries mode");
+    } finally {
+      process.chdir(prevCwd);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

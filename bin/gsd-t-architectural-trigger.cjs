@@ -352,12 +352,16 @@ function triggerDivergenceSampling(input) {
     ...(fired ? responseMode : {}),
   };
 
-  // Emit instrumentation (no-claim invariant: emitting a record, not asserting reliability)
+  // Emit instrumentation (no-claim invariant: emitting a record, not asserting reliability).
+  // provenByAdversaryOnly + mode are PERSISTED so the verify R-FAIL-2 gate (§4) — which scans this
+  // sink for provenByAdversaryOnly===true — has the field it checks; without it the gate is vacuous
+  // (count always 0, can never fire), the exact hollow-gate failure M90 exists to prevent.
   emitInstrumentationRecord({
     firePath: "divergence-sampling",
     fired,
     basis: trimmedBasis,
     mode: fired ? responseMode.mode : null,
+    provenByAdversaryOnly: fired ? !!responseMode.provenByAdversaryOnly : false,
     divergenceScore: score,
   });
 
@@ -399,12 +403,13 @@ function triggerExtendExistingCode(input) {
     ...responseMode,
   };
 
-  // Emit instrumentation
+  // Emit instrumentation. provenByAdversaryOnly + mode PERSISTED for the verify R-FAIL-2 gate (§4).
   emitInstrumentationRecord({
     firePath: "protocol-class",
     fired: true,
     basis: trimmedBasis,
     mode: responseMode.mode,
+    provenByAdversaryOnly: !!responseMode.provenByAdversaryOnly,
     divergenceScore: null,
   });
 

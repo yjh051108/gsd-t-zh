@@ -114,7 +114,7 @@ function statePath(projectDir) {
 function readState(projectDir) {
   const fp = statePath(projectDir);
   if (!fs.existsSync(fp)) {
-    return { cycles: {}, halted: {}, reExaminationPending: false };
+    return { cycles: {}, halted: {}, reExaminationPending: {} };
   }
   let raw;
   try {
@@ -133,9 +133,24 @@ function readState(projectDir) {
     ) {
       return null; // corrupt
     }
-    // Ensure reExaminationPending is present (backwards compat with older state)
-    if (typeof parsed.reExaminationPending !== 'boolean') {
-      parsed.reExaminationPending = false;
+    // reExaminationPending is a PER-SIGNATURE map { [signature]: true }, NOT a global boolean.
+    // A global boolean let one recordReExamination() clear the gate for ALL halted signatures —
+    // a second unresolved non-converging loop would then silently pass R-FAIL-3 (Red Team HIGH,
+    // M90 verify). Migrate legacy shapes: a legacy `true` boolean → mark every currently-halted
+    // signature pending (fail-closed); a legacy `false`/absent → empty map.
+    if (typeof parsed.reExaminationPending === 'boolean') {
+      const migrated = {};
+      if (parsed.reExaminationPending === true) {
+        for (const sig of Object.keys(parsed.halted)) {
+          if (parsed.halted[sig]) migrated[sig] = true;
+        }
+      }
+      parsed.reExaminationPending = migrated;
+    } else if (
+      parsed.reExaminationPending === null ||
+      typeof parsed.reExaminationPending !== 'object'
+    ) {
+      parsed.reExaminationPending = {};
     }
     return parsed;
   } catch {
@@ -203,7 +218,7 @@ function appendCycle({ assertion, surface, fileClass, projectDir } = {}) {
   const halted = cycles >= HALT_THRESHOLD;
   if (halted) {
     state.halted[signature] = true;
-    state.reExaminationPending = true; // R-FAIL-3: §4 fail-closed surface
+    state.reExaminationPending[signature] = true; // R-FAIL-3: PER-SIGNATURE fail-closed surface
   }
 
   // 5. Atomic write
@@ -220,7 +235,7 @@ function appendCycle({ assertion, surface, fileClass, projectDir } = {}) {
     cycles,
     halted,
     haltCode: halted ? 'LOOP_HALT_CYCLE_THRESHOLD' : null,
-    reExaminationPending: state.reExaminationPending,
+    reExaminationPending: !!state.reExaminationPending[signature], // this signature's pending flag
     directive: halted
       ? {
           action: 'PREMISE_RE_EXAMINATION',
@@ -259,15 +274,19 @@ function readExitState(projectDir) {
   }
 
   const haltedSignatures = Object.keys(state.halted).filter((k) => state.halted[k]);
-  const anyHalted = haltedSignatures.length > 0;
-  const reExaminationPending = state.reExaminationPending === true;
+  // PER-SIGNATURE: a halted signature is unresolved iff its own pending flag is still set.
+  // (A global boolean let one recordReExamination clear ALL — Red Team HIGH; now each halted
+  // signature must be cleared individually, so a second unresolved loop still FAILs R-FAIL-3.)
+  const pendingSignatures = haltedSignatures.filter((sig) => state.reExaminationPending[sig] === true);
 
   return {
     ok: true,
     haltedSignatures,
-    reExaminationPending,
-    // The §4 fail-closed predicate: halted AND re-examination not yet recorded
-    haltedButNoReExamination: anyHalted && reExaminationPending,
+    pendingSignatures,
+    // Back-compat field: true iff ANY halted signature is still pending re-examination.
+    reExaminationPending: pendingSignatures.length > 0,
+    // The §4 fail-closed predicate: at least one halted signature has no recorded re-examination.
+    haltedButNoReExamination: pendingSignatures.length > 0,
   };
 }
 
@@ -276,27 +295,56 @@ function readExitState(projectDir) {
 // ---------------------------------------------------------------------------
 
 /**
- * Record that premise re-examination has been performed.
- * Clears `reExaminationPending` so the §4 fail-closed gate can pass.
+ * Record that premise re-examination has been performed for a SPECIFIC halted signature.
+ * Clears only THAT signature's pending flag so the §4 fail-closed gate can pass for it —
+ * other halted-but-unresolved signatures stay pending (Red Team HIGH: a global clear let one
+ * call resolve every loop at once, silently passing a second unresolved non-converging loop).
  *
- * Never clears silently — only this explicit call clears it.
+ * Never clears silently — only this explicit call clears it. Clearing a signature that is not
+ * halted/pending is a no-op (idempotent), not an error.
  *
- * Returns { ok:true } | { ok:false, error }
- *
- * @param {string} [projectDir]
+ * @param {string|object} arg        — the signature string, OR an opts object { signature, projectDir }
+ * @param {string} [maybeProjectDir] — projectDir when the first arg is a bare signature string
+ * Returns { ok:true, cleared:string[] } | { ok:false, error }
  */
-function recordReExamination(projectDir) {
+function recordReExamination(arg, maybeProjectDir) {
+  // Accept both recordReExamination(signature, projectDir) and recordReExamination({ signature, projectDir }).
+  let signature;
+  let projectDir;
+  if (arg && typeof arg === 'object') {
+    signature = arg.signature;
+    projectDir = arg.projectDir;
+  } else {
+    signature = arg;
+    projectDir = maybeProjectDir;
+  }
+
   const state = readState(projectDir);
   if (state === null) {
     return { ok: false, error: 'Loop-ledger state file is corrupt or unreadable.' };
   }
-  state.reExaminationPending = false;
+
+  const cleared = [];
+  if (signature && typeof signature === 'string') {
+    if (state.reExaminationPending[signature]) {
+      delete state.reExaminationPending[signature];
+      cleared.push(signature);
+    }
+  } else {
+    // No signature given: refuse a blanket clear (that was the bug). Surface the choices.
+    const pending = Object.keys(state.reExaminationPending).filter((s) => state.reExaminationPending[s]);
+    return {
+      ok: false,
+      error: `recordReExamination requires a signature — refusing a blanket clear (would silently pass other unresolved loops). Pending signatures: ${pending.join(', ') || '(none)'}`,
+    };
+  }
+
   try {
     writeState(projectDir, state);
   } catch (e) {
     return { ok: false, error: `Failed to write loop-ledger state: ${e.message}` };
   }
-  return { ok: true };
+  return { ok: true, cleared };
 }
 
 // ---------------------------------------------------------------------------
@@ -357,7 +405,8 @@ if (require.main === module) {
     else exitOk(result);
 
   } else if (subcommand === 'record-re-examination') {
-    const result = recordReExamination(projectDir);
+    // Requires --signature (per-signature clear; a blanket clear is refused by the function).
+    const result = recordReExamination({ signature: flags.signature, projectDir });
     if (!result.ok) exitErr(result);
     else exitOk(result);
 
