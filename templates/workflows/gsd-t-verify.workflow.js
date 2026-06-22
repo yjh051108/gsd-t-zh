@@ -339,30 +339,38 @@ log(`M89 auto-research gate: PASS — ${arGate.citedCount} cited marker(s) all b
 // They cleanly PASS (with a recorded de-scoped note) when the mechanism is absent.
 // Contract: unproven-assumption-doctrine-contract.md §4 (R-FAIL-2, R-FAIL-3).
 
-// R-FAIL-2: read arch-trigger state (proven-by-adversary-only flag)
-// The arch-trigger's instrumentation sink is at .gsd-t/metrics/arch-trigger-events.jsonl.
-// We scan for any entry with provenByAdversaryOnly=true that lacks a recorded re-examination.
+// R-FAIL-2: arch-trigger proven-by-adversary-only premise gate (§4).
+// Three DISTINGUISHABLE states (unproven-assumption-doctrine-contract.md §4 + §2.2):
+//   (a) interfaceOnly PASS — NO live producer of the flag wired this milestone (no workflow sets
+//       spikeFeasible), so the flag can't be raised in real operation. DECLARED (M90 decision A),
+//       not a hidden hollow gate.  → grep the workflows for a live producer to detect this.
+//   (b) deScopedPass — R1 exited to factual-only, trigger not wired at all.
+//   (c) FAIL — a live producer exists AND emitted an unresolved proven-by-adversary-only flag.
+// The gate must NEVER vacuously pass a wired-but-broken check. When backlog #42 wires a live
+// spike-feasibility producer, the grep finds it and the gate becomes (c)-capable.
 const M90_ARCH_TRIGGER_SINK = `${projectDir}/.gsd-t/metrics/arch-trigger-events.jsonl`;
 const m90ArchTriggerGate = await agent(
   [
-    `You are the M90 §4 R-FAIL-2 gate scanner. Check if the arch-trigger instrumentation sink has any`,
-    `unresolved "proven-by-adversary-only" entries.`,
+    `You are the M90 §4 R-FAIL-2 gate scanner. Determine which of three states holds and return JSON.`,
     ``,
     `Sink file: \`${M90_ARCH_TRIGGER_SINK}\``,
     ``,
     `Steps:`,
-    `1. Check if the sink file exists: \`test -f '${M90_ARCH_TRIGGER_SINK}' && echo EXISTS || echo ABSENT\``,
-    `2. If ABSENT → the arch-trigger mechanism is NOT wired (de-scoped per R1-EXIT). Return:`,
-    `   { "pass": true, "deScopedPass": true, "note": "arch-trigger mechanism absent by design (R1-EXIT de-scoped-DOWN) — R-FAIL-2 is a documented no-op-PASS", "provenByAdversaryOnlyCount": 0 }`,
-    `3. If EXISTS → read its lines (each is a JSONL record). Check for any record where:`,
-    `   - provenByAdversaryOnly === true (the trigger flagged a premise proven only by adversarial reasoning)`,
-    `   Count such records → set provenByAdversaryOnlyCount.`,
-    `4. pass = true if provenByAdversaryOnlyCount === 0; pass = false otherwise.`,
-    `5. Return JSON: { "pass": boolean, "deScopedPass": false, "provenByAdversaryOnlyCount": N, "note": "..." }`,
+    `1. LIVE-PRODUCER CHECK: run \`grep -lE 'spikeFeasible|spikePassed|responseOpts' ${projectDir}/templates/workflows/*.workflow.js 2>/dev/null | head\`.`,
+    `   If it prints NOTHING → there is NO live producer of the proven-by-adversary-only flag wired`,
+    `   this milestone. Return (INTERFACE-ONLY, declared PASS per §2.2 / decision A):`,
+    `   { "pass": true, "interfaceOnly": true, "deScopedPass": false, "provenByAdversaryOnlyCount": 0,`,
+    `     "note": "R-FAIL-2 interface-only this milestone — no workflow sets spikeFeasible, so proven-by-adversary-only is never raised; DECLARED no-op-PASS (doctrine contract §2.2/§4, backlog #42 wires the live producer)" }`,
+    `2. If a live producer IS found → check the sink: \`test -f '${M90_ARCH_TRIGGER_SINK}' && echo EXISTS || echo ABSENT\`.`,
+    `   - ABSENT → trigger genuinely de-scoped (R1-EXIT). Return:`,
+    `     { "pass": true, "interfaceOnly": false, "deScopedPass": true, "provenByAdversaryOnlyCount": 0, "note": "arch-trigger mechanism absent by design (R1 de-scoped-DOWN) — documented no-op-PASS" }`,
+    `   - EXISTS → read each JSONL line; count records where provenByAdversaryOnly === true → provenByAdversaryOnlyCount.`,
+    `     pass = (provenByAdversaryOnlyCount === 0). Return:`,
+    `     { "pass": boolean, "interfaceOnly": false, "deScopedPass": false, "provenByAdversaryOnlyCount": N, "note": "..." }`,
     ``,
-    `This gate is R-FAIL-2 per unproven-assumption-doctrine-contract.md §4. A proven-by-adversary-only`,
-    `flag that was never independently verified blocks verify. The no-op-PASS (deScopedPass=true)`,
-    `is DISTINGUISHABLE from a wired-but-broken vacuous pass.`,
+    `This gate is R-FAIL-2 per unproven-assumption-doctrine-contract.md §4. The interfaceOnly PASS and`,
+    `deScopedPass are BOTH distinguishable from a wired-but-broken vacuous pass — they are only`,
+    `returned when the producer is provably absent (grep) / de-scoped, never to mask a wired failure.`,
   ].join("\n"),
   {
     label: "m90-r-fail-2-gate",
@@ -374,6 +382,7 @@ const m90ArchTriggerGate = await agent(
       additionalProperties: true,
       properties: {
         pass: { type: "boolean" },
+        interfaceOnly: { type: "boolean" },
         deScopedPass: { type: "boolean" },
         provenByAdversaryOnlyCount: { type: "integer" },
         note: { type: "string" },

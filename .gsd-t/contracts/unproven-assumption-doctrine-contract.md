@@ -142,14 +142,28 @@ On bad input: `{ "ok": false, "error": "<reason>" }` + non-zero CLI exit.
 - R-ARCH-1 divergence signal: the phase competition arm's actual N producer outputs
   (`competition:N>1`). Wired competition-arm-ONLY; dormant by default.
 
-### §2.2 Response interface (R-ARCH-3..6)
+### §2.2 Response interface (R-ARCH-3..6) — **INTERFACE-ONLY / EXPERIMENTAL this milestone (M90)**
+
+> **DECLARED SCOPE (M90 verify, 2026-06-22, user decision A):** the response-mode interface below
+> is fully IMPLEMENTED and unit-tested in `bin/gsd-t-architectural-trigger.cjs::resolveResponseMode`,
+> but has **NO LIVE PRODUCER** this milestone — no workflow yet decides spike feasibility and feeds
+> `spikeFeasible`/`spikePassed` into the trigger (verified: `grep 'spikeFeasible|spikePassed|responseOpts'
+> templates/workflows/*.workflow.js` = 0 hits). The deferred piece is a spike-feasibility DECIDER
+> (the blind-adversary stage inspecting each premise to set `spikeFeasible`). Until it lands, the
+> response modes default to `spike`/preferred, `proven-by-adversary-only` is never raised in real
+> operation, and **R-FAIL-2 is a DECLARED interface-only no-op-PASS** — intentional and recorded
+> here, NOT a hidden hollow gate. This is the same honesty stance the §2.1 divergence path takes
+> (EXPERIMENTAL+MEASURED, never a silent claim it works). The live producer is backlog #42 (option
+> B). Re-examining whether an UNSTATED requirement should be spiked vs. asked-of-the-human is part
+> of that follow-up — an unstated requirement is a QUESTION FOR THE USER, never an assumption to
+> spike or adversarially argue.
 
 - **mode `spike` (PREFERRED):** attempt an executable spike to prove feasibility of the approach.
 - **mode `adversary-only` (FALLBACK):** when spike is infeasible or fails.
 - **R-ARCH-4:** spike fails → STOP directive in envelope; agent cannot proceed without re-examination.
 - **R-ARCH-5:** spike infeasible → logged skip + adversary MANDATORY.
 - **R-ARCH-6:** premise proven-by-adversary-only → `proven-by-adversary-only` flag in the envelope,
-  surfaced to the verify gate (R-FAIL-2).
+  surfaced to the verify gate (R-FAIL-2). *(Interface-only this milestone — see DECLARED SCOPE above.)*
 
 **Protocol prompt:** `templates/prompts/blind-adversary-subagent.md` — separate context/model
 (`fable`; M85 policy).
@@ -241,9 +255,15 @@ multiplication and changes the debug cost envelope. Never retry; re-examine.
   `<!-- auto-research-claim: ... status=uncited -->` (§1 marker, R-FACT-4).
 - **R-FAIL-2 (unresolved proven-by-adversary-only premise):** The architectural trigger emitted a
   `proven-by-adversary-only` flag that has not been resolved (§2 envelope, R-ARCH-6).
-  **R1-de-scoped-DOWN exception:** when the arch trigger is NOT wired (R1 exits, factual-only mode),
-  R-FAIL-2 is a DOCUMENTED no-op-PASS — the check passes with a recorded "mechanism absent by
-  design" note. This is DISTINGUISHABLE from a wired-but-broken vacuous pass.
+  **INTERFACE-ONLY this milestone (M90, user decision A 2026-06-22):** the §2.2 response-mode
+  interface has no live producer (no workflow sets `spikeFeasible`), so the flag is never raised
+  in real operation. R-FAIL-2 is therefore a **DECLARED interface-only no-op-PASS** — recorded
+  here and surfaced by the gate (it reports `interfaceOnly:true`), NOT a hidden hollow gate. The
+  three distinguishable states the gate MUST report: (a) **declared-interface-only-PASS** (no live
+  producer this milestone — this case); (b) **de-scoped-PASS** (R1 exited to factual-only, trigger
+  not wired); (c) **FAIL** (a live producer exists AND emitted an unresolved flag). The gate must
+  never vacuously pass a wired-but-broken check. When backlog #42 lands the live producer, this
+  flips from (a) to (c)-capable.
 - **R-FAIL-3 (halted-but-no-re-examination):** The loop ledger's `haltedButNoReExamination` field
   is `true` (§3 state, R-LOOP-3).
   **R1-de-scoped-DOWN exception (if loop-ledger halt de-scoped):** same pattern — documented

@@ -688,3 +688,26 @@ A SEPARATE **Realism agent** the Red Team argues scope with (adversarial-collabo
 - **Question to resolve first (don't assume):** is `bin/gsd-t-task-brief.js` still USED anywhere? The M61 platform reconciliation moved briefs to `bin/gsd-t-context-brief.cjs` (the workflow brief collector). If `gsd-t-task-brief.js` is superseded/orphaned, the fix is RETIRE it (grep requirers, inline-then-delete per [[feedback_retire_scan_against_keep_list]]), NOT update its parser. If still live, update `extractTask` to parse Shape-D headings (`### Mxx-Dx-Tx` + the `**Files**`/`**Test**`/`**Acceptance criteria**` fields).
 - **Interim (done 2026-06-22):** the m40 self-test was repointed from "live repo self-test" to a `mkFixtureProject()` end-to-end test (still exercises the tool, decoupled from live domains) so M90 verify isn't blocked. The deeper parser/retirement decision is this item.
 - Scope: ~1 domain (decide retire-vs-fix, then either delete + requirer-inline or update parser + add a Shape-D fixture test), <1 wave.
+
+## 42. Wire a LIVE spike-feasibility producer for the architectural-trigger response modes (R-FAIL-2 enforcement — M90 option B, deferred)
+
+**Added**: 2026-06-22
+**Type**: feature (doctrine-enforcement) | **App**: gsd-t | **Category**: workflow
+**Origin**: M90 verify, 2026-06-22. User chose option A (declare interface-only) to ship M90; this is the deferred option B.
+- **Plain version:** M90 has a safety check meant to STOP the build when the AI commits to an approach it only *argued* was fine but never actually *tested* (ran code to prove it). Today that check is a smoke detector with no sensor wired — installed, looks real, can never beep. M90 shipped it DECLARED interface-only (honest "not wired yet") rather than hidden-hollow. This item wires the sensor.
+- **What's missing:** a DECIDER that, given an approach an agent is about to build on, judges "can I write a quick throwaway script to actually test this premise? (spikeFeasible yes/no)" and feeds that into `bin/gsd-t-architectural-trigger.cjs::resolveResponseMode({spikeFeasible, spikePassed})`. Only then does `provenByAdversaryOnly:true` ever get raised, and only then can R-FAIL-2 genuinely fire. The natural home is the blind-adversary stage (`templates/prompts/blind-adversary-subagent.md`) wired into execute/quick/phase.
+- **EXPERIMENTAL — no published precedent** for reliably auto-deciding spike feasibility; expect this to need its own prove-or-kill. Likely re-opens the same convergence risk M90's verify hit, so gate it hard.
+- **Companion rule (user, 2026-06-22):** an UNSTATED requirement is a QUESTION FOR THE USER, never an assumption to spike or adversarially argue. The decider must route "is this even a requirement?" to the human, not auto-resolve it. ([[feedback_no_confabulated_examples]])
+- **Flip-on-land:** doctrine contract §2.2/§4 currently say "interface-only this milestone"; when this lands, R-FAIL-2 flips from declared-interface-only-PASS to genuinely-fireable, and the verify gate's grep-for-live-producer detects it automatically.
+- Scope: ~1–2 domains (the spike-feasibility decider + blind-adversary wiring + the human-ask routing for unstated requirements + R-FAIL-2 live-fire test), multi-wave, EXPERIMENTAL.
+
+## 43. Classifier mis-routes an external SDK fact to internal/grep when a repo path co-occurs (M90 D3 MEDIUM edge)
+
+**Added**: 2026-06-22
+**Type**: tech debt (classifier-edge) | **App**: gsd-t | **Category**: cli
+**Origin**: M90 verify Red Team MEDIUM, 2026-06-22. Confirmed on disk.
+- **Plain version:** Ask "what does AWS's `putObject` return — check our `upload.js`." The right move is look up AWS's docs (external). But because you named one of your own files in the same breath, the classifier says "this is about your code, just grep locally" and never checks AWS — it'd answer confidently from your repo alone and could be wrong about AWS.
+- **Repro:** `node bin/gsd-t-research-gate.cjs classify "what does the AWS S3 putObject return — see our src/upload.js"` → `{class:internal, route:grep}`. AWS/S3/putObject is an unlisted external SDK fact; the no-strong-external branch lets a repo path-anchor win, violating §1's "never guess-internal for an external fact."
+- **Root:** the premise-corrected vendor list (kept as an external→web *upgrade*) doesn't cover AWS/S3/putObject, so `hasStrongExternal` is false; then the path-anchor makes it internal. A co-occurring external-SDK signal should at least downgrade to `ambiguous→judge`, not assert internal.
+- **Fix direction:** when an external-API-shaped token co-occurs with a repo path and there's no strong-external vendor match, route `ambiguous→judge` (let the LLM decide), never `internal`. Add to the corpus + held-out fixture.
+- Scope: ~1 domain (classifier branch + corpus rows), <1 wave. Deferred from M90 to avoid a classifier change right before shipping (kept verify stable).
