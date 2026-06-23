@@ -103,6 +103,8 @@ Contract: `.gsd-t/contracts/plan-hardening-contract.md` v1.0.0.
 
 | Version | Milestone | Key capability |
 |---------|-----------|----------------|
+| 4.7.11 | #40 | Deterministic domain archive+sweep at complete-milestone (`bin/gsd-t-archive-domains.cjs`) — stops stale-domain accumulation |
+| 4.7.10 | M90 | The Unproven-Assumption Doctrine — factual classifier + loop-ledger non-convergence halt + architectural trigger, wired fail-closed |
 | 4.5.10 | M86 | Model Profiles (standard/pro/premium) — per-project tier-spend switch |
 | 4.4.10 | M85 | Fable 5 tier + single-source model-tier policy (`bin/gsd-t-model-tier-policy.cjs`) |
 | 4.0.10 | M61 | Native Workflow orchestration — Workflow runtime owns spawning |

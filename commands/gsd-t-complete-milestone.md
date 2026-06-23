@@ -401,8 +401,21 @@ node scripts/gsd-t-watch-state.js advance --agent-id "$GSD_T_AGENT_ID" --parent-
 
 Reset `.gsd-t/` for next milestone:
 
-1. Archive current domains → `.gsd-t/milestones/{name}/domains/`
-2. Clear `.gsd-t/domains/` (empty, ready for next partition)
+1. **Archive + sweep the completed milestone's domains — DETERMINISTICALLY (backlog #40, NOT prose).**
+   This step was prose-only for ~30 milestones and got skipped, accumulating 77 stale domain dirs
+   that polluted the file-disjointness oracle. Run the helper with the EXPLICIT set of THIS
+   milestone's domain dirs (the partition's domain set — NOT a blanket wipe; a later still-active
+   milestone may legitimately have live domains):
+   ```bash
+   gsd-t archive-domains --domains "{comma-separated domain dir names for THIS milestone}" \
+     --archive ".gsd-t/milestones/{name}-{date}" --projectDir .
+   ```
+   (prefer the project-local `bin/gsd-t-archive-domains.cjs` when present). It (a) copies each named
+   domain → `<archive>/domains/<name>/`, then (b) removes it from `.gsd-t/domains/`. Idempotent
+   (re-running is a no-op), containment-guarded (refuses any name with path separators / dot-segments
+   or resolving outside `.gsd-t/domains/`), and fail-closed (a bad name aborts the whole batch — no
+   partial sweep). Domains belonging to other (still-active) milestones are left untouched.
+2. (Step 1 already cleared this milestone's domains from `.gsd-t/domains/` — do NOT blanket-wipe the dir.)
 3. Archive current reports → milestone folder
 4. Clear `.gsd-t/impact-report.md`, `.gsd-t/test-coverage.md`
 5. Update `.gsd-t/progress.md`:

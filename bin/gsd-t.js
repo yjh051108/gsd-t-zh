@@ -1268,6 +1268,8 @@ const GLOBAL_BIN_TOOLS = [
   "gsd-t-architectural-trigger.cjs",
   // M90 D2 — Loop ledger (non-convergence detection + halt directive; §3).
   "gsd-t-loop-ledger.cjs",
+  // Backlog #40 — deterministic archive+sweep of a completed milestone's domain dirs.
+  "gsd-t-archive-domains.cjs",
 ];
 
 function installGlobalBinTools() {
@@ -2579,6 +2581,9 @@ const PROJECT_BIN_TOOLS = [
   // M90 D2 — Loop ledger (non-convergence detection + halt directive; §3).
   // Propagated so project-local runCli helpers (gsd-t-debug.workflow.js) can invoke it.
   "gsd-t-loop-ledger.cjs",
+  // Backlog #40 — deterministic archive+sweep of a completed milestone's domain dirs
+  // (complete-milestone Step 7). Propagated so complete-milestone can invoke it project-local.
+  "gsd-t-archive-domains.cjs",
 ];
 
 // Files that older versions of this installer copied into project bin/ but
@@ -4747,6 +4752,20 @@ if (require.main === module) {
       const js = path.join(__dirname, "gsd-t-loop-ledger.cjs");
       if (!require("node:fs").existsSync(js)) {
         error(`gsd-t-loop-ledger.cjs not found at ${js} — install or build M90-D2 first`);
+        process.exit(1);
+      }
+      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
+        stdio: "inherit",
+      });
+      process.exit(res.status == null ? 1 : res.status);
+    }
+    case "archive-domains": {
+      // Backlog #40 — `gsd-t archive-domains --domains a,b --archive <dir>` deterministic
+      // archive+sweep of a completed milestone's domain dirs (complete-milestone Step 7).
+      const { spawnSync } = require("child_process");
+      const js = path.join(__dirname, "gsd-t-archive-domains.cjs");
+      if (!require("node:fs").existsSync(js)) {
+        error(`gsd-t-archive-domains.cjs not found at ${js} — install or build backlog #40 first`);
         process.exit(1);
       }
       const res = spawnSync(process.execPath, [js, ...args.slice(1)], {

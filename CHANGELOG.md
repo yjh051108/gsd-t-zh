@@ -2,6 +2,16 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.7.11] - 2026-06-22 (backlog #40 — deterministic domain archive+sweep — patch)
+
+### Fixed — complete-milestone now deterministically archives + sweeps a milestone's domains
+
+`complete-milestone` Step 7 was prose-only ("archive domains → clear `.gsd-t/domains/`") with no enforcement, so a Level-3 autonomous agent skipped or partial-did it for ~30 milestones — accumulating 77 stale domain dirs that polluted the file-disjointness oracle (surfaced + manually pruned during M90). Root-cause fix:
+
+- **`bin/gsd-t-archive-domains.cjs`** (new) + `gsd-t archive-domains` dispatch: copies an EXPLICIT set of the completing milestone's domain dirs → `<archive>/domains/<name>/`, then removes them from `.gsd-t/domains/`. Idempotent (re-running is a no-op), containment-guarded (refuses any name with path separators / dot-segments or resolving outside `.gsd-t/domains/` — [[feedback_destructive_path_ops_containment]]), fail-closed (a bad name aborts the whole batch, no partial sweep). Domains of other still-active milestones are left untouched (not a blanket wipe).
+- `commands/gsd-t-complete-milestone.md` Step 7: prose → the deterministic helper call.
+- Propagated via PROJECT_BIN_TOOLS + GLOBAL_BIN_TOOLS. 5 tests (sweep-exactly / idempotent / dry-run / containment / bad-input). Suite 2003 / 1999 pass / 0 fail.
+
 ## [4.7.10] - 2026-06-22 (M90 — The Unproven-Assumption Doctrine — minor)
 
 ### Added — a self-governing doctrine that stops the system building on unproven assumptions

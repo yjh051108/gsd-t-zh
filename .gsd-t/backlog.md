@@ -668,7 +668,7 @@ A SEPARATE **Realism agent** the Red Team argues scope with (adversarial-collabo
 - Lives in `templates/prompts/red-team-subagent.md` + a NEW realism-subagent protocol + the verify workflow triad-synthesis stage. The verify-time dual of the pre-mortem/debug-cycle caps. See memory `feedback_red_team_realism_gate`.
 - Scope: ~1–2 domains (realism-subagent protocol + red-team protocol update + verify-workflow wiring + deferred-ledger + contract/docs), 1 wave.
 
-## 40. complete-milestone must DETERMINISTICALLY archive+sweep the completed milestone's domain dirs (stale-domain accumulation)
+## 40. complete-milestone must DETERMINISTICALLY archive+sweep the completed milestone's domain dirs (stale-domain accumulation) — **DONE 2026-06-22 (v4.7.11, bin/gsd-t-archive-domains.cjs)**
 
 **Added**: 2026-06-22
 **Type**: tech debt (workflow-enforcement) | **App**: gsd-t | **Category**: cli/command
