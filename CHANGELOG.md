@@ -2,6 +2,26 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.8.10] - 2026-06-22 (M91 — PseudoCode Source-of-Truth, merged M87+M88 — minor)
+
+### Added — the intention-first PseudoCode behavior map becomes the milestone source-of-truth
+
+A `PseudoCode-[Title].md` authored BEFORE the build (a two-altitude behavior map: high-level approach → detailed per-step intention+mechanism) is now the milestone source-of-truth, enforced by deterministic gates. Eight file-disjoint domains across three waves, single-session build; full suite 2131 / 2127 pass / 0 fail / 4 skip.
+
+**M87 core (Waves 1–2):**
+- **Guard-map verify gate** (`bin/gsd-t-guard-map.cjs`) — parses the `[RULE …]` guard map (3 grammar forms, side-agnostic, derives `R-<SLUG>-<NN>` ids), gates a build→rule map (exit 0 / 4-names-the-rule / 64); wired FAIL-blocking into `gsd-t-verify.workflow.js` before the triad, with §7 doc+map discovery and distinct logged skips (`no-build-map` / `no-pseudocode-docs`).
+- **Section-citation traceability** (`bin/gsd-t-traceability-gate.cjs` extended) — tasks cite `**PseudoCode-Section**: <Title>#<anchor>`; a section with no citing task is a structural coverage gap; slug-as-slug resolution, never substring. Plus a milestone→domains scoping fix (`--domains`; zero-prefix-match no longer falls back to all — exit 64 `milestone-scope-unresolved`) and a path-containment guard (`domain-path-escape`).
+- **Two-altitude milestone flow** (`commands/gsd-t-milestone.md` + `gsd-t-phase.workflow.js`) — high-level approach sign-off precedes the detailed doc; competition solution-space probe shifts up to the approach altitude. Keep-or-supersede prompt protocol writes a `⚠ Divergence` flag on supersede.
+- **Template + doc-ripple** — `templates/PseudoCode-spec.md` mold; `PseudoCode-[Title].md` joins the Living Documents ripple set (region-scoped A4 drift lint).
+
+**M88 deterministic gates (Wave 3):**
+- **Sign-off state** (`bin/gsd-t-milestone-state.cjs`) — `<!-- signed-off: … -->` marker + `isDefined(docs)` predicate; unsigned ≠ DEFINED; skip is a logged decision, never silent.
+- **Build→map derivation** (`bin/gsd-t-guard-map-derive.cjs`) — mechanical evidence→map seam (imports the guard-map parser), end-to-end derive→gate test.
+- **Triad-consumption seam** (`bin/gsd-t-rule-consume.cjs` + ingest directives in qa/red-team prompts) — deterministic seam-check, no live triad.
+- **Divergence grammar** (`bin/gsd-t-divergence-grammar.cjs`) — `parseDivergence`/`formatDivergence` byte-stable round-trip + `countDivergences`.
+
+Every gate meets the deterministic-gate bar: deterministic code, zero LLM judgment, structural-not-substring, killing test vs byte-verbatim fixtures, fail-closed. Verify: QA PASS (mutation-tested), Red Team GRUDGING-PASS (one path-traversal MEDIUM fixed in-verify; fence-awareness MEDIUM/LOW deferred to backlog #45, all fail-closed). Contract: `pseudocode-source-of-truth-contract.md` v1.1.5 STABLE.
+
 ## [4.7.11] - 2026-06-22 (backlog #40 — deterministic domain archive+sweep — patch)
 
 ### Fixed — complete-milestone now deterministically archives + sweeps a milestone's domains

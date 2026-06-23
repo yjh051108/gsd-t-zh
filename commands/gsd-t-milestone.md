@@ -6,9 +6,39 @@ You are the lead agent. Define a new milestone by invoking the generic upper-sta
 
 ```
 preflight → brief (kind=milestone) → milestone agent (opus, with phase protocol)
+  → TWO-ALTITUDE intention-first authoring flow (default-ON):
+      1. HIGH-LEVEL APPROACH altitude (what/why/when, actors, one-breath summary)
+         → user signs off the APPROACH
+      2. DETAILED altitude — author `PseudoCode-[Title].md` at exemplar granularity
 ```
 
 The agent defines the milestone — origin, goal, falsifiable success criteria — and appends it to `.gsd-t/progress.md`. Partition is deferred (the Next Up successor). Effort/scope is expressed in GSD-T-native units (domain count, wave count, spawn count) — never developer-hours.
+
+## Two-Altitude Intention-First Flow (default-ON, M87)
+
+A milestone is authored at **two altitudes, in order** — the high-level approach is signed off BEFORE the detailed decomposition is written. This is the intention-first source-of-truth flow (contract `.gsd-t/contracts/pseudocode-source-of-truth-contract.md` §1). It is a **prose flow** — the command DESCRIBES the sign-off checkpoint below; it does NOT bind a machine-checkable "DEFINED only after sign-off" predicate (that deterministic `isDefined(milestone)` gate is M88).
+
+### Altitude 1 — High-Level Approach (signed off FIRST)
+
+Before any field-level detail, the milestone agent emits a **high-level approach pseudocode** covering:
+
+- **What / Why / When** — the directive the milestone serves, in the user's own intention (never agent reasoning).
+- **Actors** — the parties/components/realms the approach touches.
+- **One-breath summary** — "one call in one breath": the whole approach stated as a single coherent thought.
+
+The agent then **presents this approach to the user for SIGN-OFF**. The user signs off the APPROACH before the detailed doc is written. This sign-off checkpoint is the gate between the two altitudes — the detailed `PseudoCode-[Title].md` is only authored AFTER the approach is approved.
+
+### Altitude 2 — Detailed `PseudoCode-[Title].md`
+
+Only after the approach is signed off, the agent authors the detailed `PseudoCode-[Title].md` at exemplar granularity (the five section elements of contract §1: Intention, Mechanism, one-breath summary table, Guard map, Divergence flags, Appendix). `[Title]` is the SUBJECT the doc represents (e.g. `PseudoCode-PayPal.md`), never a milestone id; a milestone may produce several. Per-milestone docs live at `.gsd-t/pseudocode/PseudoCode-[Title].md` (contract §7).
+
+### Default-ON; skip is a LOGGED decision
+
+The two-altitude flow is **default-ON**. Skipping the detailed-doc altitude is a **LOGGED decision** in `.gsd-t/progress.md` (Decision Log entry naming WHY it was skipped) — **never a silent default-off** (`feedback_no_silent_degradation`). A skip that is not logged is a process failure.
+
+### Keep-or-supersede on inherited shipped code
+
+When the milestone inherits a model from shipped code, the agent runs the **keep-or-supersede** protocol (`templates/prompts/keep-or-supersede-subagent.md`): per inherited model, ASK keep or supersede. Each **supersede** WRITES a `⚠ Divergence` flag into the doc (contract §4 grammar shape). Keep = no flag. The deterministic divergence-grammar round-trip is M88; the ASK + flag-writing is the M87 prose protocol.
 
 ## Step 1: Load context
 
@@ -75,7 +105,9 @@ The Workflow returns `{ status, artifacts, summary, decisions }` (plus `competit
 
 ## Document Ripple
 
-The milestone agent appends the milestone definition + a Decision Log entry to `.gsd-t/progress.md`.
+The milestone agent appends the milestone definition + a Decision Log entry to `.gsd-t/progress.md`, and:
+
+- **`PseudoCode-[Title].md`** (at `.gsd-t/pseudocode/PseudoCode-[Title].md`) — the detailed intention-first source-of-truth doc authored at Altitude 2 (one per coherent subject; a milestone may produce several). Written only after the Altitude-1 approach is signed off. A skip is a LOGGED Decision Log entry, never a silent omission.
 
 ## Next Up
 

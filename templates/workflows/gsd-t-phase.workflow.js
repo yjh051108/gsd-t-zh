@@ -555,9 +555,19 @@ const _PROBE_SCHEMA = {
     approaches: { type: "array", items: { type: "string" } },
   },
 };
-async function runSolutionSpaceProbe(projectDir, phaseName, { milestone, briefPath, userInput, phaseNameOpt } = {}) {
+async function runSolutionSpaceProbe(projectDir, phaseName, { milestone, briefPath, userInput, phaseNameOpt, altitude } = {}) {
+  // M87 altitude shift: when behavior is SPEC'D (the milestone is authored at the
+  // intention-first high-level-approach altitude), the milestone solution-space
+  // probe shifts UP — it competes over high-level APPROACHES (what/why/when, actors,
+  // one-breath thesis), NOT lower-altitude implementation detail. This changes WHAT
+  // the producers compete on, never WHO competes (producers stay opus, judge differs —
+  // M82 blindness invariant preserved) nor the probe's model (stays fable).
+  const atApproachAltitude = altitude === "high-level-approach";
   const prompt = [
     `You are the Solution-Space Probe for the ${phaseName} phase${milestone ? ` of ${milestone}` : ""}. Decide ONE thing: should this phase generate MULTIPLE competing candidates (then a judge picks the best), or is a single draft sufficient?`,
+    atApproachAltitude
+      ? `ALTITUDE: HIGH-LEVEL APPROACH (M87 — behavior is spec'd intention-first). Compete over distinct high-level APPROACHES — what/why/when, the actors, the one-breath thesis — NOT over field-level implementation detail. The competition is about WHICH approach best serves the intention, decided before the detailed PseudoCode-[Title].md is authored.`
+      : "",
     `**Brief:** ${briefPath || "(none — read the relevant .gsd-t docs/contracts/requirements directly)"}`,
     userInput ? `\nUser input:\n${userInput}\n` : "",
     `Compete WHEN there are ≥2 genuinely DIFFERENT, viable approaches whose trade-offs matter — different architectures, decomposition strategies, data models, sequencing, or design directions that a reasonable expert could disagree about. List them in "approaches".`,
@@ -690,9 +700,13 @@ if (_competitionEligible) {
     // Automatic decision — the workflow probes and decides. Opus probe (or the
     // partition-specific probe); biased toward competing.
     phase("Probe");
+    // M87: the milestone phase is authored intention-first — behavior is spec'd at the
+    // high-level-approach altitude, so its solution-space probe shifts UP to compete over
+    // high-level approaches (not implementation detail). Other phases keep their altitude.
+    const _probeAltitude = phaseName === "milestone" ? "high-level-approach" : undefined;
     const probe = phaseName === "partition"
       ? await runPartitionProbe(projectDir, { milestone, briefPath: brief.briefPath, userInput, phaseNameOpt: "Probe" })
-      : await runSolutionSpaceProbe(projectDir, phaseName, { milestone, briefPath: brief.briefPath, userInput, phaseNameOpt: "Probe" });
+      : await runSolutionSpaceProbe(projectDir, phaseName, { milestone, briefPath: brief.briefPath, userInput, phaseNameOpt: "Probe", altitude: _probeAltitude });
     competitionOn = !!probe.compete;
     competitionN = competitionOn ? AUTO_COMPETITION_N : 1;
     log(`competition: AUTO → ${competitionOn ? `COMPETE (${AUTO_COMPETITION_N} producers)` : "single draft"} — ${probe.reason}${probe.approaches && probe.approaches.length ? ` [approaches: ${probe.approaches.join("; ")}]` : ""}`);
@@ -719,6 +733,12 @@ ${STATED_CLAIMS_INSTRUCTION}`,
 
 ${STATED_CLAIMS_INSTRUCTION}`,
   milestone: `Define a new milestone — origin, goal, success criteria, falsifiable acceptance. Append to .gsd-t/progress.md. Defer partition/plan.
+
+TWO-ALTITUDE INTENTION-FIRST FLOW (M87, default-ON — contract pseudocode-source-of-truth-contract.md §1). Author the milestone at two altitudes, IN ORDER:
+  ALTITUDE 1 — HIGH-LEVEL APPROACH (signed off FIRST): emit the high-level approach pseudocode — what/why/when (the user's intention, never agent reasoning), the actors, and a one-breath summary ("one call in one breath"). PRESENT this approach to the user for SIGN-OFF. The detailed doc is authored ONLY AFTER the approach is approved — the sign-off is the checkpoint between the two altitudes. (This is a PROSE flow: describe the checkpoint; do NOT assert a machine-checkable DEFINED-state predicate — that is M88.)
+  ALTITUDE 2 — DETAILED doc: only after the approach is signed off, author .gsd-t/pseudocode/PseudoCode-[Title].md at exemplar granularity (the §1 section set: Intention, Mechanism, one-breath table, Guard map, Divergence flags, Appendix). [Title] = the SUBJECT (e.g. PseudoCode-PayPal.md), never a milestone id; a milestone may produce several.
+DEFAULT-ON; skip is a LOGGED decision in progress.md naming WHY — NEVER a silent default-off (feedback_no_silent_degradation).
+KEEP-OR-SUPERSEDE: before encoding any model inherited from shipped code, run the keep-or-supersede protocol (templates/prompts/keep-or-supersede-subagent.md) — per inherited model ASK keep or supersede; each supersede WRITES a ⚠ Divergence flag (§4 grammar) into the doc. Keep = no flag.
 
 ${STATED_CLAIMS_INSTRUCTION}`,
   prd: `Generate a product requirements doc at docs/prd.md. Functional + non-functional requirements traceable to acceptance criteria.`,

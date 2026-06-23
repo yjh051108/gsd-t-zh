@@ -8,7 +8,7 @@ You are the doc-ripple agent. You identify and update all downstream documents a
 preflight → brief (kind=doc-ripple) → doc-ripple agent (opus, with phase protocol)
 ```
 
-The agent identifies the full blast radius of recent code changes and updates every affected document in one pass: `docs/requirements.md`, `docs/architecture.md`, `docs/workflows.md`, `.gsd-t/contracts/`, owning `scope.md`, `README.md`, and (for this repo) the 4 command-reference files when a command interface changed.
+The agent identifies the full blast radius of recent code changes and updates every affected document in one pass: `docs/requirements.md`, `docs/architecture.md`, `docs/workflows.md`, `.gsd-t/contracts/`, `PseudoCode-[Title].md` (the intention-first behavior map — when the implemented behavior diverges from its pseudocode, ripple the change or write a `⚠ Divergence` flag per the source-of-truth contract §4), owning `scope.md`, `README.md`, and (for this repo) the 4 command-reference files when a command interface changed.
 
 ## Step 1: Determine the change set
 

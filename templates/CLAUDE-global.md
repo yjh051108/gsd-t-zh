@@ -66,6 +66,7 @@ These documents MUST be maintained and referenced throughout development:
 | **README** | `README.md` | Project overview, setup, features |
 | **Progress** | `.gsd-t/progress.md` | Current milestone/phase state + version |
 | **Contracts** | `.gsd-t/contracts/` | Interfaces between domains |
+| **PseudoCode** | `.gsd-t/pseudocode/PseudoCode-[Title].md` | Intention-first behavior map — the milestone source-of-truth (authored before the build; rippled when code/contract/schema changes) |
 | **Tech Debt** | `.gsd-t/techdebt.md` | Debt register from scans |
 
 ## The "No Re-Research" Rule
@@ -278,6 +279,7 @@ NEVER commit without this checklist. For each trigger that fired, do the action 
 - **UI component interface changed** → `.gsd-t/contracts/component-contract.md`.
 - **New files/dirs** → owning domain's `scope.md`.
 - **Requirement implemented/changed** → `docs/requirements.md`.
+- **Behavior/intention changed vs. the signed-off pseudocode** → update the owning `PseudoCode-[Title].md` (the milestone source-of-truth) in the same pass; a supersede writes a `⚠ Divergence` flag.
 - **Component or data-flow changed** → `docs/architecture.md`.
 - **ANY document/script/code file modified** → timestamped `.gsd-t/progress.md` Decision Log entry (`- YYYY-MM-DD HH:MM: {what} — {result}`); covers every workflow command AND manual edits. Architectural decision → include rationale in that entry.
 - **Tech debt found/fixed** → `.gsd-t/techdebt.md`.

@@ -1,0 +1,68 @@
+{
+  "rules": {
+    "R-PAYPAL-01": {
+      "backedBy": [
+        "test/m87-guard-map-bridge.test.js::R-PAYPAL-01"
+      ],
+      "contradicted": false
+    },
+    "R-PAYPAL-02": {
+      "backedBy": [
+        "test/m87-guard-map-bridge.test.js::R-PAYPAL-02"
+      ],
+      "contradicted": false
+    },
+    "R-PAYPAL-03": {
+      "backedBy": [
+        "test/m87-guard-map-bridge.test.js::R-PAYPAL-03"
+      ],
+      "contradicted": false
+    },
+    "R-PAYPAL-04": {
+      "backedBy": [
+        "test/m87-guard-map-bridge.test.js::R-PAYPAL-04"
+      ],
+      "contradicted": false
+    },
+    "R-PAYPAL-05": {
+      "backedBy": [
+        "test/m87-guard-map-bridge.test.js::R-PAYPAL-05"
+      ],
+      "contradicted": false
+    },
+    "R-PAYPAL-06": {
+      "backedBy": [
+        "test/m87-guard-map-bridge.test.js::R-PAYPAL-06"
+      ],
+      "contradicted": false
+    },
+    "R-PAYPAL-07": {
+      "backedBy": [],
+      "contradicted": false
+    },
+    "R-PAYPAL-08": {
+      "backedBy": [
+        "test/m87-guard-map-bridge.test.js::R-PAYPAL-08"
+      ],
+      "contradicted": false
+    },
+    "R-PAYPAL-09": {
+      "backedBy": [
+        "test/m87-guard-map-bridge.test.js::R-PAYPAL-09"
+      ],
+      "contradicted": false
+    },
+    "R-PAYPAL-10": {
+      "backedBy": [
+        "test/m87-guard-map-bridge.test.js::R-PAYPAL-10"
+      ],
+      "contradicted": false
+    },
+    "R-PAYPAL-11": {
+      "backedBy": [
+        "test/m87-guard-map-bridge.test.js::R-PAYPAL-11"
+      ],
+      "contradicted": false
+    }
+  }
+}

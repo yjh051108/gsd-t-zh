@@ -1,0 +1,23 @@
+{
+  "milestone": "M91",
+  "title": "PseudoCode Source-of-Truth (merged M87+M88)",
+  "version": "4.8.10",
+  "tag": "v4.8.10",
+  "completedAt": "2026-06-22T18:49:01-07:00",
+  "verdict": "VERIFIED-WITH-WARNINGS",
+  "domains": [
+    "guard-bridge-spike", "traceability-section-coverage",
+    "milestone-two-altitude-flow", "template-docripple-contract",
+    "m88-signoff-state", "m88-map-derivation-seam",
+    "m88-triad-seam-check", "m88-divergence-grammar"
+  ],
+  "waves": 3,
+  "suite": { "tests": 2131, "pass": 2127, "fail": 0, "skip": 4 },
+  "contract": "pseudocode-source-of-truth-contract.md v1.1.5 STABLE",
+  "closes": ["M87", "M88", "backlog #34", "backlog #35"],
+  "deferred": ["backlog #45 (fence-awareness, fail-closed)"],
+  "warnings": [
+    "Red Team ran on opus (Fable 5 unavailable) — tier-substituted, not skipped",
+    "backlog #45 fence-awareness MEDIUM/LOW deferred (all fail-closed)"
+  ]
+}

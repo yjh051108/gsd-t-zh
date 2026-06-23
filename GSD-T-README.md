@@ -1,4 +1,4 @@
-# GSD-T Framework Reference — v4.7.10
+# GSD-T Framework Reference — v4.8.10
 
 This file is a companion to `README.md` and tracks framework-level documentation — methodology decisions, internal architecture, and per-milestone capability summaries. Maintained alongside `README.md` per the Pre-Commit Gate.
 
@@ -103,6 +103,7 @@ Contract: `.gsd-t/contracts/plan-hardening-contract.md` v1.0.0.
 
 | Version | Milestone | Key capability |
 |---------|-----------|----------------|
+| 4.8.10 | M91 (M87+M88) | PseudoCode Source-of-Truth — intention-first behavior map as the milestone source-of-truth: `[RULE]` guard-map verify gate, section-citation traceability, two-altitude flow, + 4 deterministic M88 gates (sign-off `isDefined`, build→map derivation, triad-consumption seam, divergence-grammar round-trip) |
 | 4.7.11 | #40 | Deterministic domain archive+sweep at complete-milestone (`bin/gsd-t-archive-domains.cjs`) — stops stale-domain accumulation |
 | 4.7.10 | M90 | The Unproven-Assumption Doctrine — factual classifier + loop-ledger non-convergence halt + architectural trigger, wired fail-closed |
 | 4.5.10 | M86 | Model Profiles (standard/pro/premium) — per-project tier-spend switch |

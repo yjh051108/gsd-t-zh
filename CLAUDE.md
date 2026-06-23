@@ -57,6 +57,10 @@ Exact command list: `ls commands/`. Exact stack rule set: `ls templates/stacks/`
 
 **Publishing** — after `npm publish`, ALWAYS run `/gsd-t-version-update-all` to propagate to registered projects.
 
+## Living Documents (project-specific)
+
+Beyond the global Living Documents set (see `~/.claude/CLAUDE.md`), this repo treats the intention-first behavior map as source-of-truth: `.gsd-t/pseudocode/PseudoCode-[Title].md` is authored before a milestone build and rippled in the same pass whenever code/contract/schema changes (M91). A supersede of shipped behavior writes a `⚠ Divergence` flag; the `[RULE]` guard map feeds the deterministic verify gate.
+
 ## GSD-T Workflows (M61 — v4.0.10+)
 
 Phase orchestration lives in `templates/workflows/`. Each command file (`commands/gsd-t-*.md`) is a thin invoker that calls `Workflow({scriptPath, args})`. Canonical scripts:

@@ -33,10 +33,21 @@
  *
  * Input: --milestone Mxx --project-dir PATH  (reads .gsd-t/domains/* /tasks.md).
  *        OR --tasks <file> to check a single tasks.md (used by tests).
+ *        OR --domains a,b,c to scope to EXACTLY those domain dirs (M87 D2-T4).
  * Output: JSON envelope { ok, exitCode, milestone, tasks:[...], violations:[...] }.
  * Exit: 0 all tasks traceable · 4 ≥1 violation (blocks execute) · 64 bad input.
  *
  * Hard rules: zero deps, never throws, pure/read-only.
+ *
+ * ── M87 D2 EXTENSION (section-citation coverage; pseudocode-source-of-truth §3) ──
+ * In ADDITION to the M83 AC→(path+test) binding, when a PseudoCode-[Title].md doc
+ * is in scope (present in the pseudocode dir AND cited by ≥1 task), every one of
+ * its `##` sections (§3.1: level-2 headings OUTSIDE Appendix code fences) must be
+ * cited by ≥1 task via a `**PseudoCode-Section**: <Title>#<anchor>` field. A
+ * section with zero citing tasks is an uncovered structural gap; a cited anchor
+ * that resolves to NO `##`-heading slug (§3.2 GitHub-style, slug-as-slug never
+ * substring) is an unresolvable-citation FAILURE. The M83 behavior + exit codes
+ * are preserved untouched.
  */
 
 const fs = require("node:fs");
@@ -160,6 +171,90 @@ function _acBulletText(lines) {
   return out.join("\n");
 }
 
+// ─── M87 D2: section-citation grammar (pseudocode-source-of-truth §3) ─────
+
+// `**PseudoCode-Section**: <Title>#<anchor>` — matched emphasis-agnostically on
+// the BARED line, then split path-as-path into Title + anchor segments. The
+// raw line is bared via _bare (emphasis stripped) so the colon-inside/outside
+// bold forms both match, exactly like the M83 field scan.
+const PSEUDOCODE_SECTION_FIELD_RE = /^\s*[-*]?\s*pseudocode-section\s*:/i;
+
+/**
+ * Parse the `**PseudoCode-Section**: <Title>#<anchor>` citation from a task's
+ * lines. Returns { title, anchor } structured segments, or null if absent.
+ * Path-as-path: the value is split on the FIRST `#`; everything left of it is
+ * the doc Title, everything right is the anchor slug. Never substring-matched
+ * against doc text.
+ *
+ * Title normalization: the corpus cites with the full filename stem
+ * (`PseudoCode-PayPal#…`) while the doc loader keys by the bare subject
+ * (`PayPal`, the stem minus the `PseudoCode-` prefix). A leading `PseudoCode-`
+ * in the title segment is therefore stripped so both forms resolve to one key.
+ */
+function _normalizeDocTitle(t) {
+  const s = String(t == null ? "" : t).trim();
+  const m = s.match(/^PseudoCode-(.+)$/);
+  return m ? m[1] : s;
+}
+
+function parseSectionCitation(lines) {
+  for (const ln of lines) {
+    const bare = _bare(ln);
+    if (!PSEUDOCODE_SECTION_FIELD_RE.test(bare)) continue;
+    const idx = bare.indexOf(":");
+    if (idx < 0) continue;
+    const val = bare.slice(idx + 1).trim();
+    const hash = val.indexOf("#");
+    if (hash < 0) return { title: _normalizeDocTitle(val), anchor: "", raw: val };
+    return { title: _normalizeDocTitle(val.slice(0, hash)), anchor: val.slice(hash + 1).trim(), raw: val };
+  }
+  return null;
+}
+
+/**
+ * GitHub-style heading→slug (contract §3.2, deterministic/pure):
+ *   lowercase → drop every char that is NOT ascii-alnum / space / hyphen →
+ *   spaces to hyphens → collapse hyphen runs. slug-as-slug, never substring.
+ */
+function slugifyHeading(text) {
+  return String(text == null ? "" : text)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9 -]/g, "")
+    .replace(/ /g, "-")
+    .replace(/-+/g, "-");
+}
+
+/**
+ * Enumerate the citable `##` sections of a PseudoCode doc (contract §3.1):
+ * every level-2 heading OUTSIDE fenced code blocks (so the `# 0.` banner lines
+ * inside the Appendix raw-pseudocode fences are EXCLUDED). Returns an ordered
+ * list of { title, slug }. Pure/read-only over the doc text.
+ */
+function enumerateSections(md) {
+  const lines = (md || "").split(/\r?\n/);
+  const out = [];
+  let inFence = false;
+  for (const line of lines) {
+    // Fence delimiters: ``` or ~~~ (3+), optionally indented, with an info string.
+    if (/^\s*(```+|~~~+)/.test(line)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const m = line.match(/^##\s+(.*\S.*)$/);
+    if (m) out.push({ title: m[1].trim(), slug: slugifyHeading(m[1].trim()) });
+  }
+  return out;
+}
+
+/**
+ * Derive the doc <Title> from a PseudoCode-[Title].md filename (basename minus
+ * the `PseudoCode-` prefix and `.md` suffix). Path-as-path.
+ */
+function docTitleFromFilename(filename) {
+  const base = path.basename(String(filename || ""));
+  const m = base.match(/^PseudoCode-(.+)\.md$/);
+  return m ? m[1] : null;
+}
+
 /**
  * A task is "behavioral" (subject to the gate) if it declares acceptance
  * criteria — i.e. it promises an observable behavior. Pure-scaffolding tasks
@@ -167,9 +262,12 @@ function _acBulletText(lines) {
  */
 function assessTask(task) {
   const lines = task.lines;
+  // M87 D2: every task may carry a section citation, AC-bearing or not — capture
+  // it regardless so non-behavioral coverage tasks still count toward citations.
+  const sectionCitation = parseSectionCitation(lines);
   const hasAc = hasMultiField(lines, AC_FIELD_RE);
   if (!hasAc) {
-    return { title: task.title, behavioral: false, violations: [] };
+    return { title: task.title, behavioral: false, violations: [], sectionCitation };
   }
 
   // Underscore-preserving values for path/runner scans (Red Team recheck HIGH).
@@ -218,42 +316,203 @@ function assessTask(task) {
     behavioral: true,
     isHeadline,
     hasFiles, hasTest, hasImplPath,
+    sectionCitation,
     violations,
   };
 }
 
 // ─── driver ──────────────────────────────────────────────────────────────
 
-function listTasksFiles(projectDir, milestone) {
+/**
+ * Resolve the set of tasks.md files to gate.
+ *
+ * Returns { files: [...] } on success, or { error: { reason, ... } } when an
+ * explicit scope cannot be honored (M87 D2-T4 — never silently fall back to all
+ * historical domains).
+ *
+ * Scoping precedence:
+ *   1. `domains` (explicit list) → EXACTLY those dirs; each must exist + carry a
+ *      tasks.md, else a structured error (a named-but-missing domain is never a
+ *      silent drop).
+ *   2. `milestone` prefix-match → domains whose name starts with the mNN prefix
+ *      (M83 path, preserved for prefix-named milestones).
+ *   3. `milestone` set but prefix-match yields zero AND no `domains` →
+ *      structured `milestone-scope-unresolved` error (exit 64) instructing
+ *      `--domains`, REPLACING the M83 fall-back-to-all.
+ *   4. No milestone, no domains → all domains (single-milestone-repo default).
+ */
+/**
+ * Containment guard (per feedback_destructive_path_ops_containment): a child path
+ * is valid only if it resolves strictly INSIDE root (root + separator prefix) —
+ * never outside, never equal to root. Refuses `../`-escapes, absolute paths, and
+ * any name resolving to a sibling/ancestor. Returns the resolved path or null.
+ */
+function containedChild(root, name) {
+  const resolvedRoot = path.resolve(root);
+  const candidate = path.resolve(resolvedRoot, name);
+  if (candidate === resolvedRoot) return null; // equal-to-root is not a child
+  if (!candidate.startsWith(resolvedRoot + path.sep)) return null; // outside-root
+  return candidate;
+}
+
+function listTasksFiles(projectDir, milestone, domains = null) {
   const domainsDir = path.join(projectDir, ".gsd-t", "domains");
+
+  // (1) Explicit domain list — scope to EXACTLY those, error on any miss.
+  if (domains && domains.length) {
+    const files = [];
+    const missing = [];
+    const escaped = [];
+    for (const name of domains) {
+      // Containment: a domain name must resolve strictly inside the domains dir.
+      // A `../`-escape / absolute path / sibling reference is REFUSED, never
+      // silently gated against an out-of-tree file (read-only today, but the
+      // gate becomes attacker-reachable the moment --domains is doc-derived).
+      const domainDir = containedChild(domainsDir, name);
+      if (!domainDir) { escaped.push(name); continue; }
+      const tasksPath = path.join(domainDir, "tasks.md");
+      let stat = null;
+      try { stat = fs.statSync(domainDir); } catch {/* missing */}
+      if (!stat || !stat.isDirectory() || !fs.existsSync(tasksPath)) {
+        missing.push(name);
+        continue;
+      }
+      files.push({ domain: name, tasksPath });
+    }
+    if (escaped.length) {
+      return { error: { reason: "domain-path-escape", escapedDomains: escaped, requestedDomains: domains } };
+    }
+    if (missing.length) {
+      return { error: { reason: "domain-not-found", missingDomains: missing, requestedDomains: domains } };
+    }
+    return { files };
+  }
+
   let entries = [];
   try {
     entries = fs.readdirSync(domainsDir, { withFileTypes: true });
   } catch {
-    return [];
+    return { files: [] };
   }
-  const out = [];
-  const mPrefix = milestone ? milestone.toLowerCase() : null;
+  const all = [];
   for (const e of entries) {
     if (!e.isDirectory()) continue;
-    // When a milestone is given, prefer domains whose name carries that mNN
-    // prefix; if none match, fall back to all domains (single-milestone repos).
     const tasksPath = path.join(domainsDir, e.name, "tasks.md");
-    if (fs.existsSync(tasksPath)) out.push({ domain: e.name, tasksPath });
+    if (fs.existsSync(tasksPath)) all.push({ domain: e.name, tasksPath });
   }
+
+  const mPrefix = milestone ? milestone.toLowerCase() : null;
   if (mPrefix) {
-    const matched = out.filter((d) => d.domain.toLowerCase().startsWith(mPrefix));
-    if (matched.length) return matched;
+    const matched = all.filter((d) => d.domain.toLowerCase().startsWith(mPrefix));
+    if (matched.length) return { files: matched };
+    // Zero prefix-match + no explicit --domains → DO NOT fall back to all.
+    return { error: { reason: "milestone-scope-unresolved", milestone } };
   }
-  return out;
+  return { files: all };
 }
 
-function runGate({ projectDir = process.cwd(), milestone = null, tasksFile = null } = {}) {
+// ─── M87 D2: section-coverage over the in-scope PseudoCode docs ───────────
+
+/**
+ * Enumerate the PseudoCode-*.md docs available for coverage. Default location is
+ * `.gsd-t/pseudocode/` (contract §7), overridable via pseudocodeDir (the D2 test
+ * points it at D1's byte-verbatim fixtures). Returns a Map<Title, {path, md,
+ * sections}>; a missing dir yields an empty Map (logged skip, never a throw).
+ */
+function loadPseudocodeDocs(pseudocodeDir) {
+  const docs = new Map();
+  let entries = [];
+  try { entries = fs.readdirSync(pseudocodeDir, { withFileTypes: true }); }
+  catch { return docs; }
+  for (const e of entries) {
+    if (!e.isFile()) continue;
+    const title = docTitleFromFilename(e.name);
+    if (!title) continue;
+    const full = path.join(pseudocodeDir, e.name);
+    let md;
+    try { md = fs.readFileSync(full, "utf8"); } catch { continue; }
+    docs.set(title, { path: full, md, sections: enumerateSections(md) });
+  }
+  return docs;
+}
+
+/**
+ * Run section-citation coverage over the in-scope PseudoCode docs.
+ *
+ * A doc is "in scope" when it exists in the pseudocode dir AND is cited by ≥1
+ * task. For each in-scope doc: (a) every cited anchor MUST resolve to a real
+ * `##`-heading slug (else unresolvable-citation FAILURE); (b) every `##` section
+ * MUST be cited by ≥1 task (else uncovered-section gap). All slug-as-slug, never
+ * substring.
+ *
+ * @returns {{ violations, docs }}
+ */
+function assessSectionCoverage(taskResults, pseudocodeDocs) {
+  const violations = [];
+  const docReports = [];
+
+  // citationsByTitle: Map<Title, Array<{ anchor, domain, task }>>
+  const citationsByTitle = new Map();
+  for (const r of taskResults) {
+    const c = r.sectionCitation;
+    if (!c || !c.title) continue;
+    if (!citationsByTitle.has(c.title)) citationsByTitle.set(c.title, []);
+    citationsByTitle.get(c.title).push({ anchor: c.anchor, domain: r.domain, task: r.title });
+  }
+
+  // A doc is in scope when present in the dir AND cited by ≥1 task.
+  for (const [title, citations] of citationsByTitle) {
+    const doc = pseudocodeDocs.get(title);
+    if (!doc) continue; // cited but no doc available → out of section-coverage scope
+    const slugSet = new Set(doc.sections.map((s) => s.slug));
+    const citedSlugs = new Set();
+
+    // (a) Unresolvable-citation FAILURE: a cited anchor matching no `##` slug.
+    for (const cit of citations) {
+      if (cit.anchor && slugSet.has(cit.anchor)) {
+        citedSlugs.add(cit.anchor);
+      } else {
+        violations.push({
+          domain: cit.domain, task: cit.task,
+          kind: "unresolvable-section-citation",
+          detail: `PseudoCode-Section cites "${title}#${cit.anchor}" but no \`##\` heading in PseudoCode-${title}.md slugifies to that anchor (§3.2 slug-as-slug).`,
+          doc: title, anchor: cit.anchor,
+        });
+      }
+    }
+
+    // (b) Uncovered-section gap: a `##` section with zero citing tasks.
+    for (const s of doc.sections) {
+      if (!citedSlugs.has(s.slug)) {
+        violations.push({
+          domain: null, task: null,
+          kind: "uncovered-section",
+          detail: `PseudoCode-${title}.md section "${s.title}" (#${s.slug}) has zero citing tasks — structural coverage gap (§3.1).`,
+          doc: title, anchor: s.slug, section: s.title,
+        });
+      }
+    }
+
+    docReports.push({
+      doc: title,
+      sectionsTotal: doc.sections.length,
+      sectionsCovered: citedSlugs.size,
+    });
+  }
+
+  return { violations, docs: docReports };
+}
+
+function runGate({ projectDir = process.cwd(), milestone = null, tasksFile = null, domains = null, pseudocodeDir = null } = {}) {
   let files;
   if (tasksFile) {
     files = [{ domain: path.basename(path.dirname(tasksFile)), tasksPath: tasksFile }];
   } else {
-    files = listTasksFiles(projectDir, milestone);
+    const resolved = listTasksFiles(projectDir, milestone, domains);
+    if (resolved.error) {
+      return { ok: false, exitCode: 64, milestone, ...resolved.error, tasks: [], violations: [] };
+    }
+    files = resolved.files;
   }
   if (!files.length) {
     return { ok: false, exitCode: 64, milestone, reason: "no-tasks-files", tasks: [], violations: [] };
@@ -276,6 +535,26 @@ function runGate({ projectDir = process.cwd(), milestone = null, tasksFile = nul
     }
   }
 
+  // M87 D2: section-citation coverage over the in-scope PseudoCode docs.
+  // Containment: an explicit --pseudocode-dir must resolve INSIDE the project
+  // tree (the D2 test legitimately points it at test/fixtures/, also inside the
+  // project; an out-of-tree `../../evildocs` is refused). The default
+  // `.gsd-t/pseudocode/` is always in-tree. A refused dir → empty doc set
+  // (logged skip, never an out-of-tree read), same fail-closed shape as a missing dir.
+  let resolvedPcDir = pseudocodeDir || path.join(projectDir, ".gsd-t", "pseudocode");
+  if (pseudocodeDir) {
+    const resolvedProject = path.resolve(projectDir);
+    const candidate = path.resolve(resolvedProject, pseudocodeDir);
+    if (candidate !== resolvedProject && !candidate.startsWith(resolvedProject + path.sep)) {
+      resolvedPcDir = null; // out-of-tree → no docs loaded (fail-closed)
+    } else {
+      resolvedPcDir = candidate;
+    }
+  }
+  const pseudocodeDocs = resolvedPcDir ? loadPseudocodeDocs(resolvedPcDir) : new Map();
+  const coverage = assessSectionCoverage(taskResults, pseudocodeDocs);
+  for (const v of coverage.violations) violations.push(v);
+
   const ok = violations.length === 0;
   return {
     ok,
@@ -285,6 +564,7 @@ function runGate({ projectDir = process.cwd(), milestone = null, tasksFile = nul
       tasksTotal: taskResults.length,
       behavioral: behavioralCount,
       violations: violations.length,
+      sectionCoverageDocs: coverage.docs,
     },
     tasks: taskResults,
     violations,
@@ -295,30 +575,42 @@ function runGate({ projectDir = process.cwd(), milestone = null, tasksFile = nul
 // ─── CLI ─────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const o = { projectDir: process.cwd(), milestone: null, tasksFile: null, help: false };
+  const o = { projectDir: process.cwd(), milestone: null, tasksFile: null, domains: null, pseudocodeDir: null, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--help" || a === "-h") o.help = true;
     else if (a === "--project-dir") o.projectDir = argv[++i];
     else if (a === "--milestone") o.milestone = argv[++i];
     else if (a === "--tasks") o.tasksFile = argv[++i];
+    else if (a === "--domains") {
+      o.domains = String(argv[++i] || "").split(",").map((s) => s.trim()).filter(Boolean);
+    }
+    else if (a === "--pseudocode-dir") o.pseudocodeDir = argv[++i];
     else if (a === "--json") {/* default */}
   }
   return o;
 }
 
-const HELP = `Usage: gsd-t traceability-gate [--milestone Mxx] [--project-dir PATH] [--tasks FILE]
+const HELP = `Usage: gsd-t traceability-gate [--milestone Mxx] [--project-dir PATH] [--tasks FILE] [--domains a,b,c] [--pseudocode-dir PATH]
 
-Plan-phase acceptance-traceability gate (M83). Asserts every behavioral task in
-the milestone's .gsd-t/domains/* /tasks.md binds its acceptance criteria to an
-implementing **Files** path AND a named test. Headline tasks must have BOTH a
-real implementation path and a test. Blocks execute on any violation.
+Plan-phase acceptance-traceability gate (M83) + section-citation coverage (M87 D2).
+Asserts every behavioral task in the milestone's .gsd-t/domains/* /tasks.md binds
+its acceptance criteria to an implementing **Files** path AND a named test.
+Headline tasks must have BOTH a real implementation path and a test. Additionally,
+when a PseudoCode-[Title].md doc is in scope, every \`##\` section must be cited by
+≥1 task (\`**PseudoCode-Section**: <Title>#<anchor>\`) and every citation must
+resolve to a real heading slug. Blocks execute on any violation.
 
-  --milestone Mxx    Limit to domains whose name carries the mNN prefix.
-  --project-dir P    Project root (default: cwd).
-  --tasks FILE       Check a single tasks.md (overrides domain discovery).
+  --milestone Mxx     Scope by mNN-prefix domains (M83). Zero match + no --domains
+                      → exit 64 milestone-scope-unresolved (never fall-back-to-all).
+  --domains a,b,c     Scope to EXACTLY these domain dirs (each must exist + carry a
+                      tasks.md; a missing named domain is an error, not a drop).
+  --project-dir P     Project root (default: cwd).
+  --tasks FILE        Check a single tasks.md (overrides domain discovery).
+  --pseudocode-dir P  PseudoCode-*.md dir for section coverage (default
+                      .gsd-t/pseudocode).
 
-Exit: 0 all traceable · 4 ≥1 violation · 64 no tasks files / bad input.`;
+Exit: 0 all traceable · 4 ≥1 violation · 64 bad input / unresolved scope.`;
 
 function main() {
   const o = parseArgs(process.argv.slice(2));
@@ -335,4 +627,9 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { runGate, parseTasks, assessTask, _internal: { fieldValue, TEST_PATH_RE } };
+module.exports = {
+  runGate, parseTasks, assessTask, listTasksFiles,
+  parseSectionCitation, slugifyHeading, enumerateSections, docTitleFromFilename,
+  loadPseudocodeDocs, assessSectionCoverage,
+  _internal: { fieldValue, TEST_PATH_RE },
+};

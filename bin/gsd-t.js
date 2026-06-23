@@ -2584,6 +2584,14 @@ const PROJECT_BIN_TOOLS = [
   // Backlog #40 — deterministic archive+sweep of a completed milestone's domain dirs
   // (complete-milestone Step 7). Propagated so complete-milestone can invoke it project-local.
   "gsd-t-archive-domains.cjs",
+  // M91 (merged M87+M88) — PseudoCode source-of-truth deterministic gates, propagated so
+  // project-local runCli helpers (gsd-t-verify / gsd-t-milestone workflows) resolve them
+  // without the global binary. guard-map = the [RULE] guard-bridge verify gate (D1);
+  // guard-map-derive = build→map derivation seam (G2); milestone-state = sign-off /
+  // isDefined predicate (G1); rule-consume = triad rule-set consumer (G3);
+  // divergence-grammar = §4 parse/format round-trip (G4).
+  "gsd-t-guard-map.cjs", "gsd-t-guard-map-derive.cjs", "gsd-t-milestone-state.cjs",
+  "gsd-t-rule-consume.cjs", "gsd-t-divergence-grammar.cjs",
 ];
 
 // Files that older versions of this installer copied into project bin/ but

@@ -39,6 +39,7 @@ export const meta = {
     { title: "Auto-Research Gate", detail: "M89 §7 ENFORCE: scan for status=uncited markers (A4 — no silent guess)" },
     { title: "CI-Parity",          detail: "M57 build-coverage + ci-parity (FAIL-blocking)" },
     { title: "Test-Data Purge",    detail: "M58 test-data --purge (FAIL-blocking)" },
+    { title: "Guard-Map Gate",     detail: "M87 [RULE] guard-map gate (FAIL-blocking, §7 discovery)" },
     { title: "Orthogonal Triad",   detail: "code-review ultra ∥ Red Team ∥ QA" },
     { title: "Synthesis",          detail: "merge without collapsing categories" },
   ],
@@ -517,7 +518,105 @@ if (!td.ok) {
   log(`M58 test-data purge FAIL exitCode=${td.exitCode} — halting (FAIL-blocking)`);
   return { status: "test-data-purge-failed", overallVerdict: "VERIFY-FAILED", testDataPurge: td.envelope };
 }
-log(`M58 test-data purge green — proceeding to orthogonal triad`);
+log(`M58 test-data purge green — proceeding to guard-map gate`);
+
+// ─── M87 D1 Guard-Map Gate (FAIL-blocking — A1 / SC1) ─────────────────────
+// Turns each PseudoCode-[Title].md prose `[RULE]` guard map into a
+// machine-checkable gate: a divergent (UNBACKED or CONTRADICTED) rule HALTS
+// verify BEFORE the triad, at contract-breach severity, naming the RULE-ID —
+// zero LLM judgment in the pass/fail decision (deterministic, like verify-gate /
+// CI-parity / test-data).
+//
+// Discovery per contract §7 (deterministic, path-as-path):
+//   1. glob `.gsd-t/pseudocode/PseudoCode-*.md` (multi-doc — a milestone may
+//      produce several subjects).
+//   2. each doc's map = same basename with `.md` → `.map.json`, co-located.
+//   3. pairing outcomes (each OBSERVABLE, never a silent pass):
+//        - doc + co-located map  → FIRE the gate on that pair.
+//        - doc with no map       → logged skip-with-reason `no-build-map`.
+//        - zero docs             → logged skip-with-reason `no-pseudocode-docs`.
+//   4. the fire path passes `--doc <doc> --map <map>` to gsd-t-guard-map.cjs; any
+//      FAIL-blocking non-zero HALTS verify before the triad.
+// M81: no fs — a haiku discovery agent globs + pairs and returns the set; each
+// fire-able pair is gated via the runCli helper (model: haiku, like the other gates).
+// Contract: pseudocode-source-of-truth-contract.md §2 + §7.
+phase("Guard-Map Gate");
+const GUARD_MAP_DISCOVERY_SCHEMA = {
+  type: "object",
+  required: ["docsFound", "firePairs", "skips"],
+  additionalProperties: true,
+  properties: {
+    docsFound: { type: "integer" },
+    firePairs: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["doc", "map"],
+        properties: { doc: { type: "string" }, map: { type: "string" } },
+      },
+    },
+    skips: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["reason"],
+        properties: { reason: { type: "string" }, doc: { type: "string" } },
+      },
+    },
+    notes: { type: "string" },
+  },
+};
+const guardMapDiscovery = await agent(
+  [
+    `You are the M87 guard-map discovery scanner for the project at "${projectDir}". Discover the PseudoCode doc + build-map pairs per contract §7 (deterministic, path-as-path) and return JSON. Do NOT gate anything — only enumerate.`,
+    ``,
+    `Steps:`,
+    `1. Glob the docs: \`ls ${projectDir}/.gsd-t/pseudocode/PseudoCode-*.md 2>/dev/null || true\`. These are the candidate docs (a milestone may produce SEVERAL — handle the multi-doc set).`,
+    `2. docsFound = the number of PseudoCode-*.md docs found.`,
+    `3. For EACH doc, the build-map is the SAME basename with \`.md\` replaced by \`.map.json\`, co-located in \`.gsd-t/pseudocode/\` (e.g. PseudoCode-Foo.md → PseudoCode-Foo.map.json). Check it exists: \`test -f <map> && echo EXISTS || echo ABSENT\`.`,
+    `   - doc + co-located map EXISTS → add { "doc": "<abs-or-project-rel doc path>", "map": "<map path>" } to firePairs.`,
+    `   - doc with map ABSENT → add { "reason": "no-build-map", "doc": "<doc path>" } to skips (a logged skip WITH A REASON, never a silent pass).`,
+    `4. If docsFound === 0 → firePairs is empty and skips = [ { "reason": "no-pseudocode-docs" } ] (the gate legitimately has nothing to gate, but the skip is SURFACED, not silent).`,
+    ``,
+    `Return JSON per the schema: { "docsFound": N, "firePairs": [ { "doc", "map" } ], "skips": [ { "reason", "doc"? } ], "notes": "..." }. Discovery is path-as-path (glob + basename derivation), never substring.`,
+  ].join("\n"),
+  { label: "guard-map-discovery", phase: "Guard-Map Gate", schema: GUARD_MAP_DISCOVERY_SCHEMA, model: "haiku" }
+).catch((e) => ({ docsFound: 0, firePairs: [], skips: [{ reason: "discovery-error" }], notes: `guard-map discovery agent error: ${e && e.message}` }));
+
+const guardMapResults = [];
+if (guardMapDiscovery.docsFound === 0 || (guardMapDiscovery.firePairs || []).length === 0) {
+  // No fire-able pair — surface the DISTINCT skip reason(s), never a silent pass.
+  const reasons = (guardMapDiscovery.skips || []).map((s) => s.reason).join(", ") || "no-pseudocode-docs";
+  log(`M87 guard-map gate: SKIP (no fire-able doc+map pair) — reason(s): ${reasons}`);
+} else {
+  for (const pair of guardMapDiscovery.firePairs) {
+    const gmr = await runCli(
+      projectDir,
+      "guard-map",
+      ["--doc", pair.doc, "--map", pair.map, "--json"],
+      "gsd-t-guard-map.cjs",
+      `m87:guard-map:${pair.doc.split("/").pop()}`,
+      true,
+      "Guard-Map Gate"
+    );
+    guardMapResults.push({ pair, envelope: gmr.envelope, ok: gmr.ok, exitCode: gmr.exitCode });
+    if (!gmr.ok) {
+      const env = gmr.envelope || {};
+      const named = (env.violations || []).map((v) => v.id).join(", ") || env.reason || "(rule id unavailable)";
+      log(`M87 guard-map gate FAIL exitCode=${gmr.exitCode} on ${pair.doc} — divergent RULE(s): ${named} — halting before triad`);
+      return {
+        status: "guard-map-gate-failed",
+        overallVerdict: "VERIFY-FAILED",
+        reason: `M87 guard-map divergence on ${pair.doc}: ${named} (unbacked or contradicted [RULE]) — back/cite the rule, then re-verify`,
+        guardMap: { discovery: guardMapDiscovery, results: guardMapResults },
+        verifyGate: vg.envelope,
+        autoResearchGate: arGate,
+      };
+    }
+    log(`M87 guard-map gate: PASS on ${pair.doc} — all ${(gmr.envelope && gmr.envelope.ruleCount) || "?"} [RULE]s backed, none contradicted`);
+  }
+  log(`M87 guard-map gate green (${guardMapResults.length} doc+map pair(s) fired) — proceeding to orthogonal triad`);
+}
 
 phase("Orthogonal Triad");
 
@@ -629,6 +728,7 @@ return {
   buildCoverage: bc.envelope,
   ciParity: cip.envelope,
   testDataPurge: td.envelope,
+  guardMap: { discovery: guardMapDiscovery, results: guardMapResults },
   triad: triadResults,
   verdict,
 };

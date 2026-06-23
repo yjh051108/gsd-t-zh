@@ -712,3 +712,33 @@ A SEPARATE **Realism agent** the Red Team argues scope with (adversarial-collabo
 - **Root:** the premise-corrected vendor list (kept as an external→web *upgrade*) doesn't cover AWS/S3/putObject, so `hasStrongExternal` is false; then the path-anchor makes it internal. A co-occurring external-SDK signal should at least downgrade to `ambiguous→judge`, not assert internal.
 - **Fix direction:** when an external-API-shaped token co-occurs with a repo path and there's no strong-external vendor match, route `ambiguous→judge` (let the LLM decide), never `internal`. Add to the corpus + held-out fixture.
 - Scope: ~1 domain (classifier branch + corpus rows), <1 wave. Deferred from M90 to avoid a classifier change right before shipping (kept verify stable).
+
+## 44. The Understand-Before-Build reflex + the pipeline's missing Subtract half
+
+**Added**: 2026-06-22
+**Type**: framework paradigm (HIGHEST leverage — inverts the additive-only pipeline)
+**Status**: DESIGN BRIEF written → `.gsd-t/design-briefs/understand-before-build-subtract-half.md`. Pre-promotion. Sequence AFTER the live M87/M88 PseudoCode milestone (front-of-flow file overlap — see brief §7).
+**Origin**: user, BinVoice pricing-migration session 2026-06-22. Four converging failures (assume-don't-look / discovered-wart-cleanup / chase-consumers-not-source / add-new-never-subtract-old), one root cause: GSD-T is a purely ADDITIVE gate pipeline — when a plan starts too high, every gate makes it bigger; the harder it works the more complex the result. The exact inversion the user wants killed.
+
+**Thesis**: understand what exists (graph blast-radius) BEFORE planning · default to the smallest change that hits the crux (ceremony opt-in, not Recommended) · add the SUBTRACT stage the pipeline has never had · make "we made it smaller / removed code / starved a redundant source / collapsed N producers" a FIRST-CLASS verdict success (today `VERIFIED` is a pure AND of additive gates — `verify.workflow.js:610` — the schema can't even SAY "smaller"). Goal is one event seen three ways: simpler · faster · smarter.
+
+**Proven this session** (code audit, file:line): pipeline is BENDABLE-IN-PLACE not baked-in (7 swappable `phase()` blocks, thin commands, shallow contract coupling) → INSERTION not rewrite. M90's R-ARCH-2 trigger already FIRES on the BinVoice moment but its response is interface-only (backlog #42) — give it a cheaper-first ladder (look→smallest→spike→defer), not spike-first. Research (spring 2026, cited in brief §6): code-graph blast-radius PROVEN faster (22%/58% fewer tool calls) + 70% fewer regressions (TDAD); doc-ripple-style freshness PROVEN (CodeGraph). INVENTED/deferred: docs+memory in one graph (no precedent — code-structure-first), the collapse-worth-it decision (Metz guardrail — count multiplicity, defer the abstraction).
+
+**Five moves** (each ~5 files, insertion): (1) front Understand-before-plan stage; (2) new Shrink/Defer stage; (3) invert the default toward smallest; (4) M90 trigger response (cheaper-first ladder); (5) verdict vocabulary keystone — "smaller" is success. Unifier: one graph query "produced-where/consumed-where" serves prevention (starve the source) AND consolidation (N≥3 = counted rule-of-three, surfaced+deferred via the defer-don't-inline valve).
+
+**Relation**: builds ON M87/M88 (#34/#35 — pseudocode is the visible-logic substrate; that's the DEFINE-altitude prevention, this is the PLAN/EXECUTE-altitude prevention). Gives M90's dormant arch-trigger (#42) its real response. Supersedes part of the competition framing (less to compete over when the smallest change is the default). See [[feedback_unproven_assumption_stop_and_research]], [[feedback_intention_first_pseudocode]], [[feedback_coverage_check_structural_not_substring]].
+
+## 45. Fence-awareness for the M91 PseudoCode marker parsers (defer-out — fail-closed today)
+
+**Added**: 2026-06-22
+**Type**: hardening / tech debt
+**Origin**: M91 verify Red Team (GRUDGING-PASS) — three MEDIUM/LOW findings, all in the SAFE (fail-closed) direction, deferred out of M91 rather than expanding verify scope.
+
+The M91 marker parsers match their markers ANYWHERE on a line, with no awareness of code fences / the doc's own Appendix. Three sites:
+- `bin/gsd-t-guard-map.cjs` — a `[RULE …]` marker inside a ``` fence or the appendix is parsed as a live rule. **Direction is SAFE**: an extra fenced rule becomes an extra unbacked map-key requirement → spurious FAIL, never a vacuous pass (Red Team verified a fenced duplicate of an unbacked rule still FAILs exit 4 — a fence can never HIDE a divergence). The cost is a false-FAIL when a doc author quotes the grammar in an example.
+- `bin/gsd-t-divergence-grammar.cjs` `countDivergences` — a valid-format `⚠ Divergence` line inside a fence/appendix is counted. Inflates the divergence count (no live consumer wires it as a gate today).
+- `bin/gsd-t-milestone-state.cjs` — a doc showing its own `<!-- signed-off: … -->` marker as an example self-signs. (A doc cannot realistically quote its own sign-off marker, so lowest severity.)
+
+**Why deferred, not fixed in M91**: every case errs fail-closed and none defeats a gate's purpose; fixing mid-verify would expand scope. The section enumerator (`enumerateSections`, §3.1) ALREADY does fence-exclusion correctly — the fix is to reuse that fence-tracking in the three marker parsers (one shared helper). Small (~1 domain, the three bin files + their tests + a "quoted-marker-in-fence ignored" case each).
+
+**NOT in scope for fix**: changing fail-closed→fail-open. The fix only stops false-FAILs / count-inflation from a doc quoting its own grammar; it must NOT let a fenced real divergence pass. See [[feedback_coverage_check_structural_not_substring]] (structural, fence-aware), [[feedback_no_silent_degradation]].
