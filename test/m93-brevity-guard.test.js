@@ -79,10 +79,38 @@ test("BLOCK bare S2-M7 with no gloss", () => {
   assert.equal(detect(text, "answer").block, true);
 });
 
-// ── BLOCK: bare M92-D1 with no gloss ─────────────────────────────────────────
-test("BLOCK bare M92-D1 with no gloss", () => {
-  const text = "Handled under M92-D1 already.";
+// ── ALLOW: bare M-code in a LIVE reply (live-tuning 2026-06-23) ──────────────
+// Bare `M92` / `M92-D1` is established conversational shorthand once context
+// exists; forcing a gloss every turn over-strict-blocks clean answers. The hook
+// only forces glosses on the opaque IDs (HC-#, S2-M#); the stricter M-code rule
+// lives in the DOC lint (bin/gsd-t-jargon-lint.cjs), where there's no conversation.
+test("ALLOW bare M-code in a live reply (not hook-scope jargon)", () => {
+  assert.equal(detect("Handled under M92-D1 already.", "answer").block, false);
+  assert.equal(detect("Three changes shipped in M92.", "answer").block, false);
+});
+
+// ── BLOCK: interleaved preamble — ack, narrate, content, narrate (real shape) ─
+// The user-cited miss: narration scattered through the opening, not stacked at
+// the very front, so the leading-only scan saw it as 1-narration-then-content.
+test("BLOCK interleaved narration/meta-commentary in the opening", () => {
+  const text =
+    "Good catch — and I need to be careful here. Let me untangle it precisely. " +
+    "What I said earlier was X. So does a project override the global? Let me verify rather than assert.";
   assert.equal(detect(text, "answer").block, true);
+  assert.equal(cli(text, "answer").code, 1);
+  // same content in action-mode (about to edit) → allowed
+  assert.equal(detect(text, "action").block, false);
+});
+
+// ── ALLOW: an ack + a short explanation (must NOT false-block) ───────────────
+test("ALLOW an ack plus a brief one-clause explanation (no false-block)", () => {
+  for (const t of [
+    "Good question. The graph died because it needed Neo4j and constant upkeep for little value.",
+    "Correct on both counts. The hook reads settings fresh each turn, and the lint is already installed.",
+    "No, not yet. Main is pushed but npm still shows the old version — want me to publish?",
+  ]) {
+    assert.equal(detect(t, "answer").block, false, `must allow: ${t}`);
+  }
 });
 
 // ── ALLOW: the SAME jargon, glossed in the same sentence ─────────────────────

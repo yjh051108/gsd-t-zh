@@ -2,6 +2,15 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.9.12] - 2026-06-23 (M93 brevity-guard live-tuning — patch)
+
+### Changed — brevity guard catches more, false-blocks less
+
+Live use surfaced two gaps in the M93 brevity-guard Stop hook (it missed a real verbose reply, then would have false-blocked a clean one):
+
+- **Interleaved preamble detection** — the guard previously only caught process-narration *stacked at the very front*. It now also catches narration/meta-commentary *scattered through the opening* (ack → narrate → a little content → narrate again → over-explain), which is the real exhausting shape. Conservative: scans only the first 6 sentences, needs ≥2 hits.
+- **Narrowed live-reply jargon scope** — the hook no longer forces a gloss on a bare milestone code like `M92` (established conversational shorthand once context exists — it was false-blocking clean answers). It still forces glosses on the genuinely opaque IDs (`HC-003`, `S2-M7`). The stricter rule stays in the document lint (`gsd-t-jargon-lint.cjs`), where a reader has no conversation for context.
+
 ## [4.9.11] - 2026-06-23 (M93 — Brevity Guard: enforce concise, answer-first output — patch)
 
 ### Added — conciseness is now enforced, not just requested

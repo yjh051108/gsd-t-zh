@@ -63,15 +63,28 @@ const ALLOWLIST = new Set([
 ]);
 
 // High-signal code-token patterns (bare, unglossed → block on first use).
+// LIVE-REPLY scope only: limited to the genuinely opaque IDs the user can't decode
+// (contract / hard-constraint / stage-milestone codes). A bare `M92` milestone ref
+// is established conversational shorthand once context exists — forcing a gloss on
+// it every turn is over-strict and false-blocks clean answers. The stricter
+// `M\d+-D\d+`-and-bare-`M\d+` rule stays in the DOC lint (bin/gsd-t-jargon-lint.cjs),
+// where a reader has no conversational context. (M93 live-tuning, 2026-06-23.)
 const JARGON_PATTERNS = [
-  /\bS2-M\d+\b/,            // S2-M7
-  /\bHC-\d+\b/,            // HC-003
-  /\bM\d+(?:-D\d+(?:-T\d+)?)?\b/, // M92, M92-D1, M92-D1-T3
+  /\bS2-M\d+\b/,            // S2-M7  (stage-milestone code)
+  /\bHC-\d+\b/,            // HC-003 (hard-constraint / contract id)
 ];
 
 // Narration openers: first-person "about to" framing — intent without content.
 const NARRATION_OPENER =
-  /^(let me|before i\b|i'?ll\b|i'?m going to|i am going to|first,?\s+let me|i want to|i need to|let's|let us|going to)\b/i;
+  /^(let me|before i\b|i'?ll\b|i'?m going to|i am going to|first,?\s+let me|i want to|i need to|let's|let us|going to|i need to be|i have to|i should|i want to be|let me untangle|i'?m going to verify)\b/i;
+
+// Meta-commentary / hedge openers — sentences that talk ABOUT the answer instead
+// of giving it ("the honest correction:", "here's the real picture", "good catch —
+// and I…", "where does that leave you"). These don't match NARRATION_OPENER but are
+// the same preamble disease — over-explaining around the answer. Counted in the
+// interleaved scan, NOT the leading scan (they appear mid-reply).
+const META_OPENER =
+  /^(good (catch|question|point|instinct)|fair (challenge|point)|the honest|here'?s (the|what)|so,? (where|to|that|let)|that'?s (a |the )?(real|fair|honest)|the (real |accurate )?(picture|version|correction|nuance)|to (untangle|be (clear|precise|careful|honest))|i (conflated|misspoke|need to be|want to be))\b/i;
 
 // ── Transcript tail-scan (REUSED from gsd-t-conversation-capture.js) ─────────
 // Pull the most recent assistant turn from a Claude Code transcript JSONL by
@@ -223,6 +236,21 @@ function _leadingNarrationCount(prose) {
   return count;
 }
 
+// Count narration + meta-commentary sentences INTERLEAVED in the opening region
+// (the first WINDOW sentences), regardless of contiguity. Catches the real failure
+// shape the leading-only scan misses: an ack, then narration, then a content
+// sentence, then MORE narration ("Good catch… Let me untangle… What I said was X…
+// Let me verify…"). Conservative: only scans the opening window, needs >=2 hits.
+const INTERLEAVED_WINDOW = 6;
+function _interleavedPreambleCount(prose) {
+  const sentences = _sentences(prose).slice(0, INTERLEAVED_WINDOW);
+  let count = 0;
+  for (const s of sentences) {
+    if (NARRATION_OPENER.test(s) || META_OPENER.test(s)) count++;
+  }
+  return count;
+}
+
 // Find a bare unglossed high-signal jargon token (first occurrence, no gloss).
 // A gloss = parenthetical or quote in the SAME sentence containing the token.
 function _findBareJargon(prose) {
@@ -265,6 +293,18 @@ function detect(text, mode) {
       block: true,
       reason: "Answer-first: lead with the answer, not " + narration +
         " stacked 'about-to' narration sentences. Cut the preamble; state the answer, then detail.",
+    };
+  }
+
+  // Interleaved preamble: narration/meta-commentary scattered through the opening
+  // (not just stacked at the front). The real exhausting shape: ack → narrate →
+  // a bit of content → narrate again → over-explain.
+  const interleaved = _interleavedPreambleCount(prose);
+  if (interleaved >= 2) {
+    return {
+      block: true,
+      reason: "Answer-first: the opening has " + interleaved +
+        " preamble/meta sentences (narration or 'here's the real picture'-style framing) around the answer. Lead with the answer; cut the meta-commentary.",
     };
   }
 

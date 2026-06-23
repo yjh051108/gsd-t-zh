@@ -1,4 +1,4 @@
-# GSD-T Framework Reference — v4.9.11
+# GSD-T Framework Reference — v4.9.12
 
 This file is a companion to `README.md` and tracks framework-level documentation — methodology decisions, internal architecture, and per-milestone capability summaries. Maintained alongside `README.md` per the Pre-Commit Gate.
 
