@@ -19,7 +19,36 @@ preflight → brief → Cycle 1 (diagnose → hypothesis → fix → test → re
 
 Read `.gsd-t/progress.md`. Note any failing tests or runtime errors in the Decision Log.
 
-## Step 2: Invoke the debug Workflow
+## Step 2: Resolve the active model profile (M86 — invoke-time injection)
+
+Before calling the Workflow, resolve the active model profile to build the `overrides` map:
+
+```bash
+# Run via Bash at invoke time:
+gsd-t model-profile resolve --json
+# Bare form (NO --profile flag): reads .gsd-t/model-profile.json — profile AND stageOverrides
+# (set-stage overrides MUST win — contract precedence; --profile is a config-blind diagnostic
+# form that ZEROES stageOverrides and must never be used for invocation — Red Team M86 r3)
+# Output: { "ok": true, "profile": "...", "overrides": { "stage-key": "concrete-model-id", ... } }
+```
+
+**Resolver-failure handling (M86 — SC(f), pre-mortem c2 #2):** if the resolve call fails
+(`{ok:false}`, spawn error, or the `model-profile` subcommand is not present in the installed
+binary), do NOT silently proceed on the premium fallback. Either:
+- HALT with `blocked-needs-human` and explain the resolver is unavailable; OR
+- Proceed ONLY with a **loud, surfaced warning** that names the effective posture:
+
+  ```
+  ⚠ model-profile resolver unavailable — running on PREMIUM fallback literals
+    (configured profile unknown; stale global binary may lack model-profile subcommand)
+  ```
+
+Also surface a SUCCESSFUL resolve that carries a `configError` field (the resolver returns a
+named default + `configError` for malformed/hand-edited configs — Red Team M86): print the
+`configError` as a visible warning naming the effective profile before proceeding. A clean-looking
+run on a posture the user did not configure is the same silent-spend failure class.
+
+## Step 3: Invoke the debug Workflow
 
 Call the `Workflow` tool with:
 
@@ -31,14 +60,18 @@ Call the `Workflow` tool with:
   scriptPath: "<absolute path printed by `gsd-t workflow-path debug`>",
   args: {
     symptom: "describe the failing test or runtime error in one sentence",
-    projectDir: "."
+    projectDir: ".",
+    // M86: inject the resolved overrides map so the workflow's ?? form for debug-cycle-2
+    // picks up the profile-tier assignment instead of the premium fable literal.
+    // Pass {} when the resolver failed AND you chose the loud-warning path (not halt).
+    overrides: { /* ...from resolver result.overrides, or {} on failure */ }
   }
 }
 ```
 
 The Workflow runs up to 2 cycles. Cycle 2 receives Cycle 1's failed hypothesis to prevent re-trying the same approach.
 
-## Step 3: Interpret the result
+## Step 4: Interpret the result
 
 ```js
 {

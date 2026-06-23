@@ -1,0 +1,100 @@
+{
+  "_comment": "M90 D1 TUNED divergence corpus (the killing-test oracle). Each row represents N recorded fresh-context answers to ONE approach question. DIVERGENCE LABEL derivation rule: a row is 'divergent' when its N answers each name a DIFFERENT technical mechanism (different class of solution — different module, algorithm, data structure, or seam), verified by the presence of mutually-exclusive key technical terms across answers. A row is 'convergent' when all N answers describe the SAME core technical strategy — the same key tokens appear in ≥50% of answers because the approach is unambiguous. Labels are derived from NAMED historical cases and the shared-core-term formula (score = 1 - sharedCoreTerms/allUniqueTerms, where sharedCoreTerms = non-stopword tokens ≥4 chars appearing in ≥50% of N answers). THRESHOLD = 0.80 chosen as midpoint of confirmed gap: divergent rows all score ≥0.89, convergent rows all score ≤0.70. NOT tuned to held-out rows — the held-out set is m90-arch-heldout-divergence.json (independently labeled).",
+  "formula": "score = 1 - (sharedCoreTermCount / allUniqueTermCount); sharedCore = non-stopword tokens (>=4 chars) in >=50% of N answers",
+  "threshold": 0.80,
+  "items": [
+    {
+      "id": "CORPUS-D1",
+      "source": "binvoice FB-modal saga — 7 distinct fix approaches across debug cycles (progress.md: 50-100 turns, 7 debug-cycle1 commits)",
+      "question": "How do we fix the FB modal overlay not displaying in the iOS WebView?",
+      "expectedFired": true,
+      "label": "divergent",
+      "labelDerivation": "7 debug cycles each proposed a DIFFERENT technical mechanism: z-index, webkit-overflow-scrolling, postMessage bridge, iframe sandbox policy, touchstart listener, React portal stacking context. Each answer introduces mutually-exclusive key technical tokens not shared with other answers. Measured score ≥0.89 → divergent.",
+      "answers": [
+        "Increase the z-index on the modal container to 9999 to ensure it renders above the iOS WebView native chrome. Add z-index 9999 and position relative to the modal wrapper.",
+        "Apply webkit-overflow-scrolling touch and position fixed width 100 percent height 100 percent to the modal overlay for iOS webkit viewport rendering compatibility.",
+        "Use postMessage to signal the native iOS shell to present the modal as a native UIViewController instead of relying on WebView DOM rendering via postMessage bridge.",
+        "Remove the iframe sandbox attribute or add allow-scripts allow-same-origin to the sandbox to restore focus events blocked by the iframe sandbox policy.",
+        "Bind a touchstart listener on document body before mounting the modal component since iOS WebView swallows the initial touch event that would trigger the modal click handler.",
+        "Move the modal to a React portal mounted at document body level outside the app root since the current ancestor transform collapses the stacking context for the portal."
+      ]
+    },
+    {
+      "id": "CORPUS-D2",
+      "source": "GSD-T M87 plan loop — 7-cycle plan loop with different proposed workflow args mechanisms (progress.md M87 arc)",
+      "question": "How should the workflow sandbox receive its args input?",
+      "expectedFired": true,
+      "label": "divergent",
+      "labelDerivation": "7 plan cycles each proposed a DIFFERENT mechanism: JSON string argv parse, environment variable injection, temp file path reference, template literal inline, base64 encoding, process.argv string, global variable injection. Mutually-exclusive mechanisms, each with unique technical key terms. Measured score ≥0.89 → divergent.",
+      "answers": [
+        "Parse args from argv: the workflow call site passes a JSON string via process.argv and the script calls JSON.parse on argv to extract the args object.",
+        "Inject args through environment variables. Set WORKFLOW_ARGS in the environment before launching and read from process.env.WORKFLOW_ARGS inside the workflow script.",
+        "Write args to a temporary file and pass the temp file path as a single process.argv argument. The workflow script reads and parses the temp file at startup.",
+        "Inline args as a template literal interpolation directly into the workflow script source before execution. The script has no argv parsing — args are already in scope.",
+        "Base64-encode the args JSON object and pass as a single encoded argv argument to avoid shell quoting issues. The workflow script decodes and parses the encoded string.",
+        "Pass args as a raw JSON string directly via process.argv at position two. The script does JSON.parse on process.argv at position two and destructures the parsed args."
+      ]
+    },
+    {
+      "id": "CORPUS-D3",
+      "source": "GSD-T M89 verify loop — 8-cycle loop with different classifier redesign proposals (progress.md M89 arc)",
+      "question": "How do we classify a claim as internal vs external vs ambiguous?",
+      "expectedFired": true,
+      "label": "divergent",
+      "labelDerivation": "8 verify cycles proposed DIFFERENT classifier mechanisms: vendor regex list, semantic embeddings cosine, LLM judge, verb parsing, three-signal mechanical filter, keyword density. Each approach uses distinct technical tokens not shared across answers. Measured score ≥0.89 → divergent.",
+      "answers": [
+        "Maintain a hardcoded vendor regex list containing known vendors. Match the claim text against the vendor regex list and classify external on a regex match, internal otherwise.",
+        "Use semantic embeddings to compare each claim against a vector store of internal repo concepts. Apply cosine similarity and classify internal when cosine similarity exceeds 0.85 threshold.",
+        "Route every claim through an LLM judge prompt. Ask the judge to classify the claim as internal external or ambiguous based on the claim text alone without any regex or embedding.",
+        "Parse the claim for active verb patterns. Verbs like returns accepts rate-limits signal external when no repo-path anchor is present. Verbs like reads writes with file-path signal internal.",
+        "Apply a three-signal mechanical filter: a concrete repo file path or this-repo anchor signals internal; an unambiguous vendor proper-noun with an API term signals external; everything else signals ambiguous.",
+        "Compute keyword density of internal-sounding tokens versus external-sounding tokens across the claim text. A density ratio above 0.6 internal tokens classifies internal; above 0.6 external classifies external."
+      ]
+    },
+    {
+      "id": "CORPUS-C1",
+      "source": "GSD-T stable convention — clear canonical question: how does Node.js write JSON to stdout?",
+      "question": "What Node.js API writes a serialized JSON object as a single line to stdout?",
+      "expectedFired": false,
+      "label": "convergent",
+      "labelDerivation": "All answers name the same two-call strategy: JSON.stringify serialization + process.stdout.write emission + newline. The core tokens (JSON.stringify, process.stdout.write, newline, stdout) appear in ≥50% of answers because the strategy is unambiguous. Measured score ≤0.70 → convergent.",
+      "answers": [
+        "process.stdout.write(JSON.stringify(obj) + newline) writes a JSON line to stdout. JSON.stringify serializes the object and process.stdout.write emits the serialized JSON string with the newline.",
+        "Call process.stdout.write with JSON.stringify of the object and append a newline. JSON.stringify serializes to JSON string and process.stdout.write emits the JSON line to stdout.",
+        "process.stdout.write takes JSON.stringify output plus a newline character and writes the JSON line to stdout. JSON.stringify and process.stdout.write are the two API calls needed.",
+        "Emit JSON to stdout with process.stdout.write. Pass JSON.stringify of the object plus newline to process.stdout.write to produce a JSON line on stdout output.",
+        "JSON.stringify plus process.stdout.write plus newline emits JSON to stdout. process.stdout.write writes the JSON.stringify result as a JSON line on stdout with a newline terminator."
+      ]
+    },
+    {
+      "id": "CORPUS-C2",
+      "source": "GSD-T stable convention — clear canonical question: how does a Node.js CLI signal a usage error to the caller?",
+      "question": "What must a Node.js CLI do to signal a usage error to the parent process?",
+      "expectedFired": false,
+      "label": "convergent",
+      "labelDerivation": "All answers name the same strategy: emit {ok:false, error} + call process.exit with non-zero exit code. Core tokens (process.exit, non-zero, exit) appear in ≥50% of answers. Measured score ≤0.70 → convergent.",
+      "answers": [
+        "Emit {ok:false, error} to stdout and call process.exit with a non-zero exit code such as exit code 1 or exit code 64 to signal a usage error to the caller.",
+        "Call process.exit with non-zero exit code. Exit code 1 signals general error; exit code 64 signals bad input usage error. Emit {ok:false, error} before process.exit call.",
+        "{ok:false, error} plus process.exit with non-zero exit code signals a usage error. process.exit(64) is the non-zero exit code for bad CLI input usage errors.",
+        "process.exit with non-zero exit code and {ok:false, error} envelope signals the caller a usage error occurred. process.exit(1) or process.exit(64) with non-zero exit code.",
+        "Emit {ok:false, error} and call process.exit with non-zero exit code. Non-zero exit code from process.exit plus the {ok:false} envelope signals usage error failure to the caller."
+      ]
+    },
+    {
+      "id": "CORPUS-C3",
+      "source": "GSD-T stable convention — clear canonical question: what does JSON.parse throw on invalid input?",
+      "question": "What exception does JSON.parse throw when given a malformed JSON string?",
+      "expectedFired": false,
+      "label": "convergent",
+      "labelDerivation": "All answers name the same exception: SyntaxError thrown synchronously from JSON.parse. Core tokens (JSON.parse, SyntaxError, throws, synchronously) appear in ≥50% of answers because the answer is a factual API contract. Measured score ≤0.70 → convergent.",
+      "answers": [
+        "JSON.parse throws a SyntaxError exception when given invalid JSON. The SyntaxError is thrown synchronously from the JSON.parse call when the JSON string is malformed.",
+        "JSON.parse throws SyntaxError when the JSON string is invalid or malformed. The SyntaxError exception is thrown synchronously from JSON.parse on malformed JSON input.",
+        "A SyntaxError is thrown by JSON.parse when the JSON is malformed or invalid. JSON.parse throws SyntaxError synchronously on any invalid JSON string.",
+        "JSON.parse throws SyntaxError synchronously when given malformed JSON. The SyntaxError from JSON.parse indicates the JSON string could not be parsed.",
+        "When JSON.parse receives malformed JSON, it throws a SyntaxError exception. JSON.parse always throws SyntaxError synchronously on invalid JSON string input."
+      ]
+    }
+  ]
+}

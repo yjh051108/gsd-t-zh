@@ -22,6 +22,15 @@
 //
 // M82 Competition Mode (generate-and-judge — the GENERATIVE dual of the
 // orthogonal validation triad). Contract: competition-mode-contract.md v1.0.0.
+//
+// M90 §2 D4-T4 (competition arm): Divergence-path (R-ARCH-1) wired into the competition arm.
+// After Judge selects the winner, the N producers' proposals are fed to the divergence-sampling
+// path (R-ARCH-1) via the inline runCli helper. HONESTY CLAUSE: Self-MoA samples of ONE model
+// (temperature/seed-varied) may NOT diverge like fresh-context saga cases the threshold was
+// tuned on. That mismatch is RECORDED by the instrumentation sink; the result is logged as
+// EXPERIMENTAL+MEASURED (never claimed as proof). If the real competition feed cannot
+// meaningfully exercise the divergence formula, the result documents that fact.
+// Contract: unproven-assumption-doctrine-contract.md §2 (R-ARCH-1, divergence path, competition-arm-only).
 //   - Eligible phases: partition, milestone, discuss, design-decompose (pre-contract,
 //     wide-solution-space). INELIGIBLE: plan/impact/prd/doc-ripple (narrow / one
 //     right answer) — competition there is wasted, so a competition arg is ignored.
@@ -32,6 +41,24 @@
 //     immune to LLM-judge bias). Other phases use a blind+shuffled+rubric judge whose
 //     numeric selection is finalized deterministically by competition-judge --kind
 //     generic.
+//
+// M89 Stated-Claims → classify (3-result) → judge/research + §7 ENFORCE marker:
+//   Every eligible upper phase (plan, pre-mortem, partition, discuss, milestone, impact)
+//   embeds the Stated-Claims snippet so the agent emits a ## Stated Claims list tagging
+//   load-bearing claims KNOWN | GUESSED(type). The wiring (runStatedClaimsPipeline)
+//   iterates each [GUESSED:*] entry through the D1 classifier, which is a MECHANICAL
+//   STRING-FACT FILTER returning internal | external | AMBIGUOUS (v1.3.0). On
+//   class:external write a §7 status=uncited marker, run the research agent (bare
+//   model:"fable"), write a ## Verified Facts (auto-research) block, flip the marker to
+//   status=cited. On class:internal: grep first; if grep empty, escalate to external
+//   (§5.1). On class:AMBIGUOUS (the regex has no string fact — semantic placement is the
+//   LLM's call, NOT regex's): run a small LLM JUDGE (model:"fable") that decides
+//   internal/external/uncertain in natural language. internal→grep; external→research;
+//   UNCERTAIN→treat as external→research (uncertain = verify, NEVER guess-internal — a
+//   silent miss is the one unacceptable outcome). Idempotent: an already-cited marker
+//   (same claim-key) skips re-research. The classifier never guesses a default — when it
+//   isn't a string fact, the LLM decides, and when the LLM isn't sure, we research.
+//   Contract: auto-research-contract.md v1.2.0 §1/§2/§3/§4/§6.5/§7.
 
 export const meta = {
   name: "gsd-t-phase",
@@ -51,6 +78,13 @@ export const meta = {
 // require("./_lib.js") crashed this workflow on first eval, TD-113). Delegate CLI calls
 // to an agent's Bash; args arrives as a JSON STRING in this runtime. See gsd-t-scan.workflow.js.
 const _args = (typeof args === "string") ? (() => { try { return JSON.parse(args); } catch { return {}; } })() : (args || {});
+// M86: resolved overrides map injected by the invoker (invoke-time injection, M69).
+// Default to {} so the premium fallback literals apply when no invoker injects overrides
+// (preserves byte-identical M85 behavior for callers that have not been updated yet).
+// overrides values are CONCRETE model ids (resolver envelope); the bare literals below
+// are tier ALIASES. The sandbox runtime accepts BOTH forms in model: — proven live for
+// the concrete-id fable path by probe wf_c9faf817-373 (no HTTP 400).
+const overrides = (_args.overrides && typeof _args.overrides === "object") ? _args.overrides : {};
 const _CLI_ENVELOPE_SCHEMA = {
   type: "object", required: ["ok", "exitCode"], additionalProperties: true,
   properties: { ok: { type: "boolean" }, exitCode: { type: "integer" }, envelope: {}, stdout: { type: "string" }, stderr: { type: "string" }, via: { type: "string" } },
@@ -132,6 +166,368 @@ async function runCompetitionJudge(projectDir, spec, label = "judge", phaseNameO
   return { ok: !!env.ok, winner: env.winner != null ? env.winner : null, ranked: env.ranked || [] };
 }
 
+// ── M89 Stated-Claims pipeline ──────────────────────────────────────────────
+// Research-eligible upper stages: these are the phases whose prompt embeds the
+// Stated-Claims snippet (§6.5) and whose artifacts are scanned post-agent.
+// prd/design-decompose/doc-ripple are excluded (no load-bearing external claims).
+const RESEARCH_ELIGIBLE_PHASES = new Set(["plan", "partition", "discuss", "milestone", "impact"]);
+
+// §7 ENFORCE marker format — machine-readable HTML comment written at classify time.
+// claim-key = deterministic normalization: lowercase, then COLLAPSE EVERY non-word run
+// to a single space (cycle-2 finding #1 — CRITICAL). This makes the key marker-syntax
+// SAFE: it can never contain "=", "<", ">", "-", so a claim that literally embeds
+// "status=cited"/"class="/"key="/"<!--"/"-->" cannot poison the marker grammar or
+// collide with a distinct claim's key. (Subsumes the old whitespace-collapse + edge-strip.)
+function normalizeClaimKey(claim) {
+  return claim.toLowerCase().replace(/[^\w]+/g, " ").trim();
+}
+
+// The Stated-Claims snippet Read instruction (D2 deliverable, §6.5 DETECT seam).
+// Each eligible stage prompt embeds this instruction so the agent emits ## Stated Claims.
+const STATED_CLAIMS_INSTRUCTION = `MANDATORY (auto-research-contract §6.5): After your main work, emit a \`## Stated Claims\` section listing EVERY load-bearing claim you relied on, tagged as:
+- [KNOWN] <claim you have verified or is repo-internal-evident>
+- [GUESSED:unknown] <claim you lack the fact for>
+- [GUESSED:assumed] <claim asserting an unverified external shape/value/behavior>
+- [GUESSED:stale] <external/time-varying fact that may have aged>
+This list is machine-parsed by the wiring (D3). Tags are case-sensitive. An untagged claim is an acknowledged miss — the more you tag, the more the system verifies. Also FIRST read your Stated-Claims protocol: templates/prompts/stated-claims-snippet.md`;
+
+// Structured output schema for the Stated-Claims processor agent
+const STATED_CLAIMS_EXTRACT_SCHEMA = {
+  type: "object",
+  required: ["guessedClaims"],
+  additionalProperties: true,
+  properties: {
+    guessedClaims: {
+      type: "array",
+      items: { type: "string" },
+      description: "List of raw claim texts from [GUESSED:*] lines in the ## Stated Claims section",
+    },
+    knownClaims: { type: "array", items: { type: "string" } },
+    artifactPaths: { type: "array", items: { type: "string" } },
+    statedClaimsSectionFound: { type: "boolean" },
+  },
+};
+
+const GREP_RESULT_SCHEMA = {
+  type: "object",
+  required: ["found"],
+  additionalProperties: true,
+  properties: {
+    found: { type: "boolean" },
+    excerpt: { type: "string" },
+  },
+};
+
+const RESEARCH_RESULT_SCHEMA = {
+  type: "object",
+  required: ["ok"],
+  additionalProperties: true,
+  properties: {
+    ok: { type: "boolean" },
+    gapKey: { type: "string" },
+    citedBlock: { type: "string" },
+    sourceUrls: { type: "array", items: { type: "string" } },
+    fetchDates: { type: "array", items: { type: "string" } },
+    reason: { type: "string" },
+  },
+};
+
+const MARKER_WRITE_SCHEMA = {
+  type: "object",
+  required: ["ok"],
+  additionalProperties: true,
+  properties: {
+    ok: { type: "boolean" },
+    artifactPath: { type: "string" },
+    marker: { type: "string" },
+  },
+};
+
+// M89 §1.1 — the AMBIGUOUS → LLM JUDGE schema. When the mechanical classifier finds no
+// decisive STRING FACT (class:ambiguous), this judge applies the known/internal/external
+// test in natural language and returns one of three verdicts. CRITICAL: "uncertain" is a
+// first-class verdict — the wiring treats it as EXTERNAL (research), never guess-internal.
+const CLASSIFY_JUDGE_SCHEMA = {
+  type: "object",
+  required: ["verdict"],
+  additionalProperties: true,
+  properties: {
+    verdict: { type: "string", enum: ["internal", "external", "uncertain"] },
+    reason: { type: "string" },
+  },
+};
+
+/**
+ * M89 §7 Stated-Claims pipeline: classify → marker-write → research/grep → cite → flip.
+ * Called after the phase agent runs on any research-eligible phase.
+ *
+ * @param {string} projectDir
+ * @param {string} phaseName  - the current phase (e.g. "plan", "partition")
+ * @param {object} phaseResult - the agent's result (contains artifacts[] + summary)
+ * @param {string} statedClaimsContext - the agent's stdout/return text (may contain ## Stated Claims)
+ * @returns {object} - { ok, processed, errors }
+ */
+async function runStatedClaimsPipeline(projectDir, phaseName, phaseResult, statedClaimsContext) {
+  const processed = [];
+  const errors = [];
+
+  // Step 1: Extract [GUESSED:*] claims from the phase artifact / stated-claims section.
+  // The phase agent is instructed to emit ## Stated Claims in its output; we extract it.
+  const extractResult = await agent(
+    [
+      `You are a Stated-Claims extractor for the "${phaseName}" phase. Your ONLY job is to parse the [GUESSED:*] entries from a ## Stated Claims section and return them as a JSON list.`,
+      ``,
+      `Context (the phase agent's output / summary):`,
+      "~~~",
+      statedClaimsContext || "(phase agent returned no text — check phaseResult.summary)",
+      "~~~",
+      ``,
+      `Phase artifacts written (read these if needed to find ## Stated Claims):`,
+      (phaseResult && phaseResult.artifacts || []).map((a) => `- ${a}`).join("\n") || "(none reported)",
+      ``,
+      `Task:`,
+      `1. Look for a section starting with \`## Stated Claims\` in the context above OR in any artifact file.`,
+      `2. Extract EVERY line starting with \`- [GUESSED:\` and return its claim text (the text AFTER the tag, stripped of the tag prefix).`,
+      `3. Also note \`statedClaimsSectionFound\` (true if you found the heading).`,
+      `4. Return JSON per the schema. "guessedClaims" is the list of claim texts (NOT the tags themselves).`,
+      `If no ## Stated Claims section was found, return { "guessedClaims": [], "statedClaimsSectionFound": false }.`,
+    ].join("\n"),
+    { label: "stated-claims-extract", phase: "Phase", schema: STATED_CLAIMS_EXTRACT_SCHEMA, model: "haiku" }
+  ).catch(() => ({ guessedClaims: [], statedClaimsSectionFound: false }));
+
+  const guessedClaims = Array.isArray(extractResult && extractResult.guessedClaims)
+    ? extractResult.guessedClaims.filter((c) => typeof c === "string" && c.trim().length > 0)
+    : [];
+
+  if (!extractResult || !extractResult.statedClaimsSectionFound) {
+    log(`m89: ${phaseName}: no ## Stated Claims section found — acknowledged miss (§6.5 best-effort DETECT)`);
+  } else {
+    log(`m89: ${phaseName}: ${guessedClaims.length} [GUESSED:*] claim(s) found in ## Stated Claims`);
+  }
+
+  if (guessedClaims.length === 0) {
+    return { ok: true, processed, errors };
+  }
+
+  // Determine the primary artifact path to write markers/facts into.
+  // We use the first artifact reported (or a temp path if none).
+  const artifactPaths = Array.isArray(extractResult.artifactPaths) && extractResult.artifactPaths.length > 0
+    ? extractResult.artifactPaths
+    : (phaseResult && phaseResult.artifacts ? phaseResult.artifacts : []);
+  const primaryArtifact = artifactPaths[0] || null;
+
+  // Step 2: For each GUESSED claim, classify → route → process.
+  // Sequential (not parallel) to avoid concurrent artifact writes racing each other.
+  for (const claimText of guessedClaims) {
+    const claimKey = normalizeClaimKey(claimText);
+    log(`m89: classifying claim: "${claimText.slice(0, 80)}"`);
+
+    // FAIL-CLOSED (Red Team HIGH): the §7 marker for an EXTERNAL guess MUST always be written
+    // SOMEWHERE so the §7 ENFORCE gate has something to fail on. artifactPath is agent-self-
+    // reported + optional; a worker that reports none must NOT silently skip the marker (that
+    // would ship an external guess uncited+unresearched — the exact invariant M89 enforces).
+    // So the external/escalation path writes to a DETERMINISTIC FALLBACK ARTIFACT when no
+    // artifact was reported. Internal/grep can still no-op safely (no marker on the internal path).
+    const claimSlug = claimKey.replace(/\s+/g, "-").slice(0, 80) || "claim";
+    const externalArtifact = primaryArtifact || `${projectDir}/.gsd-t/research/phase-${phaseName}-${claimSlug}.md`;
+
+    // § 4.1 Idempotency check: if the artifact already has a status=cited marker for this exact
+    // claim-key, skip (no re-research). Check the path actually WRITTEN (externalArtifact = real
+    // primaryArtifact OR the deterministic fallback) so a re-run does not re-research a claim
+    // already cited in the fallback artifact (Red Team MEDIUM).
+    {
+      const idempotencyCheck = await agent(
+        [
+          `Check if the file at "${externalArtifact}" already contains an auto-research-claim marker with status=cited for the claim-key "${claimKey}".`,
+          ``,
+          `Search for an HTML comment matching:`,
+          `  <!-- auto-research-claim: class=external key=${claimKey} status=cited -->`,
+          ``,
+          `Return JSON: { "alreadyCited": true } if found, { "alreadyCited": false } if not found or file does not exist.`,
+          `Do NOT modify any files. Read-only check.`,
+        ].join("\n"),
+        { label: "idempotency-check", phase: "Phase", schema: { type: "object", required: ["alreadyCited"], properties: { alreadyCited: { type: "boolean" } } }, model: "haiku" }
+      ).catch(() => ({ alreadyCited: false }));
+
+      if (idempotencyCheck && idempotencyCheck.alreadyCited) {
+        log(`m89: claim "${claimKey}" already cited (§4.1 idempotency skip — exact claim-key match)`);
+        processed.push({ claimKey, action: "skipped-already-cited" });
+        continue;
+      }
+    }
+
+    // Classify the claim via the D1 classifier (--json for parity with the worker workflows).
+    const classifyResult = await runCli(
+      projectDir, "research-gate", ["classify", claimText, "--json"], "gsd-t-research-gate.cjs",
+      "classify-claim", true, "Phase"
+    );
+    const envelope = classifyResult.envelope || {};
+    const claimClass = envelope.class;
+    const claimRoute = envelope.route;
+
+    if (!classifyResult.ok || !claimClass) {
+      log(`m89: classify failed for claim "${claimKey}": ${envelope.error || classifyResult.stderr || "no envelope"}`);
+      errors.push({ claimKey, error: `classify failed: ${envelope.error || "no envelope"}` });
+      continue;
+    }
+
+    log(`m89: claim "${claimKey}" → class:${claimClass} route:${claimRoute} — ${envelope.reason || ""}`);
+
+    // External-claim handler (§7 marker → research(fable) → cite → flip). Closure so the
+    // ambiguous→judge path can reuse it for an "external"/"uncertain" verdict.
+    const doExternal = async () => {
+      // §7: Write status=uncited marker into the (real OR fallback) artifact — ALWAYS written
+      // so the §7 gate can fail on it (fail-CLOSED, Red Team HIGH).
+      const marker = `<!-- auto-research-claim: class=external key=${claimKey} status=uncited -->`;
+      await agent(
+        [
+          `Create the parent directory if needed, then append the following HTML comment marker on a NEW LINE at the END of the file at "${externalArtifact}" (create the file if it does not exist):`,
+          ``,
+          marker,
+          ``,
+          `Do NOT modify any other content. Return JSON: { "ok": true, "artifactPath": "${externalArtifact}", "marker": "<the marker you appended>" }`,
+        ].join("\n"),
+        { label: "marker-write-uncited", phase: "Phase", schema: MARKER_WRITE_SCHEMA, model: "haiku" }
+      ).catch((e) => ({ ok: false, error: String(e && e.message) }));
+      log(`m89: wrote status=uncited marker for claim "${claimKey}" into ${externalArtifact}${primaryArtifact ? "" : " (FALLBACK artifact — worker reported no path)"}`);
+
+      // §2: Run the research agent (bare model: "fable" — not the ?? override form).
+      // The research agent reads its own protocol from research-subagent.md.
+      log(`m89: running research agent for external claim "${claimKey}"`);
+      const researchResult = await agent(
+        [
+          `You are the auto-research agent (auto-research-contract §2). Your SOLE job is to verify ONE external guessed claim via live web sources.`,
+          ``,
+          `FIRST read your protocol via the Read tool: templates/prompts/research-subagent.md (in the installed @tekyzinc/gsd-t package, or this project's copy). Follow it exactly.`,
+          ``,
+          `Claim to verify: "${claimText}"`,
+          `Normalized claim-key: "${claimKey}"`,
+          ``,
+          `Use WebSearch + WebFetch to find authoritative sources. Emit a ## Verified Facts (auto-research) block per §3 format. On every fact line append the trailer \`key: ${claimKey}\` so the §7 gate matches by claim-key (Red Team MEDIUM #2).`,
+          `Return JSON per the schema with ok:true and citedBlock (the full markdown block) on success, or ok:false and reason on STAGE-FAILURE.`,
+        ].join("\n"),
+        { label: "research-stage", phase: "Phase", schema: RESEARCH_RESULT_SCHEMA, model: "fable" }
+      ).catch((e) => ({ ok: false, gapKey: claimKey, reason: `research agent error: ${e && e.message}` }));
+
+      if (researchResult && researchResult.ok && researchResult.citedBlock) {
+        // §3: Write the cited Verified-Facts block into the (real OR fallback) artifact before the gate re-runs.
+        await agent(
+          [
+            `Append the following cited Verified-Facts block on a NEW LINE at the END of the file at "${externalArtifact}":`,
+            ``,
+            researchResult.citedBlock,
+            ``,
+            `Then FIND and REPLACE the marker:`,
+            `  <!-- auto-research-claim: class=external key=${claimKey} status=uncited -->`,
+            `with:`,
+            `  <!-- auto-research-claim: class=external key=${claimKey} status=cited -->`,
+            ``,
+            `(This flips the §7 marker from uncited → cited — same claim-key, exact string replace.)`,
+            `Return JSON: { "ok": true }`,
+          ].join("\n"),
+          { label: "cite-write-and-flip", phase: "Phase", schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } }, model: "haiku" }
+        ).catch(() => null);
+        log(`m89: cited block written + marker flipped to status=cited for claim "${claimKey}"`);
+        processed.push({ claimKey, action: "cited", class: "external" });
+      } else {
+        const reason = (researchResult && researchResult.reason) || "research stage returned no cited block";
+        log(`m89: research STAGE-FAILURE for claim "${claimKey}": ${reason} — marker stays status=uncited`);
+        errors.push({ claimKey, error: `research stage failure: ${reason}`, action: "research-failed" });
+        processed.push({ claimKey, action: "research-failed", class: "external", reason });
+      }
+    };
+
+    // Internal-claim handler — grep first; escalate to external if grep empty (§5.1).
+    // Closure so the ambiguous→judge path can reuse it for an "internal" verdict.
+    const doInternal = async () => {
+      log(`m89: internal claim "${claimKey}" — running grep/Read`);
+      const grepResult = await agent(
+        [
+          `You are an internal-claim resolver for the project at "${projectDir}".`,
+          ``,
+          `Internal claim: "${claimText}"`,
+          ``,
+          `Task: Use grep and/or Read to decide whether this repo's OWN code / contracts / tests`,
+          `CONFIRM THE SPECIFIC CLAIM — not merely share vocabulary with it (Red Team MEDIUM).`,
+          `1. grep/Read the project for content relevant to the claim.`,
+          `2. Set found=true ONLY IF the repo content you read actually CONFIRMS the specific claim`,
+          `   (the value/shape/behavior the claim asserts is borne out by this repo's code/contract/test).`,
+          `   Coincidental keyword overlap — a file that merely MENTIONS the same words but does not`,
+          `   establish the claim — is found=false.`,
+          `3. If the claim is about an EXTERNAL system's behavior/limit/return-shape (a third-party API,`,
+          `   library, browser, or protocol), grep CANNOT confirm it — set found=false so it escalates`,
+          `   to web research. A repo file that calls that external system is NOT confirmation of the`,
+          `   external system's behavior.`,
+          `4. Otherwise set found=false.`,
+          ``,
+          `Return JSON: { "found": true|false, "excerpt": "<up to 200 chars of the CONFIRMING repo content, or empty>" }`,
+          `Do NOT run any web searches. Do NOT write any files. Grep and Read only.`,
+        ].join("\n"),
+        { label: "internal-grep", phase: "Phase", schema: GREP_RESULT_SCHEMA, model: "haiku" }
+      ).catch(() => ({ found: false, excerpt: "" }));
+
+      if (grepResult && grepResult.found) {
+        log(`m89: internal claim "${claimKey}" resolved via grep (no web, no marker)`);
+        processed.push({ claimKey, action: "resolved-grep", class: "internal", excerpt: grepResult.excerpt });
+      } else {
+        // §5.1 Escalate to external: grep returned nothing. Reuse doExternal() (same
+        // marker→research→cite→flip path, incl. the key: trailer + fallback artifact)
+        // instead of duplicating it (matches execute/quick/debug).
+        log(`m89: internal claim "${claimKey}" grep EMPTY → escalating to external (§5.1)`);
+        await doExternal();
+      }
+    };
+
+    // ── Dispatch by the 3-result classifier verdict ──────────────────────────
+    if (claimClass === "external") {
+      await doExternal();
+    } else if (claimClass === "internal") {
+      await doInternal();
+    } else {
+      // class:AMBIGUOUS — the mechanical filter found NO string fact. Semantic placement
+      // is the LLM's call, NOT regex's. Run the LLM JUDGE (fable). internal→grep;
+      // external→research; UNCERTAIN→research (uncertain = verify, NEVER guess-internal —
+      // a silent miss is the one unacceptable outcome). The classifier never guessed a
+      // default — it deferred, and now the LLM decides (and on doubt we research).
+      log(`m89: ambiguous claim "${claimKey}" — routing to LLM judge (no string fact; doctrine: when unsure, research)`);
+      const judge = await agent(
+        [
+          `You are the M89 ambiguous-claim JUDGE (auto-research-contract §1.1). The mechanical`,
+          `string-fact classifier could not decide this GUESSED claim, so you decide it in natural`,
+          `language. Apply the known/internal/external test:`,
+          ``,
+          `Claim: "${claimText}"`,
+          ``,
+          `- "internal"  = the claim is about THIS repo's OWN code / contracts / schema / file`,
+          `                ownership / tests — something grep/Read of this repo can confirm.`,
+          `- "external"  = the claim asserts the behavior / shape / limit / value of a system`,
+          `                OUTSIDE this repo (a third-party API, library, browser, protocol, spec)`,
+          `                and is unverified — it needs web research to confirm.`,
+          `- "uncertain" = you cannot CONFIDENTLY place it as internal. Use this freely — it is NOT`,
+          `                a failure. Per the milestone's own doctrine, an unverified claim must be`,
+          `                RESEARCHED, never guessed.`,
+          ``,
+          `Return JSON: { "verdict": "internal" | "external" | "uncertain", "reason": "<one line>" }.`,
+          `Do NOT modify files. Do NOT run web searches in THIS step — only decide the verdict.`,
+        ].join("\n"),
+        { label: "classify-judge", phase: "Phase", schema: CLASSIFY_JUDGE_SCHEMA, model: "fable" }
+      ).catch((e) => ({ verdict: "uncertain", reason: `judge error: ${e && e.message} — failing toward research` }));
+
+      const verdict = (judge && judge.verdict) || "uncertain";
+      log(`m89: ambiguous claim "${claimKey}" → judge verdict: ${verdict} — ${(judge && judge.reason) || ""}`);
+      if (verdict === "internal") {
+        await doInternal();
+      } else {
+        // external OR uncertain → research (uncertain = verify, never guess-internal)
+        if (verdict === "uncertain") log(`m89: judge UNCERTAIN for "${claimKey}" → treating as external → research (no silent guess)`);
+        await doExternal();
+      }
+    }
+  }
+
+  return { ok: errors.length === 0, processed, errors };
+}
+
 // Phases where competition pays off (wide solution space, pre-contract, high blast
 // radius). Competition is AUTOMATIC on these (M84) — the workflow probes the
 // solution space and self-decides; on any other phase it never runs.
@@ -169,7 +565,7 @@ async function runSolutionSpaceProbe(projectDir, phaseName, { milestone, briefPa
     `BIAS TOWARD COMPETING: if you are uncertain, or can name even two plausibly-different approaches, choose compete=true. A wasted competition costs ~3× this one phase; a missed-better-approach costs far more downstream (more pre-mortem blocks, more bugs, more verify cycles). Err on the side of generating options.`,
     `Return JSON per the schema: { "compete": true|false, "reason": "<one sentence>", "approaches": ["<a>","<b>",...] }.`,
   ].filter(Boolean).join("\n");
-  const opts = { label: "solution-space-probe", schema: _PROBE_SCHEMA, model: "fable" };
+  const opts = { label: "solution-space-probe", schema: _PROBE_SCHEMA, model: overrides["solution-space-probe"] ?? "fable" };
   if (phaseNameOpt) opts.phase = phaseNameOpt;
   const r = await agent(prompt, opts).catch(() => null);
   // Probe failure → bias toward competing (fail-toward-options, per the cost logic).
@@ -195,7 +591,7 @@ async function runPartitionProbe(projectDir, { milestone, briefPath, userInput, 
     `BIAS TOWARD COMPETING: if ≥3 files/areas are in play or you're unsure, choose compete=true — the file-disjointness oracle will objectively pick the most-parallelizable valid carving among the candidates, so competing is low-risk and high-reward.`,
     `Return JSON per the schema.`,
   ].filter(Boolean).join("\n");
-  const opts = { label: "partition-probe", schema: _PROBE_SCHEMA, model: "fable" };
+  const opts = { label: "partition-probe", schema: _PROBE_SCHEMA, model: overrides["partition-probe"] ?? "fable" };
   if (phaseNameOpt) opts.phase = phaseNameOpt;
   const r = await agent(prompt, opts).catch(() => null);
   if (!r || typeof r.compete !== "boolean") {
@@ -305,14 +701,26 @@ if (_competitionEligible) {
 
 // M84 Red Team LOW: announce "Phase" only on the single-draft path (the
 // competition path announces Compete/Judge/Finalize instead) so no empty stage shows.
+// M89: Stated-Claims instruction appended to each research-eligible phase's prompt.
+// prd/design-decompose/doc-ripple are excluded (no load-bearing external claims expected).
 const promptByPhase = {
-  partition: `Decompose the milestone into 2-5 independent domains. Write .gsd-t/domains/{domain}/{scope,constraints,tasks}.md. Cross-domain contracts in .gsd-t/contracts/.`,
+  partition: `Decompose the milestone into 2-5 independent domains. Write .gsd-t/domains/{domain}/{scope,constraints,tasks}.md. Cross-domain contracts in .gsd-t/contracts/.
+
+${STATED_CLAIMS_INSTRUCTION}`,
   plan: `For each domain, write atomic tasks.md entries with files, contract refs, dependencies, acceptance criteria. Update .gsd-t/contracts/integration-points.md with wave groupings.
 
-M83 PLAN HARDENING (mandatory — the plan is BLOCKED from execute otherwise): every task that declares acceptance criteria MUST also declare (1) **Files** = the concrete code path that implements it, and (2) a TEST that fails if that path is dead — name it in a **Test** field, a test-file path (\`*.test.*\` / \`*.spec.*\` / \`e2e/\`), or a runner (vitest/cargo test/playwright). The ONE task that delivers the milestone's HEADLINE capability MUST be tagged **Headline:** true and carry BOTH a real implementation path AND a test that exercises that capability end-to-end (e.g. for a "100MB+ file" milestone, a test that actually opens a >100MB fixture). NEVER defer a milestone's own headline capability or a core AC to a later milestone. This exists because NiceNote M5 shipped its headline (100MB+ chunked read) as DEAD CODE with no test and burned 4 verify cycles.`,
-  discuss: `Multi-perspective exploration of design questions. Settle locked decisions into .gsd-t/CONTEXT.md. Do NOT implement.`,
-  impact: `Analyze downstream effects of proposed changes. Identify breaking changes, affected consumers, migration paths.`,
-  milestone: `Define a new milestone — origin, goal, success criteria, falsifiable acceptance. Append to .gsd-t/progress.md. Defer partition/plan.`,
+M83 PLAN HARDENING (mandatory — the plan is BLOCKED from execute otherwise): every task that declares acceptance criteria MUST also declare (1) **Files** = the concrete code path that implements it, and (2) a TEST that fails if that path is dead — name it in a **Test** field, a test-file path (\`*.test.*\` / \`*.spec.*\` / \`e2e/\`), or a runner (vitest/cargo test/playwright). The ONE task that delivers the milestone's HEADLINE capability MUST be tagged **Headline:** true and carry BOTH a real implementation path AND a test that exercises that capability end-to-end (e.g. for a "100MB+ file" milestone, a test that actually opens a >100MB fixture). NEVER defer a milestone's own headline capability or a core AC to a later milestone. This exists because NiceNote M5 shipped its headline (100MB+ chunked read) as DEAD CODE with no test and burned 4 verify cycles.
+
+${STATED_CLAIMS_INSTRUCTION}`,
+  discuss: `Multi-perspective exploration of design questions. Settle locked decisions into .gsd-t/CONTEXT.md. Do NOT implement.
+
+${STATED_CLAIMS_INSTRUCTION}`,
+  impact: `Analyze downstream effects of proposed changes. Identify breaking changes, affected consumers, migration paths.
+
+${STATED_CLAIMS_INSTRUCTION}`,
+  milestone: `Define a new milestone — origin, goal, success criteria, falsifiable acceptance. Append to .gsd-t/progress.md. Defer partition/plan.
+
+${STATED_CLAIMS_INSTRUCTION}`,
   prd: `Generate a product requirements doc at docs/prd.md. Functional + non-functional requirements traceable to acceptance criteria.`,
   "design-decompose": `Decompose a design reference (Figma URL / images) into hierarchical contracts: elements -> widgets -> pages, each at .gsd-t/contracts/design/.`,
   "doc-ripple": `Identify and update all docs affected by recent code changes per the Document Ripple Completion Gate. No code edits.`,
@@ -322,6 +730,9 @@ const baseObjective = promptByPhase[phaseName];
 const briefLine = `**Brief (REQUIRED):** ${brief.briefPath || "(no brief — re-walk repo)"}`;
 
 let result;
+// M90 §2 D4-T4: holds the divergence-path result from the competition arm (R-ARCH-1).
+// Set inside the competition arm (before Finalize), attached to result after.
+let _pendingArchTriggerDivergence = null;
 if (!competitionOn) {
   // ── Single-producer path (default, unchanged behavior) ──
   phase("Phase");
@@ -473,7 +884,7 @@ if (!competitionOn) {
         `IMPORTANT: use the CANDIDATE LABEL (A, B, C…) shown above as the "id" in your scores.`,
       ].join("\n"),
       {
-        label: "judge:rubric", phase: "Judge", model: "fable",
+        label: "judge:rubric", phase: "Judge", model: overrides["competition-judge"] ?? "fable",
         schema: {
           type: "object", required: ["scores"], additionalProperties: true,
           properties: { scores: { type: "array", items: { type: "object", additionalProperties: true } } },
@@ -510,6 +921,57 @@ if (!competitionOn) {
     log(`competition: judge returned no winner; falling back to rank-1 (${winner.id}).`);
   }
   log(`competition: winner = ${winner.id} (of ${candidates.map((c) => c.id).join(", ")})`);
+
+  // M90 §2 D4-T4 — R-ARCH-1 divergence-sampling (competition arm only, EXPERIMENTAL+MEASURED).
+  // Feed the N producers' proposals to the divergence-sampling path. HONESTY CLAUSE (the doctrine
+  // on itself): Self-MoA (one model, temperature-varied) may not diverge like fresh-context saga
+  // cases the threshold was tuned on. The result is EXPERIMENTAL: the instrumentation sink records
+  // the fire-rate; we NEVER claim it works. If the divergence score is low (convergent), that is
+  // still a measurement — the path is not broken, the formula is just not exercised by Self-MoA.
+  {
+    const candidateTexts = candidates.map((c) => {
+      // Extract a representative text from each candidate for divergence analysis.
+      if (phaseName === "partition") {
+        return JSON.stringify(c.domains || []);
+      }
+      return String(c.proposal || c.rationale || "");
+    }).filter((t) => t.length > 0);
+
+    if (candidateTexts.length >= 2) {
+      const triggerInput = JSON.stringify({
+        type: "divergence-sampling",
+        answers: candidateTexts,
+        basis: `${phaseName} phase competition: ${candidates.length} Self-MoA producers — checking if proposal divergence signals an unproven architectural assumption`,
+      });
+      const divResult = await runCli(
+        projectDir,
+        "architectural-trigger",
+        ["trigger", triggerInput],
+        "gsd-t-architectural-trigger.cjs",
+        `arch-trigger-divergence:${phaseName}`,
+        true,
+        "Judge"
+      );
+      const divEnv = divResult.envelope || {};
+      // Log the result — ALWAYS note the experimental nature (no efficacy claim).
+      // The divergenceScore and fired flag are the measurement; the sink has the record.
+      log(
+        `M90 arch-trigger R-ARCH-1 (competition-arm, EXPERIMENTAL): ` +
+        `${phaseName} | fired=${divEnv.fired} | divergenceScore=${divEnv.divergenceScore != null ? divEnv.divergenceScore.toFixed(3) : "?"} | ` +
+        `reason=${divEnv.reason || "?"} | experimental=true (Self-MoA may not diverge like fresh-context saga cases)`
+      );
+      // Store the result for attachment to `result` after Finalize assigns it.
+      _pendingArchTriggerDivergence = {
+        fired: divEnv.fired || false,
+        divergenceScore: divEnv.divergenceScore != null ? divEnv.divergenceScore : null,
+        reason: divEnv.reason || null,
+        experimental: true,
+        n: candidateTexts.length,
+      };
+    } else {
+      log(`M90 arch-trigger R-ARCH-1: skipped — only ${candidateTexts.length} producer text(s) available (need ≥2)`);
+    }
+  }
 
   // FINALIZE: one agent commits the WINNING approach (pick-one at the thesis level),
   // then enriches it with non-overlapping good line-items from the losers (safe union
@@ -592,6 +1054,26 @@ if (!competitionOn) {
 
   // Thread the competition telemetry up so the caller can report measured SC#1.
   result.competition = { n: candidates.length, winner: winner.id, ranked };
+  // M90 §2 D4-T4: attach divergence-path result if computed (EXPERIMENTAL+MEASURED).
+  if (_pendingArchTriggerDivergence && result) {
+    result.archTriggerDivergence = _pendingArchTriggerDivergence;
+  }
+}
+
+// ── M89 Stated-Claims pipeline (research-eligible phases) ──────────────────
+// Runs AFTER the phase agent writes its artifacts and BEFORE the Plan Hardening
+// gate so that any external guessed claims get cited before the gate runs.
+// The pre-mortem (inside Plan Hardening below) also embeds the Stated-Claims
+// instruction — its claims are processed inside the pre-mortem agent call itself
+// (it cites in its prompt context); the gate here covers the main plan/partition/
+// discuss/milestone/impact output.
+if (result && result.status !== "failed" && RESEARCH_ELIGIBLE_PHASES.has(phaseName)) {
+  const statedClaimsCtx = (result.summary || "") + "\n" + (result.decisions || []).join("\n");
+  const scPipeline = await runStatedClaimsPipeline(projectDir, phaseName, result, statedClaimsCtx);
+  result.statedClaimsPipeline = scPipeline;
+  if (scPipeline.errors && scPipeline.errors.length > 0) {
+    log(`m89: ${phaseName}: stated-claims pipeline completed with ${scPipeline.errors.length} error(s) — uncited markers may remain (verify gate will enforce)`);
+  }
 }
 
 // ── M83 Left-Shifted Plan Hardening (plan phase only) ──
@@ -652,8 +1134,10 @@ if (phaseName === "plan" && result && result.status !== "failed") {
       `Predict, before any code is executed, how this milestone will FAIL: edge cases, dead deliverables, unguarded NFRs, shallow-test traps. Scrutinize the HEADLINE capability hardest — is it bound to a real path, reachable, and covered by a killing test?`,
       `Every blocking finding MUST convert to a concrete requiredTest the plan must adopt. Advisory notes are forbidden.`,
       `Verdict BLOCK if any concrete, falsifiable failure condition lacks a named required test; else CLEARED. Return JSON per the schema.`,
+      ``,
+      `M89 ${STATED_CLAIMS_INSTRUCTION}`,
     ].join("\n"),
-    { label: "pre-mortem", phase: "Plan Hardening", schema: PRE_MORTEM_SCHEMA, model: "fable" }
+    { label: "pre-mortem", phase: "Plan Hardening", schema: PRE_MORTEM_SCHEMA, model: overrides["pre-mortem"] ?? "fable" }
   ).catch((e) => ({ verdict: "BLOCK", findings: [{ severity: "HIGH", condition: `pre-mortem agent error: ${e && e.message}`, requiredTest: "re-run pre-mortem" }], notes: "agent-error" }));
 
   result.preMortem = preMortem;

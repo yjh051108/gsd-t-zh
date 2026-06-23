@@ -6,8 +6,21 @@
 // Canonical verify-phase Workflow. Replaces the gsd-t-verify command shell with
 // a deterministic pipeline:
 //   preflight → brief → verify-gate (deterministic, hard-fail) →
+//   M89 §7 ENFORCE gate (auto-research-claim marker scan) →
 //   parallel( /code-review ultra cooperative, Red Team adversarial, QA mechanics ) →
 //   synthesis ( merge findings WITHOUT collapsing categories — see orthogonal-validation-contract.md )
+//
+// M89 §7 ENFORCE gate: an artifact carrying ANY <!-- auto-research-claim: ... status=uncited -->
+// marker FAILs (an external guessed claim proceeded without a cited fact). All markers
+// status=cited with matching ## Verified Facts (auto-research) entries → PASS.
+// Contract: auto-research-contract.md §7 + §5 (A4).
+//
+// M90 §4 Fail-Closed gates (FAIL-blocking, after M89 §7 ENFORCE gate):
+//   R-FAIL-2: arch-trigger proven-by-adversary-only flag unresolved → VERIFY-FAILED.
+//   R-FAIL-3: loop-ledger haltedButNoReExamination state → VERIFY-FAILED.
+//   Both are DOCUMENTED no-op-PASSes when the producing mechanism is de-scoped (R1-EXIT),
+//   distinguishable from wired-but-broken vacuous passes. Never halt on a de-scoped mechanism.
+// Contract: unproven-assumption-doctrine-contract.md §4 (R-FAIL-2, R-FAIL-3).
 //
 // args shape:
 //   {
@@ -19,10 +32,11 @@
 export const meta = {
   name: "gsd-t-verify",
   description:
-    "GSD-T verify phase: preflight → brief → verify-gate → CI-parity gate (M57) → test-data purge gate (M58) → parallel(code-review-ultra, Red Team, QA) → synthesis",
+    "GSD-T verify phase: preflight → brief → verify-gate → M89 §7 ENFORCE gate → CI-parity gate (M57) → test-data purge gate (M58) → parallel(code-review-ultra, Red Team, QA) → synthesis",
   phases: [
     { title: "Preflight",          detail: "preflight + brief" },
     { title: "Verify-Gate",        detail: "deterministic two-track verify-gate" },
+    { title: "Auto-Research Gate", detail: "M89 §7 ENFORCE: scan for status=uncited markers (A4 — no silent guess)" },
     { title: "CI-Parity",          detail: "M57 build-coverage + ci-parity (FAIL-blocking)" },
     { title: "Test-Data Purge",    detail: "M58 test-data --purge (FAIL-blocking)" },
     { title: "Orthogonal Triad",   detail: "code-review ultra ∥ Red Team ∥ QA" },
@@ -37,6 +51,12 @@ export const meta = {
 // QA/Red-Team protocol bodies are read by an agent (Read) instead of fs. args arrives as
 // a JSON STRING in this runtime. See gsd-t-scan.workflow.js.
 const _args = (typeof args === "string") ? (() => { try { return JSON.parse(args); } catch { return {}; } })() : (args || {});
+// M86: resolved overrides map injected by the invoker (invoke-time injection, M69).
+// Default to {} so the premium fallback literals apply when no invoker injects overrides.
+// overrides values are CONCRETE model ids (resolver envelope); the bare literals below
+// are tier ALIASES. The sandbox runtime accepts BOTH forms in model: — proven live for
+// the concrete-id fable path by probe wf_c9faf817-373 (no HTTP 400).
+const overrides = (_args.overrides && typeof _args.overrides === "object") ? _args.overrides : {};
 const _CLI_ENVELOPE_SCHEMA = {
   type: "object", required: ["ok", "exitCode"], additionalProperties: true,
   properties: { ok: { type: "boolean" }, exitCode: { type: "integer" }, envelope: {}, stdout: { type: "string" }, stderr: { type: "string" }, via: { type: "string" } },
@@ -215,6 +235,251 @@ if (!vg.ok) {
 }
 log(`verify-gate green`);
 
+// ─── M89 §7 ENFORCE Gate (FAIL-blocking — A4 no-silent-guess) ─────────────
+// Scans all milestone artifacts for STRUCTURAL auto-research-claim markers and FAILs if:
+//   (a) ANY marker is status=uncited (an external guessed claim was never cited), OR
+//   (b) ANY status=cited marker's file lacks a matching `## Verified Facts (auto-research)`
+//       block with a sourced fact line (a "cited" marker with no backing fact — the
+//       hollow-gate defeat the contract §7/§5 A4 require to FAIL).
+//
+// CRITICAL STRUCTURAL RULE (Red Team #1 + code-review #1):
+//   - A marker counts ONLY if the LINE is a COMPLETE HTML comment
+//     `<!-- auto-research-claim: ... status=uncited|cited -->` (has `auto-research-claim:`
+//     AND `status=...` on the SAME line AND the line is the comment `<!-- ... -->`). A bare
+//     substring match would count the marker TEMPLATE string carried in this repo's own
+//     prose/source (CLAUDE-global.md, this contract, the workflows that EMIT the template)
+//     as live markers → spurious VERIFY-FAILED when verify dogfoods on this repo.
+//   - A status=cited marker is only honored if its file ALSO contains a
+//     `## Verified Facts (auto-research)` heading AND ≥1 sourced fact line (`source:` URL).
+//     A cited marker WITHOUT a matching sourced fact is counted as a violation (named by
+//     its claim-key) — same as an uncited marker. This closes the hollow-gate (A4).
+// Contract: auto-research-contract.md §7 + §5 (A4).
+// M81: no fs — delegate to an agent's Bash (grep) + parse result.
+const AUTO_RESEARCH_GATE_SCHEMA = {
+  type: "object",
+  required: ["pass", "uncitedCount", "citedCount"],
+  additionalProperties: true,
+  properties: {
+    pass: { type: "boolean" },
+    uncitedCount: { type: "integer" },
+    citedCount: { type: "integer" },
+    citedWithoutFactsCount: { type: "integer" },
+    uncitedMarkers: { type: "array", items: { type: "string" } },
+    citedWithoutFactsKeys: { type: "array", items: { type: "string" } },
+    internalOnlyArtifacts: { type: "boolean" },
+    notes: { type: "string" },
+  },
+};
+
+phase("Auto-Research Gate");
+const arGate = await agent(
+  [
+    `You are the M89 §7 ENFORCE gate scanner. Scan ALL milestone artifacts in the project at "${projectDir}" for STRUCTURAL auto-research-claim markers and determine pass/fail per contract §7 + §5 (A4 no-silent-guess).`,
+    ``,
+    `A line is a LIVE MARKER ONLY IF it is a COMPLETE HTML comment of this exact structure (all on ONE line):`,
+    `    <!-- auto-research-claim: class=external key=<some-key> status=uncited -->`,
+    `    <!-- auto-research-claim: class=external key=<some-key> status=cited -->`,
+    `STRUCTURAL TEST (do NOT count a bare substring): the line, trimmed, MUST start with "<!--", MUST end with "-->", MUST contain "auto-research-claim:", MUST contain "status=uncited" or "status=cited", AND its key= value MUST be a CONCRETE normalized key (lowercase words/whitespace, NO angle brackets). Lines that merely MENTION the template in prose or source code (a backtick-quoted example, a string literal that emits the template, a contract illustration) are NOT live markers — they are not a standalone "<!-- ... -->" comment line, OR they carry a PLACEHOLDER key like "key=<claim-key>" / "key=<normalized-claim-key>" / "key=<some-key>" / "key=<key>" (any key= value containing "<" or ">"), OR a placeholder status like "status=uncited|cited" / "status=<status>". SKIP all of those — a real marker's key is the normalizeClaimKey output and never contains angle brackets.`,
+    ``,
+    `Steps:`,
+    `1. Find candidate files: \`grep -rl "auto-research-claim" "${projectDir}" --include="*.md" --include="*.js" --include="*.ts" --include="*.tsx" --include="*.jsx" --include="*.cjs" --include="*.mjs" --include="*.py" 2>/dev/null || echo "no-matches"\``,
+    `   NOTE: worker workflows (execute/quick/debug) write §7 markers into their primary OUTPUT artifact, which may be a code file (.js/.ts/.py/...), not only markdown — the include set MUST cover those or an uncited marker in a code artifact escapes the gate (A4).`,
+    `2. For each candidate file, read the lines containing "auto-research-claim". Apply the STRUCTURAL TEST above to each line; discard non-marker lines (template/prose/source illustrations).`,
+    `3. Among the SURVIVING live markers, classify each as uncited (status=uncited) or cited (status=cited), and record its key= value.`,
+    `4. uncitedCount = number of live status=uncited markers. List up to 10 of their full comment lines in "uncitedMarkers".`,
+    `5. For EACH live status=cited marker (with key=K): verify the SAME FILE contains a "## Verified Facts (auto-research)" heading AND a sourced fact line that BACKS this specific marker. A sourced fact line is a list item ("- ...") containing "source:" followed by a URL.`,
+    `   PER-KEY MATCH (preferred — Red Team MEDIUM #2): if any sourced fact line in the file carries a "key: <value>" trailer, match cited markers to facts BY KEY — the cited marker key=K is backed ONLY by a sourced fact line whose "key:" value equals K (exact normalized-key match). A cited marker whose key has NO sourced fact line with a matching "key:" is HOLLOW even if other facts exist. This prevents one fact covering a DISTINCT claim by mere count.`,
+    `   COUNT FALLBACK: if NO sourced fact line in the file carries a "key:" trailer, fall back to the count check — a cited marker is backed iff the file has at least as many sourced fact lines as it has cited markers.`,
+    `   A cited marker in a file with NO Verified-Facts heading, OR with no backing fact under either rule above, is a HOLLOW cited marker — record its key= in "citedWithoutFactsKeys".`,
+    `   citedCount = number of live status=cited markers. citedWithoutFactsCount = number of hollow cited markers (cited with no matching sourced fact).`,
+    `6. pass = true ONLY IF uncitedCount === 0 AND citedWithoutFactsCount === 0 (every external claim is cited AND every cited marker has a matching sourced Verified-Facts entry). pass = false otherwise.`,
+    `7. If no files are found (step 1 returns no-matches) OR no LIVE markers survive the structural test, pass=true, uncitedCount=0, citedCount=0, citedWithoutFactsCount=0.`,
+    ``,
+    `Return JSON per the schema: { "pass": true|false, "uncitedCount": N, "citedCount": N, "citedWithoutFactsCount": N, "uncitedMarkers": [], "citedWithoutFactsKeys": [], "notes": "..." }`,
+    ``,
+    `Contract: auto-research-contract.md §7 (ENFORCE marker — cited REQUIRES a matching Verified-Facts entry, same claim-key) + §5/A4 (uncited or hollow-cited external guess → verify FAILS).`,
+  ].join("\n"),
+  { label: "auto-research-gate", phase: "Auto-Research Gate", schema: AUTO_RESEARCH_GATE_SCHEMA, model: "haiku" }
+).catch((e) => ({
+  pass: false, uncitedCount: -1, citedCount: 0, citedWithoutFactsCount: -1,
+  notes: `auto-research gate agent error: ${e && e.message} — failing closed (A4)`,
+}));
+
+if (!arGate.pass) {
+  const uncited = arGate.uncitedCount >= 0 ? arGate.uncitedCount : "unknown (agent error)";
+  const hollow = arGate.citedWithoutFactsCount >= 0 ? arGate.citedWithoutFactsCount : "unknown (agent error)";
+  log(`M89 auto-research gate FAIL — ${uncited} uncited + ${hollow} hollow-cited external-claim marker(s) (A4: no silent guess)`);
+  if (arGate.uncitedMarkers && arGate.uncitedMarkers.length > 0) {
+    log(`  uncited markers: ${arGate.uncitedMarkers.slice(0, 5).join(" | ")}`);
+  }
+  if (arGate.citedWithoutFactsKeys && arGate.citedWithoutFactsKeys.length > 0) {
+    log(`  hollow cited (no matching sourced fact) keys: ${arGate.citedWithoutFactsKeys.slice(0, 5).join(" | ")}`);
+  }
+  return {
+    status: "auto-research-gate-failed",
+    overallVerdict: "VERIFY-FAILED",
+    autoResearchGate: arGate,
+    reason: `M89 §7 ENFORCE: ${uncited} uncited + ${hollow} hollow-cited external-claim marker(s) — every cited marker needs a matching sourced Verified-Facts entry; run the phase again to cite them`,
+    verifyGate: vg.envelope,
+  };
+}
+log(`M89 auto-research gate: PASS — ${arGate.citedCount} cited marker(s) all backed by sourced facts, 0 uncited`);
+
+// ─── M90 §4 Fail-Closed Gates (FAIL-blocking) ─────────────────────────────
+// R-FAIL-2: arch-trigger produced a proven-by-adversary-only flag that was never resolved.
+// R-FAIL-3: loop-ledger has a halted-but-no-re-examination state (non-convergence).
+//
+// DOCUMENTED no-op-PASS rules (§4 — de-scoped-DOWN vs. wired-but-broken):
+//   - R-FAIL-2 read is a NO-OP-PASS when the arch-trigger is NOT wired (R1-EXIT de-scoped-DOWN).
+//     Documented as "mechanism absent by design" — distinguishable from a wired-but-broken state.
+//   - R-FAIL-3 read is a NO-OP-PASS when the loop-ledger halt is NOT wired (de-scoped).
+//     Documented as "mechanism absent by design" — distinguishable from a wired-but-broken state.
+//
+// The checks FAIL only when the mechanism IS wired AND emits an unresolved flag.
+// They cleanly PASS (with a recorded de-scoped note) when the mechanism is absent.
+// Contract: unproven-assumption-doctrine-contract.md §4 (R-FAIL-2, R-FAIL-3).
+
+// R-FAIL-2: arch-trigger proven-by-adversary-only premise gate (§4).
+// Three DISTINGUISHABLE states (unproven-assumption-doctrine-contract.md §4 + §2.2):
+//   (a) interfaceOnly PASS — NO live producer of the flag wired this milestone (no workflow sets
+//       spikeFeasible), so the flag can't be raised in real operation. DECLARED (M90 decision A),
+//       not a hidden hollow gate.  → grep the workflows for a live producer to detect this.
+//   (b) deScopedPass — R1 exited to factual-only, trigger not wired at all.
+//   (c) FAIL — a live producer exists AND emitted an unresolved proven-by-adversary-only flag.
+// The gate must NEVER vacuously pass a wired-but-broken check. When backlog #42 wires a live
+// spike-feasibility producer, the grep finds it and the gate becomes (c)-capable.
+const M90_ARCH_TRIGGER_SINK = `${projectDir}/.gsd-t/metrics/arch-trigger-events.jsonl`;
+const m90ArchTriggerGate = await agent(
+  [
+    `You are the M90 §4 R-FAIL-2 gate scanner. Determine which of three states holds and return JSON.`,
+    ``,
+    `Sink file: \`${M90_ARCH_TRIGGER_SINK}\``,
+    ``,
+    `Steps:`,
+    `1. LIVE-PRODUCER CHECK: a real producer PASSES a spike-feasibility decision INTO the trigger,`,
+    `   i.e. a workflow constructs \`responseOpts\` / sets \`spikeFeasible\` as an OBJECT KEY in a call.`,
+    `   Run (note: EXCLUDE this verify workflow itself — its prompt text mentions these words but does`,
+    `   NOT produce the flag, the self-match bug being avoided):`,
+    `   \`grep -lE 'spikeFeasible[ ]*:|spikePassed[ ]*:|responseOpts[ ]*[:=]' ${projectDir}/templates/workflows/*.workflow.js 2>/dev/null | grep -v 'gsd-t-verify.workflow.js' | head\`.`,
+    `   If it prints NOTHING → there is NO live producer of the proven-by-adversary-only flag wired`,
+    `   this milestone. Return (INTERFACE-ONLY, declared PASS per §2.2 / decision A):`,
+    `   { "pass": true, "interfaceOnly": true, "deScopedPass": false, "provenByAdversaryOnlyCount": 0,`,
+    `     "note": "R-FAIL-2 interface-only this milestone — no workflow sets spikeFeasible, so proven-by-adversary-only is never raised; DECLARED no-op-PASS (doctrine contract §2.2/§4, backlog #42 wires the live producer)" }`,
+    `2. If a live producer IS found → check the sink: \`test -f '${M90_ARCH_TRIGGER_SINK}' && echo EXISTS || echo ABSENT\`.`,
+    `   - ABSENT → trigger genuinely de-scoped (R1-EXIT). Return:`,
+    `     { "pass": true, "interfaceOnly": false, "deScopedPass": true, "provenByAdversaryOnlyCount": 0, "note": "arch-trigger mechanism absent by design (R1 de-scoped-DOWN) — documented no-op-PASS" }`,
+    `   - EXISTS → read each JSONL line; count records where provenByAdversaryOnly === true → provenByAdversaryOnlyCount.`,
+    `     pass = (provenByAdversaryOnlyCount === 0). Return:`,
+    `     { "pass": boolean, "interfaceOnly": false, "deScopedPass": false, "provenByAdversaryOnlyCount": N, "note": "..." }`,
+    ``,
+    `This gate is R-FAIL-2 per unproven-assumption-doctrine-contract.md §4. The interfaceOnly PASS and`,
+    `deScopedPass are BOTH distinguishable from a wired-but-broken vacuous pass — they are only`,
+    `returned when the producer is provably absent (grep) / de-scoped, never to mask a wired failure.`,
+  ].join("\n"),
+  {
+    label: "m90-r-fail-2-gate",
+    phase: "Auto-Research Gate",
+    model: "haiku",
+    schema: {
+      type: "object",
+      required: ["pass"],
+      additionalProperties: true,
+      properties: {
+        pass: { type: "boolean" },
+        interfaceOnly: { type: "boolean" },
+        deScopedPass: { type: "boolean" },
+        provenByAdversaryOnlyCount: { type: "integer" },
+        note: { type: "string" },
+      },
+    },
+  }
+).catch((e) => ({
+  pass: false,
+  deScopedPass: false,
+  provenByAdversaryOnlyCount: -1,
+  note: `M90 R-FAIL-2 gate agent error: ${e && e.message} — failing closed (§4)`,
+}));
+
+if (!m90ArchTriggerGate.pass) {
+  const count = m90ArchTriggerGate.provenByAdversaryOnlyCount >= 0
+    ? m90ArchTriggerGate.provenByAdversaryOnlyCount
+    : "unknown (agent error)";
+  log(`M90 R-FAIL-2 gate FAIL — ${count} unresolved proven-by-adversary-only flag(s) (§4 fail-closed)`);
+  return {
+    status: "m90-r-fail-2-failed",
+    overallVerdict: "VERIFY-FAILED",
+    m90ArchTriggerGate,
+    reason: `M90 §4 R-FAIL-2: ${count} unresolved proven-by-adversary-only premise(s) — re-examine the premise, then re-verify`,
+    verifyGate: vg.envelope,
+    autoResearchGate: arGate,
+  };
+}
+log(`M90 R-FAIL-2 gate: PASS — ${m90ArchTriggerGate.deScopedPass ? "de-scoped (mechanism absent by design)" : `0 unresolved proven-by-adversary-only flag(s)`}`);
+
+// R-FAIL-3: read loop-ledger exit state (haltedButNoReExamination flag)
+const m90LoopLedgerGate = await runCli(
+  projectDir,
+  "loop-ledger",
+  ["read-exit-state", ...(milestone ? ["--milestone", milestone] : []), "--projectDir", projectDir],
+  "gsd-t-loop-ledger.cjs",
+  "m90-r-fail-3-gate",
+  true,
+  "Auto-Research Gate"
+);
+
+// Determine pass/fail from the loop-ledger exit state. §4 = FAIL-CLOSED.
+//   haltedButNoReExamination=true                  → FAIL (an unresolved non-converging loop)
+//   envelope.ok=false (CORRUPT state file, exit 1) → FAIL (fail-closed: a corrupt ledger must
+//     NEVER pass — the module deliberately raises this; treating it as "de-scoped" was a
+//     fail-OPEN inversion, Red Team HIGH M90 verify fix-cycle 2)
+//   genuinely-absent MODULE (no envelope at all + run/CLI error) → de-scoped NO-OP-PASS
+//   ok=true, haltedButNoReExamination=false        → PASS (clean)
+const exitEnv = m90LoopLedgerGate.envelope || null;
+let m90LoopLedgerPass = true;
+let m90LoopLedgerNote = "";
+if (exitEnv && exitEnv.ok === false) {
+  // The CLI RAN and returned a structured error envelope → the WIRED mechanism is failing
+  // closed (corrupt/unreadable state). FAIL — do NOT convert a deliberate fail-closed into a pass.
+  m90LoopLedgerPass = false;
+  m90LoopLedgerNote = `R-FAIL-3: loop-ledger returned a fail-closed error (${exitEnv.error || "corrupt/unreadable state"}) — a corrupt ledger must block verify, not pass §4`;
+  log(`M90 R-FAIL-3 gate FAIL — loop-ledger fail-closed error (§4): ${exitEnv.error || "corrupt state"}`);
+} else if (!exitEnv && !m90LoopLedgerGate.ok) {
+  // No parseable envelope AND the run errored → the MODULE itself is genuinely absent/unrunnable
+  // (not a corrupt state file). This is the true R1-EXIT de-scoped no-op-PASS.
+  m90LoopLedgerPass = true;
+  m90LoopLedgerNote = "loop-ledger module genuinely absent (no envelope) — R-FAIL-3 de-scoped no-op-PASS";
+  log(`M90 R-FAIL-3 gate: PASS (de-scoped — loop-ledger module absent / not wired)`);
+} else if (exitEnv && exitEnv.ok && exitEnv.haltedButNoReExamination) {
+  m90LoopLedgerPass = false;
+  // RECOVERABILITY (M90 verify decision A): name the exact signature(s) + the one-line clear
+  // command, so a halt is resolvable — never a cryptic count with no remedy (the cross-milestone
+  // brick was unrecoverable because the FAIL note printed only a number).
+  const pend = exitEnv.pendingSignatures || exitEnv.haltedSignatures || [];
+  const clearCmds = pend
+    .map((s) => `gsd-t loop-ledger record-re-examination --signature ${s} --projectDir ${projectDir}`)
+    .join("  |  ");
+  m90LoopLedgerNote =
+    `R-FAIL-3: ${pend.length} unresolved debug-loop halt(s) for this milestone — re-examine the premise per §3.2, then clear: ${clearCmds}`;
+  log(`M90 R-FAIL-3 gate FAIL — unresolved halt(s): ${pend.join(", ")}`);
+  log(`To resolve after re-examination: ${clearCmds}`);
+} else {
+  m90LoopLedgerPass = true;
+  m90LoopLedgerNote = `no halted-but-no-re-examination state (haltedButNoReExamination=${(exitEnv && exitEnv.haltedButNoReExamination) || false})`;
+  log(`M90 R-FAIL-3 gate: PASS — ${m90LoopLedgerNote}`);
+}
+
+if (!m90LoopLedgerPass) {
+  return {
+    status: "m90-r-fail-3-failed",
+    overallVerdict: "VERIFY-FAILED",
+    m90LoopLedgerGate: m90LoopLedgerGate.envelope,
+    reason: m90LoopLedgerNote,
+    verifyGate: vg.envelope,
+    autoResearchGate: arGate,
+    m90ArchTriggerGate,
+  };
+}
+
 // ─── M57 CI-Parity Gate (FAIL-blocking) ───────────────────────────────────
 // Per commands/gsd-t-verify.md Step 2.6 + cli-build-coverage-contract.md +
 // ci-parity-contract.md. NEITHER track is currently inside verify-gate.cjs.
@@ -304,7 +569,7 @@ const stages = [
       `Verdict is FAIL if you found any CRITICAL or HIGH severity bug; GRUDGING-PASS`,
       `if you searched exhaustively and found nothing. Return JSON per the schema.`,
     ].join("\n"),
-    { label: "red-team", phase: "Orthogonal Triad", schema: RED_TEAM_SCHEMA, model: "fable" }
+    { label: "red-team", phase: "Orthogonal Triad", schema: RED_TEAM_SCHEMA, model: overrides["red-team"] ?? "fable" }
   ),
 
   // Stage C — QA (test execution + shallow-test detection + contract compliance)
@@ -360,6 +625,7 @@ return {
   status: verdict.overallVerdict === "VERIFY-FAILED" ? "failed" : "complete",
   overallVerdict: verdict.overallVerdict,
   verifyGate: vg.envelope,
+  autoResearchGate: arGate,
   buildCoverage: bc.envelope,
   ciParity: cip.envelope,
   testDataPurge: td.envelope,

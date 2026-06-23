@@ -246,19 +246,30 @@ test('buildTaskBrief: over-budget drops optional sections first, keeps task + do
   assert.ok(!trimmed.includes('## Stack Rules'), 'stack rules should be dropped under tight budget');
 });
 
-test('buildTaskBrief: on this repo (self-test) produces non-empty brief under 10KB', () => {
-  // Self-test against the actual GSD-T repo — proves real-world fixture works.
-  // Targets the currently-active milestone's first domain so the fixture survives milestone archival.
-  const projectDir = path.resolve(__dirname, '..');
-  const brief = buildTaskBrief({
-    milestone: 'M41',
-    domain: 'd1-token-capture-wrapper',
-    taskId: 'd1-t1',
-    projectDir,
-    maxBytes: 10000
-  });
-  assert.ok(brief.length > 500, 'brief should be non-trivial');
-  assert.ok(Buffer.byteLength(brief, 'utf8') <= 10000, 'brief respects maxBytes');
-  assert.ok(brief.includes('## Task'));
-  assert.ok(brief.includes('## Done Signal'));
+test('buildTaskBrief: end-to-end on a real fixture project produces non-empty brief under 10KB', () => {
+  // Was a "self-test against the live GSD-T repo" hardcoding M41's domain
+  // `d1-token-capture-wrapper` — which broke when that milestone was archived and its
+  // domain dir swept (2026-06-22 prune, backlog #40). It could not be repointed at a
+  // live domain either: `buildTaskBrief`/`extractTask` only parse the OLD `### Task N`
+  // heading format, NOT the current Shape-D `### Mxx-Dx-Tx — title` headings (format
+  // diverged at the M61 Shape-D migration; buildTaskBrief is dead against real domains —
+  // see backlog #41). So this test now exercises buildTaskBrief end-to-end against a
+  // self-built fixture (same `### Task N` format the tool supports), decoupled from any
+  // milestone's live domains — never breaks on archival again.
+  const dir = mkFixtureProject();
+  try {
+    const brief = buildTaskBrief({
+      milestone: 'fixture',
+      domain: 'd-fixture',
+      taskId: 'd1-t1',
+      projectDir: dir,
+      maxBytes: 10000
+    });
+    assert.ok(brief.length > 500, 'brief should be non-trivial');
+    assert.ok(Buffer.byteLength(brief, 'utf8') <= 10000, 'brief respects maxBytes');
+    assert.ok(brief.includes('## Task'));
+    assert.ok(brief.includes('## Done Signal'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

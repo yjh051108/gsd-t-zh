@@ -1,0 +1,173 @@
+{
+  "_comment": "M89 D1 HELD-OUT generalization corpus (v1.3.0 — 3-result mechanical-filter design). Input is a GUESSED CLAIM. These claims are NOT used to author the classifier. The classifier is now a MECHANICAL STRING-FACT FILTER returning internal | external | AMBIGUOUS: internal ONLY on a string-fact this-repo signal (concrete repo path/file/tool shape OR explicit this-repo anchor); external ONLY on an unambiguous vendor proper-noun co-occurring with an API/protocol term; AMBIGUOUS for everything else (semantic placement that requires JUDGMENT is the LLM's call, not regex's — the wiring routes ambiguous->LLM judge, and if the LLM is not confident the claim is researched: uncertain->verify, never guess-internal). PREMISE CORRECTION (v1.3.0): the previously hand-fit 'external-assertion'/homograph/camelCase-shape regexes were DELETED (a regex that BELIEVES a paraphrase means external is itself a guess — the sin M89 exists to prevent; the Red Team broke it across 4 cycles). Items that USED to be forced external/internal by those guessing regexes now correctly return AMBIGUOUS and reach the LLM judge: HO-E3 (CSS :has, no vendor+api string fact), HO-E4 (proper-noun-LESS payments-endpoint assertion — the canonical example), HO-E6 (stripe + createCharge, no api-term co-signal), HO-E7 (react + useState, no api-term co-signal), HO-I4 (bare camelCase resolveProfile — shape-identical to an external symbol, so NOT a string fact), HO-I5/HO-I6 (homographs square/edge), HO-I7 (bare camelCase buildTaskGraph). The wiring test (m89-worker/phase) asserts every ambiguous item ends up routed to the LLM judge and, when not confidently internal, RESEARCHED — never silently internal.",
+  "items": [
+    {
+      "id": "HO-E1",
+      "source": "held-out (confident external — vendor + api term string fact)",
+      "gap": "What is the exact name of the Stripe webhook signature-verification header, and how is the signed payload constructed?",
+      "expectedClass": "external",
+      "expectedRoute": "web",
+      "featureSignal": "STRING-FACT external: vendor proper noun (Stripe) CO-OCCURS with an API/protocol term (webhook). Unambiguous -> external directly, no LLM judge needed."
+    },
+    {
+      "id": "HO-E2",
+      "source": "held-out (confident external — vendor + api term string fact)",
+      "gap": "What is the per-origin storage-quota limit for the Chrome extension storage.local API?",
+      "expectedClass": "external",
+      "expectedRoute": "web",
+      "featureSignal": "STRING-FACT external: vendor proper noun (Chrome) CO-OCCURS with an API term (api). Unambiguous -> external directly."
+    },
+    {
+      "id": "HO-E3",
+      "source": "held-out (now AMBIGUOUS — no vendor+api string fact; was forced external by deleted regexes)",
+      "gap": "Which browsers currently support the CSS :has() selector and from what version?",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "No unambiguous vendor proper noun co-occurring with an API term ('CSS'/'browsers'/'selector' are not in the SHORT unambiguous string-fact lists). Placing this is a JUDGMENT, not a string fact -> AMBIGUOUS -> LLM judge -> (external) research. The deleted 'spec/version/browser-support' regexes were a guess; this is the doctrine applied to the classifier."
+    },
+    {
+      "id": "HO-E4",
+      "source": "held-out (the canonical proper-noun-LESS assertion — now AMBIGUOUS)",
+      "gap": "The payments endpoint accepts a maximum batch size of 100 items per request.",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "PROPER-NOUN-LESS: asserts an external system's limit with NO vendor proper noun. The old EXTERNAL_ASSERTION_PATTERNS regex BELIEVED this was external — a guess (the sin M89 prevents). Correct behaviour: no string fact -> AMBIGUOUS -> LLM judge; the LLM judges it external (or, if unsure, treats it external) -> researched. A silent-miss to internal is impossible because ambiguous never routes silently-internal."
+    },
+    {
+      "id": "HO-I1",
+      "source": "held-out (confident internal — this-repo anchor string fact)",
+      "gap": "What does isOrderLocked return in this repo when the order is already locked?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep",
+      "featureSignal": "STRING-FACT internal: explicit 'this repo' anchor. Unambiguous -> internal/grep directly. (The bare symbol isOrderLocked is NOT what classifies it — the anchor is.)"
+    },
+    {
+      "id": "HO-I2",
+      "source": "held-out (confident internal — repo path string fact)",
+      "gap": "Which domain owns templates/workflows/gsd-t-verify.workflow.js?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep",
+      "featureSignal": "STRING-FACT internal: repo-relative path / *.workflow.js / gsd-t-* shape. Unambiguous -> internal/grep directly."
+    },
+    {
+      "id": "HO-I3",
+      "source": "held-out (confident internal — gsd-t-* tool shape + exit-code anchor)",
+      "gap": "What exit code does cli-preflight use when it hard-fails on a wrong branch?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep",
+      "featureSignal": "STRING-FACT internal: 'exit code' anchor phrase. Unambiguous -> internal/grep directly. (cli-preflight is detected by the 'exit code' anchor, NOT by enumerating the symbol — the anti-hardcode guard forbids enumerating it.)"
+    },
+    {
+      "id": "HO-I4",
+      "source": "held-out (now AMBIGUOUS — bare camelCase symbol is NOT a string fact)",
+      "gap": "Does resolveProfile clamp the competition-judge model when it equals the producers' model?",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "A bare camelCase symbol (resolveProfile) is shape-identical to an EXTERNAL symbol (e.g. Stripe createCharge) — so it is NOT a string fact about this repo. The old matchLocalSymbolShape regex GUESSED 'camelCase => this-repo' (a belief). Correct behaviour: AMBIGUOUS -> LLM judge -> grep resolves it internally (this repo's own code); if grep finds nothing it escalates to research. Never silently internal-by-shape."
+    },
+    {
+      "id": "HO-E5",
+      "source": "held-out (confident external — vendor + api term, interrogative)",
+      "gap": "How does Stripe construct the webhook signature-verification header?",
+      "expectedClass": "external",
+      "expectedRoute": "web",
+      "featureSignal": "STRING-FACT external: vendor proper noun (Stripe) + API term (webhook). Interrogative phrasing ('how does') is NEUTRAL — it does NOT pull internal (no this-repo anchor present)."
+    },
+    {
+      "id": "HO-E6",
+      "source": "held-out (now AMBIGUOUS — vendor present but NO api-term co-signal)",
+      "gap": "The stripe createCharge call returns a chargeId field on success.",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "Vendor proper noun (stripe) is present but NO API/protocol term co-occurs (createCharge/chargeId are bare symbols, not the string-fact api terms). One signal alone is NOT a string fact -> AMBIGUOUS -> LLM judge -> external/research. (The old design forced this external via a proper-noun-beats-symbol rule — a judgment regex.)"
+    },
+    {
+      "id": "HO-E7",
+      "source": "held-out (now AMBIGUOUS — library proper noun but NO api-term co-signal)",
+      "gap": "react useState returns a stateful value and a setter function.",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "Vendor/library proper noun (react) but NO API/protocol term co-occurs. One signal alone is not a string fact -> AMBIGUOUS -> LLM judge -> external/research. Directive-named example."
+    },
+    {
+      "id": "HO-I5",
+      "source": "held-out (now AMBIGUOUS — homograph, no string fact)",
+      "gap": "We square the input value before hashing it in the digest helper.",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "'square' is a single-word English homograph (the verb) that is also a vendor name; it was DELETED from the proper-noun list (kept SHORT and homograph-free). No string fact at all here -> AMBIGUOUS -> LLM judge -> grep resolves it internally. (The old WEAK_EXTERNAL_PROPER_NOUNS co-occurrence gating was a judgment regex.)"
+    },
+    {
+      "id": "HO-I6",
+      "source": "held-out (now AMBIGUOUS — homograph, no string fact)",
+      "gap": "The retry loop bails at the edge case where the queue is empty.",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "'edge' is a homograph (the noun 'edge case') also a browser name; deleted from the proper-noun list. No string fact -> AMBIGUOUS -> LLM judge -> grep resolves internally."
+    },
+    {
+      "id": "HO-I7",
+      "source": "held-out (now AMBIGUOUS — bare camelCase symbol is not a string fact)",
+      "gap": "buildTaskGraph orders the domains topologically before fan-out.",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "A bare camelCase symbol (buildTaskGraph) with no repo anchor/path is shape-identical to an external symbol -> NOT a string fact -> AMBIGUOUS -> LLM judge -> grep resolves it as this repo's own code. Pairs with HO-I4."
+    },
+    {
+      "id": "HO-E8",
+      "source": "held-out (v1.3.2 class-closing — DECISIVE anchor 'exit code' + external vendor)",
+      "gap": "What exit code does the Stripe API return on rate limit?",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "The generic English phrase 'exit code' is an internal anchor, but the sentence's REAL subject is an external vendor (Stripe + api + rate limit = strong external). v1.3.2 rule: a generic anchor phrase can NEVER override a strong external signal -> CONFLICT -> AMBIGUOUS -> LLM judge -> research. The silent-miss class (anchor wins outright) that re-emerged via DECISIVE anchors is closed here. Pairs with HO-I3 (internal-subject 'exit code' -> internal)."
+    },
+    {
+      "id": "HO-E9",
+      "source": "held-out (v1.3.2 class-closing — DECISIVE anchor 'who owns' + external vendor)",
+      "gap": "Who owns the Auth0 OAuth token refresh?",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "'who owns' is an ownership anchor, but the subject is an external vendor (Auth0 + OAuth = strong external). A generic anchor cannot override a strong external signal -> AMBIGUOUS -> LLM judge -> research. Pairs with HO-I2 (concrete-path ownership question -> internal): only a CONCRETE REPO PATH, not an anchor phrase, beats a strong external signal."
+    },
+    {
+      "id": "HO-I8",
+      "source": "held-out (v1.3.3 — repo PATH co-occurring with a vendor → AMBIGUOUS, NOT internal)",
+      "gap": "which domain owns templates/workflows/gsd-t-verify.workflow.js, the one that calls the Stripe API?",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "v1.3.3 FINAL rule: there is NO string-fact that is exclusively internal — a single claim can carry BOTH a real repo path AND a real external-API subject (this one has the path templates/workflows/gsd-t-verify.workflow.js AND Stripe+API). The mechanical classifier NEVER overrides a strong external signal — not even with a path — so this is AMBIGUOUS -> LLM judge -> research. Was 'internal' under the obsolete v1.3.2 'concrete path beats strong-external' override that re-opened the silent miss (cycle 6)."
+    },
+    {
+      "id": "HO-E10",
+      "source": "held-out (v1.3.3 — repo PATH + external vendor, the cycle-6 silent-miss closer)",
+      "gap": "Wire the Stripe OAuth token refresh into templates/workflows/gsd-t-execute.workflow.js",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "BOTH a concrete repo path (templates/workflows/gsd-t-execute.workflow.js) AND a strong external signal (Stripe + OAuth). A claim can be about both at once. The v1.3.2 'path wins outright' rule routed this internal/grep -> the external Stripe OAuth subject was never researched (the cycle-6 silent miss). v1.3.3: strong-external + any path/anchor -> AMBIGUOUS -> judge -> research. The Red Team noted NO prior fixture paired a path with an external vendor — why this shipped uncaught."
+    },
+    {
+      "id": "HO-E11",
+      "source": "held-out (v1.3.3 — repo PATH + external vendor)",
+      "gap": "Update bin/handler.js to call the Stripe API webhook endpoint",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "featureSignal": "Concrete repo path (bin/handler.js) AND strong external (Stripe + api + webhook + endpoint). Path does NOT override the external signal -> AMBIGUOUS -> judge -> research. Pairs with HO-E10."
+    },
+    {
+      "id": "HO-T1",
+      "source": "held-out (M90 D3 — R-FACT-3 time-anchored override, 'current best practice')",
+      "gap": "What is the current best practice for JWT authentication in Node.js?",
+      "expectedClass": "external",
+      "expectedRoute": "web",
+      "featureSignal": "TIME-ANCHORED OVERRIDE (R-FACT-3): temporal-signal phrase 'current best practice' indicates a fast-moving claim. Temporal-collapse (CoVe: arXiv:2309.11495) makes confidence unreliable on this class — always route to research (external/web) REGARDLESS of other signals. No vendor+API string fact needed; the temporal phrase is itself the trigger."
+    },
+    {
+      "id": "HO-T2",
+      "source": "held-out (M90 D3 — R-FACT-3 time-anchored override, 'latest version')",
+      "gap": "What is the latest version of TypeScript that supports decorators natively?",
+      "expectedClass": "external",
+      "expectedRoute": "web",
+      "featureSignal": "TIME-ANCHORED OVERRIDE (R-FACT-3): temporal-signal phrase 'latest version' indicates a fast-moving claim (version is a time-varying fact). Intrinsic self-knowledge collapses on the temporal axis; a confidence gate cannot catch a stale-but-confident fact. Always route to research."
+    }
+  ]
+}

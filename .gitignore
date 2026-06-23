@@ -24,6 +24,17 @@ node_modules/
 # from the Claude Code transcript — contains per-turn session_id / turn_id)
 .gsd-t/metrics/token-usage.jsonl
 
+# GSD-T M90 arch-trigger instrumentation sink — transient, run-accumulated measurement
+# data the R-FAIL-2 verify gate reads run-scoped. MUST NOT be committed: a tracked
+# append-only sink makes the fail-closed gate permanently stuck-FAIL once any
+# provenByAdversaryOnly:true record lands (Red Team CRITICAL, M90 verify fix-cycle 2).
+.gsd-t/metrics/arch-trigger-events.jsonl
+
+# GSD-T M90 loop-ledger state — transient runtime cycle counts per debug run. MUST NOT be
+# committed: a tracked cumulative counter leaks cross-run state into clones and can re-arm the
+# R-FAIL-3 fail-closed gate (Red Team MEDIUM, M90 verify fix-cycle 5).
+.gsd-t/loop-ledger-state.json
+
 # GSD-T M43 D1 hook-probe payloads (raw Stop/SessionEnd/PostToolUse captures,
 # session-specific — contain session_id + transcript_path)
 .gsd-t/.hook-probe/

@@ -12,6 +12,11 @@
 // never populated those env vars. When the state file is absent or stale
 // (>5min), the context segment is omitted.
 //
+// Active model profile is read from .gsd-t/model-profile.json (M86 — SC(f):
+// always named, never blank). When the file is absent, the named global default
+// (premium) is shown with a (default) marker. Resilient: never crashes on missing
+// or malformed config (propagation-gap class — pre-mortem c2 #5).
+//
 // Zero external dependencies.
 
 const fs = require('fs');
@@ -25,6 +30,53 @@ const RESET  = '\x1b[0m';
 const DIM    = '\x1b[2m';
 const BOLD   = '\x1b[1m';
 const ORANGE = '\x1b[38;5;208m'; // 256-color orange
+
+// ─── Profile resolution (M86 — SC(f): always named, never blank) ─────────────
+
+/**
+ * Resolve the active model profile from .gsd-t/model-profile.json.
+ *
+ * Resilience contract (pre-mortem c2 #5 — statusline resilience):
+ *   - Config absent → named global default with (default) marker.
+ *   - Malformed config / parse error → named global default or configError marker.
+ *   - NEVER throws, NEVER crashes the statusline.
+ *
+ * @param {string|null} projectRoot — resolved project root (may be null)
+ * @returns {{ profile: string, isDefault: boolean, configError?: string }|null}
+ *   null when projectRoot is null (non-GSD-T directory — omit segment).
+ */
+// NOTE: duplicates the read/validate logic of readConfig() in bin/gsd-t-model-profile.cjs
+// (the canonical copy) — kept inline because the statusline must be zero-dep and runs from
+// ~/.claude/scripts where the package module may be absent. Keep the copies in sync.
+function readActiveProfile(projectRoot) {
+  if (!projectRoot) return null;
+  const GLOBAL_DEFAULT = 'premium';
+  const VALID_PROFILES = ['standard', 'pro', 'premium'];
+  try {
+    const configPath = path.join(projectRoot, '.gsd-t', 'model-profile.json');
+    if (!fs.existsSync(configPath)) {
+      return { profile: GLOBAL_DEFAULT, isDefault: true };
+    }
+    let raw;
+    try { raw = fs.readFileSync(configPath, 'utf8'); } catch (_) {
+      return { profile: GLOBAL_DEFAULT, isDefault: true, configError: 'unreadable' };
+    }
+    let config;
+    try { config = JSON.parse(raw); } catch (_) {
+      return { profile: GLOBAL_DEFAULT, isDefault: true, configError: 'invalid-json' };
+    }
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      return { profile: GLOBAL_DEFAULT, isDefault: true, configError: 'wrong-type' };
+    }
+    const p = config.profile;
+    if (typeof p !== 'string' || !VALID_PROFILES.includes(p)) {
+      return { profile: GLOBAL_DEFAULT, isDefault: true, configError: 'unknown-profile' };
+    }
+    return { profile: p, isDefault: false };
+  } catch (_) {
+    return { profile: GLOBAL_DEFAULT, isDefault: true };
+  }
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -105,5 +157,24 @@ if (ctxPct !== null) {
   contextPart = ` │ ctx ${contextBar(ctxPct)}`;
 }
 
-const line = `gsd-t │ ${projectPart}${contextPart}`;
+// Active model profile (M86 — SC(f): always named when in a GSD-T project)
+let profilePart = '';
+try {
+  const profileResult = readActiveProfile(root);
+  if (profileResult) {
+    let label;
+    if (profileResult.configError) {
+      label = `${profileResult.profile}* (default)`;  // * signals config error
+    } else if (profileResult.isDefault) {
+      label = `${profileResult.profile} (default)`;
+    } else {
+      label = profileResult.profile;
+    }
+    profilePart = ` │ ${DIM}profile:${RESET} ${label}`;
+  }
+} catch (_) {
+  // Resilience: never crash the statusline
+}
+
+const line = `gsd-t │ ${projectPart}${profilePart}${contextPart}`;
 process.stdout.write(line + '\n');

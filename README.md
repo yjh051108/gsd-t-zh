@@ -1,6 +1,6 @@
 # GSD-T: Contract-Driven Development for Claude Code
 
-**v4.4.10** - A methodology for reliable, parallelizable development using Claude Code with optional Agent Teams support.
+**v4.7.10** - A methodology for reliable, parallelizable development using Claude Code with optional Agent Teams support.
 
 **Eliminates context rot** — task-level fresh dispatch (one subagent per task, ~10-20% context each) means compaction never triggers.
 **Compaction-proof debug loops** — `gsd-t headless --debug-loop` runs test-fix-retest cycles as separate `claude -p` sessions. A JSONL debug ledger persists all hypothesis/fix/learning history across fresh sessions. Anti-repetition preamble injection prevents retrying failed hypotheses. Escalation tiers (sonnet → opus → human) and a hard iteration ceiling enforced externally.
@@ -18,7 +18,7 @@
 **Rigorous User-Journey Coverage + Anti-Drift Test Quality** — `bin/journey-coverage.cjs` regex listener detector + `gsd-t check-coverage` CLI + `scripts/hooks/pre-commit-journey-coverage` commit gate blocks viewer-source commits when uncovered listeners exist. Journey specs in `e2e/journeys/` use functional assertions (zero `toBeVisible`-only tests) per the E2E Test Quality Standard in CLAUDE.md.
 **Universal Playwright Bootstrap + Deterministic UI Enforcement (M50)** — three executable enforcement layers: (1) `bin/playwright-bootstrap.cjs` + `bin/ui-detection.cjs` - idempotent installer detects package manager, installs `@playwright/test` + chromium, scaffolds `e2e/`; (2) Workflow runtime runs `playwright-bootstrap.cjs::installPlaywright()` before any E2E stage when `hasUI && !hasPlaywright`; install failure halts with `blocked-needs-human`; (3) `scripts/hooks/pre-commit-playwright-gate` (opt-in via `gsd-t doctor --install-hooks`) blocks viewer-source commits when staged files are newer than `.gsd-t/.last-playwright-pass`. The `gsd-t setup-playwright [path]` subcommand handles manual install.
 **Visualizer (`/gsd-t-visualize`)** — launches a real-time browser dashboard with dual-pane view: top pane streams the main session, bottom pane streams whichever spawn the user clicks. Left rail shows Live Spawns and Completed (last 100 spawns, status-badged, collapsible). Right rail shows Spawn Plan / Parallelism / Tool Cost. Powered by `gsd-t-stream-feed-server.js` + `gsd-t-dashboard.html`.
-**Surgical model selection** — `bin/model-selector.js` assigns haiku/sonnet/opus/fable per phase via a declarative rules table; `/advisor` escalation path with convention-based fallback. **M85 single-source tier policy:** `bin/gsd-t-model-tier-policy.cjs` is the SINGLE source of truth for model-tier assignments; the 5 highest-leverage stages (solution-space probe, partition probe, competition judge, pre-mortem, Red Team) run on `fable` (Claude Fable 5, tier above Opus); competition producers stay `opus` (M82 blindness); debug escalates cycle-1→opus, cycle-2→fable. Drift is mechanically enforced by the M71-family lint (`test/m85-workflow-tier-policy-lint.test.js`).
+**Surgical model selection** — `bin/model-selector.js` assigns haiku/sonnet/opus/fable per phase via a declarative rules table; `/advisor` escalation path with convention-based fallback. **M85 single-source tier policy:** `bin/gsd-t-model-tier-policy.cjs` is the SINGLE source of truth for model-tier assignments; the 5 highest-leverage stages (solution-space probe, partition probe, competition judge, pre-mortem, Red Team) run on `fable` (Claude Fable 5, tier above Opus); competition producers stay `opus` (M82 blindness); debug escalates cycle-1→opus, cycle-2→fable. Drift is mechanically enforced by the M71-family lint (`test/m85-workflow-tier-policy-lint.test.js`). **M86 model profiles:** `bin/gsd-t-model-profile.cjs` adds a per-project SECOND dimension — three named profiles (`standard` / `pro` / `premium`) that control which stages run on Fable vs. Opus/Sonnet (see [Model Profiles](#model-profiles) below).
 **Token Telemetry** — `gsd-t-calibration-hook.js` records token usage per spawn to `.gsd-t/token-metrics.jsonl` (18-field rows). `gsd-t-token-aggregator.js` aggregates across tasks for the `/gsd-t-metrics` view. Use the native Claude Code `/context` command for live in-session context percentage.
 **Quality North Star** — projects define a `## Quality North Star` section in CLAUDE.md (1–3 sentences, e.g., "This is a published npm library. Every public API must be intuitive and backward-compatible."). `gsd-t-init` auto-detects preset (library/web-app/cli) from package.json signals; `gsd-t-setup` configures it for existing projects. Subagents read it as a quality lens; absent = silent skip (backward compatible).
 **Design Brief Artifact** — during partition, UI/frontend projects (React, Vue, Svelte, Flutter, Tailwind) automatically get `.gsd-t/contracts/design-brief.md` with color palette, typography, spacing system, component patterns, and tone/voice. Non-UI projects skip silently. User-customized briefs are preserved. Referenced in plan phase for visual consistency.
@@ -124,6 +124,12 @@ gsd-t test-data --list [--run ID] [--json]              # M58: list test-data le
 gsd-t test-data --purge --run ID [--dry-run] [--json]   # M58: purge tagged test data after Verify (Step 4.5)
 gsd-t competition-judge --in SPEC.json [--project-dir P] # M82: generate-and-judge selection oracle (partition / generic)
 gsd-t traceability-gate --milestone Mxx [--project-dir P] # M83: plan-phase acceptance-traceability gate (AC → path → killing test)
+
+# Model Profiles (M86 — per-project tier-spend switch)
+gsd-t model-profile show [--json]                        # Show active profile + per-stage resolution
+gsd-t model-profile set <standard|pro|premium>           # Switch the project profile
+gsd-t model-profile set-stage <stage> <tier>             # Per-stage override (M82 blindness clamps enforced)
+gsd-t model-profile resolve --profile <p> [stage] [--json] # Resolve a profile into the overrides envelope
 ```
 
 **Plan Hardening (M83).** The `plan` phase now runs two blocking gates before execute, so a plan can't ship a dead deliverable: a deterministic **acceptance-traceability gate** (`gsd-t traceability-gate` — every AC must bind to a code path + a killing test; the headline capability needs both impl and test) and an adversarial **pre-mortem** agent (opus, fresh-context, predicts edge-case/NFR/dead-deliverable failures and requires a test for each). The temporal dual of the Red Team — attack the design at plan, not just the code at verify. Origin: a build where the headline capability shipped as dead code and burned 4 verify cycles. See `.gsd-t/contracts/plan-hardening-contract.md`.
@@ -233,6 +239,16 @@ This will replace changed command files, back up your CLAUDE.md if customized, a
 | `/gsd-t-backlog-promote` | Refine, classify, launch GSD-T workflow | Manual |
 | `/gsd-t-backlog-settings` | Manage types, apps, categories, defaults | Manual |
 
+### Model Management
+
+| CLI Command | Purpose |
+|-------------|---------|
+| `gsd-t model-profile show [--json]` | Display active profile + per-stage resolution |
+| `gsd-t model-profile set <standard\|pro\|premium>` | Switch the per-project profile |
+| `gsd-t model-profile set-stage <stage> <tier>` | Per-stage override (M82 blindness clamps enforced) |
+| `gsd-t model-profile resolve --profile <p> [stage] [--json]` | Resolve a profile into the overrides envelope |
+| `gsd-t model-tier-policy resolve <stageKey> [--json]` | Resolve a stage key to a concrete model id (M85) |
+
 ### Git Helpers
 
 | Command | Purpose | Auto |
@@ -320,6 +336,44 @@ your-project/
 6. **Plan is single-brain, execute is multi-brain.** Planning and integration always solo; execution and verification can parallelize.
 7. **Every decision is logged.** The Decision Log captures why, not just what.
 8. **Agents learn from experience.** Every command invocation, phase transition, and subagent spawn is captured as a structured event. Past failures surface before each task (Reflexion pattern). Distillation converts repeated patterns into lasting CLAUDE.md rules.
+
+---
+
+## Model Profiles
+
+M86 adds a per-project **tier-spend switch** as a second dimension over the M85 stage-tier policy. Instead of always running the full Fable posture, you can dial back which stages use Fable vs. Opus/Sonnet to match your cost-vs-quality tradeoff.
+
+### Three named profiles
+
+| Profile | Fable stages | When to use |
+|---------|--------------|-------------|
+| `standard` | None — pre-M85 posture (probes→opus, judge→sonnet, red-team→opus, pre-mortem→opus, debug both cycles→opus) | CI runs, draft milestones, tight budget |
+| `pro` | red-team + pre-mortem + debug-cycle-2 | Targeted quality gates; production-bound milestones |
+| `premium` | All 6 M85 designated stages (global default) | Full posture — highest quality gates |
+
+`competition-producers` is **always `opus`** in every profile (M82 blindness invariant — judge must differ from producers).
+
+### Per-project configuration
+
+```json
+// .gsd-t/model-profile.json
+{ "profile": "pro", "stageOverrides": { "competition-judge": "fable" } }
+```
+
+- `profile` ∈ `standard | pro | premium`. Absent file → global default (`premium`), always NAMED in the banner/statusline (SC(f) — no silent degradation).
+- `stageOverrides` (optional) — per-stage tier that beats the profile.
+- Blindness clamps enforced at resolve time: `competition-producers` is not overridable; `competition-judge` cannot be set equal to the producers' model.
+
+### Surfacing
+
+The active profile is always surfaced in three places:
+- **Session banner**: `[GSD-T PROFILE] profile: pro` (emitted by the UserPromptSubmit hook every turn)
+- **Statusline**: `│ profile: pro` (in `gsd-t-statusline.js`)
+- **`gsd-t status`**: `Model Profile: pro` (in the status report header)
+
+### Out of scope
+
+The session default model (`/model`) is unaffected — profiles govern workflow stages only. The `standard` profile does not disable any workflow step; it only changes which model tier runs them.
 
 ---
 

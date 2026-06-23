@@ -2,16 +2,45 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
-## [4.4.11] - 2026-06-10 (Playwright No-Focus-Steal — patch)
+## [4.7.10] - 2026-06-22 (M90 — The Unproven-Assumption Doctrine — minor)
 
-### Added — E2E tests must never steal keyboard focus (all projects)
+### Added — a self-governing doctrine that stops the system building on unproven assumptions
 
-Headed Playwright runs on macOS ACTIVATE the browser app and yank keyboard focus from the terminal — regardless of window position, so the old "off-screen window" mitigation stopped screen takeover but not focus theft (reported live from binvoice: extension specs commandeered the cursor on every spec). Root cause of the prior "new-headless can't load MV3 extensions" verdict was a binary mix-up: `headless: true` alone launches the chromium_headless_shell (OLD headless, silently no extensions) and a raw `--headless=new` arg fights it. The fix: `channel: 'chromium'` + `headless: true` selects the FULL build's new headless — extensions load, service workers register, zero windows (binvoice: 21/21 in 9.8s).
+M90 makes "don't act on belief; if it's not grounded in knowledge or research, research first" an enforced framework capability rather than advisory prose. The core principle (sourced at discuss: self-introspection is unreliable, *worse* on RLHF models — arxiv 2306.13063, 2310.01798) is **externalize + force, never introspect** — deterministic triggers + external checks, fail-closed on uncertainty.
 
-- `templates/CLAUDE-global.md`: new "Playwright No-Focus-Steal Invariant" section — headless default everywhere, one launch helper owns visibility, `HEADED=1` opt-in only, the channel pitfall documented; mirrored to the live `~/.claude/CLAUDE.md`.
-- `templates/test-helpers/launch-extension.ts`: NEW generalized MV3-extension launch helper (newheadless default / offscreen fallback / HEADED=1), proven in binvoice (commit 87e3233 there).
+Three deterministic mechanisms, wired fail-closed into the debug/execute/quick/phase/verify workflows (§4 R-FAIL-1/2/3):
 
-No code-path changes; propagates via `gsd-t update-all` (CLAUDE-global section sync).
+- **Factual classifier** (`bin/gsd-t-research-gate.cjs`, absorbed from M89): routes a knowledge-gap to grep (internal) vs. research+cite (external); the INTERNAL decision enumerates no open category (never guess-internal). Premise-corrected during build (the partition's "vendor list causes a silent-miss" was false on disk — the list is kept as an `external→web` upgrade). New time-anchored override (R-FACT-3): a fast-moving lib/API/version or "current best practice" gap is researched regardless of confidence.
+- **Loop-ledger non-convergence halt** (`bin/gsd-t-loop-ledger.cjs`): a debug loop on the SAME symptom (keyed on the symptom, not the changing file — so variant-spawning whack-a-mole is caught, R-LOOP-1) HARD-HALTS with a premise-re-examination directive instead of patching further. Detection ≠ resolution (the halt persists until a genuine re-examination clears it), per-milestone scoped (one milestone's halt can't brick another's verify), full-reset on re-examination, plain-object-validated, atomic write.
+- **Architectural-assumption trigger** (`bin/gsd-t-architectural-trigger.cjs`): a divergence-sampling + extend-existing-code trigger that flags building on an unproven approach. Shipped EXPERIMENTAL+MEASURED; the spike/adversary response-mode enforcement (R-FAIL-2) is honestly DECLARED interface-only this milestone (no live producer yet — backlog #42 wires it).
+
+Doctrine contract `unproven-assumption-doctrine-contract.md` v1.0.0 STABLE (absorbs `auto-research-contract.md` v1.3.3) + §6 guard map + self-obedience lints. CLAUDE-global Research Policy upgraded from advisory prose to the doctrine.
+
+### Process note
+
+The milestone obeyed its own doctrine: plan-hardening caught M90 about to build a domain on an unproven premise (re-verified on disk, re-scoped), and a 9-round verify sequence hardened M90's OWN gate-wiring lifecycle to ground (hollow-gate → fail-open → no-producer → lifecycle flaws → vacuous-gate → array-type-confusion → cross-milestone-brick → symptom-keying). Suite 1998 / 1994 pass / 0 fail / 4 skip. Deferred to backlog: #42 (live spike-feasibility producer + sink fail-closed), #43 (AWS/S3 classifier edge), 3 documented code-review nits.
+
+## [4.6.11] - 2026-06-16 (Output Style — six named conciseness tics + backlog #33 — patch)
+
+### Changed — tightened the CONCISE Output Style rule with six named anti-patterns
+
+User feedback that replies stayed wordy despite the existing CONCISE rule. Extracted six specific tics — three from live examples, three from the user's own wordy→concise rewrites (binvoice `Wordy Example 1/2.txt`, a labeled before/after set where ~70 wordy lines collapsed to ~25 with identical information) — and added a litmus test. Synced the template to the live global CLAUDE.md (blocks kept identical — ripple invariant). Also added backlog #33 from the binvoice FB-modal debug-loop retrospective.
+
+- `templates/CLAUDE-global.md`: Output Style block gains six rules — no process narration, no answer sandwich, no affirmation throat-clearing, no honesty theater, a table replaces its prose (never repeats it), ask once — plus a litmus test ("delete any sentence that survives deletion without info loss").
+- `.gsd-t/backlog.md`: #33 firing debug-cycle circuit-breaker + repro-fixture-on-regression + anchor-last scraping stack rule (completes #31/TD-294 from the loop-governance side).
+
+Behavioral/doc-only — no test changes. Suite: 1603/1607 pass, 0 fail.
+
+## [4.6.10] - 2026-06-15 (Installer wiring for status line + low-context cue — minor)
+
+### Added — installer now copies and wires the status line + ctx-cue Stop hook
+
+Both `statusline-command.sh` (the M85 two-line GSD-T status bar) and `scripts/hooks/gsd-t-ctx-cue.sh` (the M85 low-context red banner) were canonical sources but had NO installer copy/wire path — dead source that never reached projects on `install` / `update-all` (the global-bin-propagation-gap pattern). This release wires both into `bin/gsd-t.js` so they propagate, ships the M85/M86 template sync (`templates/CLAUDE-global.md` now matches the live tightened global CLAUDE.md, adding the Output Style + Git Worktree Location sections), and commits the per-project `.gsd-t/model-profile.json` default (`{profile: standard}` — Fable 5 not used; all 6 high-leverage stages run on Opus/Sonnet).
+
+- `bin/gsd-t.js`: `IN_SESSION_HOOKS` gains a `runner` field (`node` default, `bash` for `.sh` hooks); `gsd-t-ctx-cue.sh` registered as a SYNCHRONOUS Stop hook (its banner stdout must reach the terminal — async would swallow it). New `installStatusLine()` copies `statusline-command.sh` to `~/.claude/` and sets `settings.statusLine` only when absent or already ours (never clobbers a custom status line). Both wired into the shared `doInstall` path, so `update` / `update-all` propagate them.
+- `templates/CLAUDE-global.md`: synced to the live global CLAUDE.md (Output Style default-CONCISE + Git Worktree Location MANDATORY sections added; verbose Update-Notices block condensed).
+- `.gsd-t/model-profile.json`: committed default `{profile: standard}`.
+- `test/m86-installer-statusline-ctxcue.test.js`: NEW black-box regression — runs the real installer against a sandbox HOME and asserts statusLine wiring, the bash-runner ctx-cue Stop hook, its synchronous registration, and both file copies.
 
 ## [4.4.10] - 2026-06-09 (M85 Model-Tier Policy + Fable 5 — minor)
 

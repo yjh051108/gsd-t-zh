@@ -1,0 +1,98 @@
+{
+  "_comment": "M90 D1 HELD-OUT divergence fixture (the generalization guard). INDEPENDENT from the tuned corpus — these cases were NOT used to choose DIVERGENCE_THRESHOLD=0.80. Labels are derived INDEPENDENTLY from domain knowledge and the named sources below; the derivation rule (same as the tuned corpus) is documented here, NOT back-fit to make cases pass. The 'prove-or-kill' exit criterion: if ANY held-out case is mislabeled by the trigger, the test FAILS and M90 HALTS for R1 re-scope DOWN to factual-only per the task constraints. THRESHOLD NOT TUNED HERE — the threshold was locked from the tuned corpus gap (divergent ≥0.89, convergent ≤0.70, midpoint 0.79 → declared 0.80). A held-out miss means the formula does not generalize. FORMULA (same as corpus): score = 1 - (sharedCoreTermCount / allUniqueTermCount); sharedCore = non-stopword tokens ≥4 chars in ≥50% of N answers.",
+  "formula": "score = 1 - (sharedCoreTermCount / allUniqueTermCount); sharedCore = non-stopword tokens (>=4 chars) in >=50% of N answers",
+  "threshold": 0.80,
+  "note": "DO NOT USE THIS FIXTURE TO TUNE THE THRESHOLD. It is the generalization guard only.",
+  "items": [
+    {
+      "id": "HO-D1",
+      "source": "GSD-T M86 context-window handling — multiple proposed approaches for detecting CW exhaustion",
+      "question": "How do we detect that an LLM agent session is approaching context window exhaustion?",
+      "expectedFired": true,
+      "label": "divergent",
+      "labelDerivation": "5 distinct approaches each use a different detection mechanism: Anthropic count_tokens API call, output pattern-match for truncation sentinel, API 400 error trapping, output structure degradation heuristic, session token accumulation ledger. Each answer introduces unique technical tokens not shared across answers. Independently verified divergent (not used to set threshold).",
+      "answers": [
+        "Call the Anthropic count_tokens API before each request to track the remaining context budget and halt when the budget falls below a safety margin of 10000 tokens.",
+        "Watch for the truncation sentinel that Claude emits when context is near-full. Pattern-match the output text for known truncation markers and halt the loop on pattern detection.",
+        "Trap the context-length error returned by the Anthropic API when the prompt exceeds the model context limit. The API returns a 400 status with context_length_exceeded in the error body.",
+        "Count output structure tokens per iteration. When the agent stops producing complete structured JSON and starts emitting partial truncated output, that signals context window exhaustion.",
+        "Maintain a rolling token accumulator across the session. Compare accumulated tokens against the known model context limit and halt when the accumulator approaches the ceiling threshold."
+      ]
+    },
+    {
+      "id": "HO-D2",
+      "source": "GSD-T M87+binvoice debug-loop prevention — multiple proposed halt mechanisms for infinite debug loops",
+      "question": "What mechanism should halt a debug loop that is not converging?",
+      "expectedFired": true,
+      "label": "divergent",
+      "labelDerivation": "5 distinct halt mechanisms: iteration counter, symptom-signature ledger with 3-strike rule, elapsed-time budget, error-pattern diversity check, commit-history analysis. Each answer names a different mechanism with unique key tokens. Independently verified divergent (not used to set threshold).",
+      "answers": [
+        "Add a max-iteration counter and halt after three iterations regardless of convergence. An iteration counter of three forces a halt before the fourth debug cycle begins.",
+        "Maintain a symptom-signature ledger keyed by the failing assertion fingerprint. Increment on each cycle; halt hard when the same signature appears three consecutive times in the ledger.",
+        "Set a total elapsed-time budget for the debug session. Halt and escalate if total elapsed time exceeds the budget threshold without producing a passing test run.",
+        "Track the diversity of error patterns across consecutive iterations. If the last three iterations all produced variant errors of the same root class, halt and re-examine the premise.",
+        "Record each attempted patch as a commit hash in a history log. If the commit history contains three entries on the same failing test file without a passing run, halt the debug loop."
+      ]
+    },
+    {
+      "id": "HO-D3",
+      "source": "Common async/concurrent programming — race condition resolution approaches (general domain case, not GSD-T specific)",
+      "question": "How do we prevent two async operations from corrupting shared state by running concurrently?",
+      "expectedFired": true,
+      "label": "divergent",
+      "labelDerivation": "5 distinct concurrency control mechanisms: mutex lock, Promise serialization flag, async queue, optimistic locking with version field, last-write-wins timestamp. Mutually-exclusive approaches with different key technical tokens. Independently verified divergent (not used to set threshold).",
+      "answers": [
+        "Use a mutex lock to serialize access to the shared resource. Acquire the mutex before each write operation and release after completion to prevent concurrent access to shared state.",
+        "Wrap operations in a Promise chain with a serialization flag. A boolean lock flag on the shared context ensures only one operation proceeds at a time before the next Promise resolves.",
+        "Route all write operations through a single async queue. Enqueue each write request and process sequentially from the queue head to ensure serial execution without concurrent writes.",
+        "Apply optimistic locking with a version field on the shared resource. Each write reads the current version, increments the version field, and rejects the write if the version has changed.",
+        "Accept last-write-wins semantics using a timestamp field. Record a write timestamp on each update and let the final timestamp overwrite earlier writes where write ordering is irrelevant."
+      ]
+    },
+    {
+      "id": "HO-C1",
+      "source": "HTTP standard — unambiguous factual question about POST success status code",
+      "question": "What is the correct HTTP status code for a successful POST request that creates a new resource?",
+      "expectedFired": false,
+      "label": "convergent",
+      "labelDerivation": "All 5 answers agree: HTTP 201 Created. The status code is a factual HTTP standard with ONE correct answer. Core tokens (HTTP, 201, Created, POST, status) appear in ≥50% of answers. Score ≤0.70 → convergent. Independently verified (not used to set threshold).",
+      "answers": [
+        "Return HTTP status 201 Created when a POST request successfully creates a new resource. HTTP 201 is the standard status code for successful resource creation via POST.",
+        "HTTP 201 Created is the correct status code for a successful POST that creates a resource. The HTTP 201 status code tells the client the POST created the resource.",
+        "A successful resource-creating POST should respond with HTTP status 201 Created. HTTP 201 indicates the resource was created by the POST request.",
+        "Respond with HTTP 201 Created after a successful POST creates a new resource. The HTTP 201 Created status code is the standard for successful POST creation.",
+        "HTTP status 201 Created is returned when a POST successfully creates a resource. HTTP 201 is the correct status code for successful POST resource creation."
+      ]
+    },
+    {
+      "id": "HO-C2",
+      "source": "Node.js API fact — unambiguous factual question about synchronous file reading",
+      "question": "What is the Node.js fs module method for reading a file synchronously?",
+      "expectedFired": false,
+      "label": "convergent",
+      "labelDerivation": "All 5 answers agree: fs.readFileSync. The method name is a factual Node.js API with ONE correct answer. Core tokens (fs.readFileSync, synchronously, file, path) appear in ≥50% of answers. Score ≤0.70 → convergent. Independently verified (not used to set threshold).",
+      "answers": [
+        "fs.readFileSync reads a file synchronously in Node.js. Require fs and call fs.readFileSync with the file path and encoding to read the file contents synchronously.",
+        "require fs then call fs.readFileSync to read a file synchronously. fs.readFileSync blocks the event loop and returns the file contents synchronously.",
+        "fs.readFileSync is the synchronous file read method in Node.js. Call fs.readFileSync with the file path to read file contents synchronously without a callback.",
+        "The synchronous file read method is fs.readFileSync. After requiring fs, call fs.readFileSync with the file path and encoding to get file contents synchronously.",
+        "fs.readFileSync reads file contents synchronously. Require fs and call fs.readFileSync passing the file path to read the file synchronously and return its contents."
+      ]
+    },
+    {
+      "id": "HO-C3",
+      "source": "JavaScript Array API fact — unambiguous factual question about Array.map return value",
+      "question": "What does Array.prototype.map return?",
+      "expectedFired": false,
+      "label": "convergent",
+      "labelDerivation": "All 5 answers agree: a new array where each element is the callback return value; original array not mutated. Core tokens (array, callback, returns, original, elements) appear in ≥50% of answers. Score ≤0.70 → convergent. Independently verified (not used to set threshold).",
+      "answers": [
+        "Array.prototype.map returns a new array. Each element of the new array is the callback function return value for the corresponding element of the original array.",
+        "map returns a new array containing the callback return values for each element. The original array is not mutated and map always returns a new array.",
+        "Array.prototype.map creates and returns a new array where each element is the callback return value applied to each element of the original array.",
+        "The map method returns a new array. Each element in the new array is the callback return value for that index in the original array. The original array is unchanged.",
+        "map returns a new array where each element is the callback function return value for that original array element. Array.prototype.map never mutates the original array."
+      ]
+    }
+  ]
+}

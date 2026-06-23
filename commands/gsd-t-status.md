@@ -54,6 +54,7 @@ Present a concise status to the user:
 ```
 📊 GSD-T Status: {milestone name}
 Phase: {PARTITIONED | DISCUSSED | PLANNED | EXECUTING | INTEGRATED | VERIFIED}
+Model Profile: {profile-name} [{(default)} if no per-project config set]
 
 Domains:
   {domain-1}: {completed}/{total} tasks {✅ done | 🔄 in progress | ⏳ blocked}
@@ -71,6 +72,19 @@ Next action: {what should happen next}
 Recent decisions:
   - {latest decision from Decision Log}
 ```
+
+### Active Model Profile Line (M86 — SC(f): no silent degradation)
+
+The **Model Profile** line MUST always name the active profile — never blank, never an implicit fallback.
+
+- Read `.gsd-t/model-profile.json` in the project root. If the file exists and contains a valid `profile` field (`standard` | `pro` | `premium`), display it by name: `Model Profile: pro`.
+- If the file is absent, display the global default by name with the `(default)` marker: `Model Profile: premium (default)`.
+- If the file is present but malformed or contains an unknown profile, display: `Model Profile: premium (default, config-error)` — never silently promote to the most expensive posture.
+
+Profiles control which workflow stages run on Fable vs. Opus/Sonnet:
+- `standard` — zero Fable stages (pre-M85 posture)
+- `pro` — Fable on red-team + pre-mortem + debug-cycle-2
+- `premium` — all 6 M85 designated Fable stages (full posture, global default)
 
 ### Backlog Section
 

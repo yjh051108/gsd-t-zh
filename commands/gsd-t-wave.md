@@ -23,7 +23,35 @@ The native Workflow `workflow()` global runs each sub-workflow inline and return
 
 Read `.gsd-t/progress.md` to determine the active milestone and the wave domain list from `.gsd-t/contracts/m{NN}-integration-points.md`.
 
-## Step 2: Invoke the wave Workflow
+## Step 2: Resolve the active model profile (M86 — invoke-time injection)
+
+Before calling the Workflow, resolve the active model profile to build the `overrides` map:
+
+```bash
+# Run via Bash at invoke time:
+gsd-t model-profile resolve --json
+# Bare form (NO --profile flag): reads .gsd-t/model-profile.json — profile AND stageOverrides
+# (set-stage overrides MUST win — contract precedence; --profile is a config-blind diagnostic
+# form that ZEROES stageOverrides and must never be used for invocation — Red Team M86 r3)
+```
+
+**Resolver-failure handling (M86 — pre-mortem c2 #2):** if the resolve call fails, do NOT
+silently proceed on the premium fallback. Either HALT with `blocked-needs-human`, or proceed
+ONLY with a loud, surfaced warning:
+```
+⚠ model-profile resolver unavailable — running on PREMIUM fallback literals
+  (configured profile unknown; stale global binary may lack model-profile subcommand)
+```
+
+Also surface a SUCCESSFUL resolve that carries a `configError` field (the resolver returns a
+named default + `configError` for malformed/hand-edited configs — Red Team M86): print the
+`configError` as a visible warning naming the effective profile before proceeding. A clean-looking
+run on a posture the user did not configure is the same silent-spend failure class.
+
+The wave workflow forwards `overrides` to BOTH its `gsd-t-execute` and `gsd-t-verify`
+sub-workflow calls, so the spend switch is active across the full cycle (execute + verify).
+
+## Step 3: Invoke the wave Workflow
 
 Call the `Workflow` tool with:
 
@@ -36,12 +64,15 @@ Call the `Workflow` tool with:
   args: {
     milestone: "M{NN}",
     domains: ["m{NN}-d1-...", "m{NN}-d2-...", ...],  // domains for this wave only, per integration-points
-    projectDir: "."
+    projectDir: ".",
+    // M86: inject the resolved overrides map — forwarded to execute + verify sub-workflows.
+    // Pass {} when the resolver failed AND you chose the loud-warning path (not halt).
+    overrides: { /* ...from resolver result.overrides, or {} on failure */ }
   }
 }
 ```
 
-## Step 3: Interpret the result
+## Step 4: Interpret the result
 
 ```js
 {

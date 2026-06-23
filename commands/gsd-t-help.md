@@ -73,6 +73,9 @@ HEADLESS (CI/CD)                                                       CLI
   headless query      Read project state without LLM (<100ms)
   headless --debug-loop  Compaction-proof test-fix-retest loop (fresh sessions)
   parallel            Task-level parallel dispatch with mode-aware gating (M44)
+  research-gate       Classify a guessed claim: internal (grep) / external (web) / ambiguous (LLM judge) [M89]
+  architectural-trigger  Fire the architectural-assumption trigger (divergence-sampling or extend-existing-code) [M90]
+  loop-ledger         Record a debug cycle, read exit state, detect non-convergence (premise-re-examination) [M90]
 
 BACKLOG                                                                Manual
 ───────────────────────────────────────────────────────────────────────────────
@@ -500,7 +503,43 @@ Use these when user asks for help on a specific command:
 - **Files**: `bin/gsd-t-model-tier-policy.cjs` (zero external deps — installer invariant).
 - **Use when**: Any phase that needs to resolve a concrete model id from a stage key at invoke time (M69 pattern). Workflows NEVER `require` this module (sandbox ban) — they use hard-coded tier alias literals the lint proves match the policy.
 - **CLI**: `gsd-t model-tier-policy resolve <stageKey> [--json]`. Emits `{ok, stageKey, tier, model, requiresThinkingOmitted}`. Exit 0 resolved · 1 unknown stage key.
-- **Contract**: `.gsd-t/contracts/model-tier-policy-contract.md` v1.0.0 STABLE.
+- **Contract**: `.gsd-t/contracts/model-tier-policy-contract.md` v1.1.0 STABLE.
+
+### model-profile (M86)
+- **Summary**: Per-project model-tier profile switcher — a SECOND dimension over the M85 stage-tier policy. Manages `.gsd-t/model-profile.json` and resolves which concrete model id each workflow stage runs on under the active profile. Three named profiles: `standard` (zero Fable — pre-M85 posture), `pro` (Fable on red-team + pre-mortem + debug-cycle-2), `premium` (all 6 M85 designated Fable stages — global default). Switching profiles injects the overrides into workflow args at invoke time (M69 pattern — NO tracked-file rewriting). Competition producers are HELD at opus in ALL profiles (M82 blindness invariant). The active profile is surfaced in the session banner (`[GSD-T PROFILE]`), the statusline, and `gsd-t status` — always named, never an implicit fallback (SC(f)).
+- **Files**: `bin/gsd-t-model-profile.cjs` (zero external deps — installer invariant). Config: `.gsd-t/model-profile.json` (`{ "profile": "pro", "stageOverrides": { ... } }`).
+- **Use when**: A project needs a different spend posture than the global default (e.g., run `standard` on a CI cost budget, or `pro` for a production release with targeted Fable quality gates). Per-stage overrides allow fine-grained control beyond the named profiles.
+- **CLI**:
+  - `gsd-t model-profile show [--json]` — display active profile + per-stage resolution
+  - `gsd-t model-profile set <standard|pro|premium>` — switch the project profile
+  - `gsd-t model-profile set-stage <stage> <tier>` — per-stage override (rejects `competition-producers` and `competition-judge→opus` — M82 blindness clamps)
+  - `gsd-t model-profile resolve --json` — resolve the ACTIVE config (profile + stageOverrides) into the overrides envelope consumed by workflow invokers (the invoker form)
+  - `gsd-t model-profile resolve --profile <p> [stage] [--json]` — diagnostic form: pure profile envelope, stageOverrides ZEROED by design (census/divergence checks only — never for invocation)
+  - Emits `{ok, profile, overrides: { "<stage>": "<concreteModelId>" }, requiresThinkingOmitted?}`. Exit 0 resolved · 1 unknown profile/tier.
+- **Out of scope**: Session default model (`/model`) — profiles govern WORKFLOW STAGES only.
+- **Contract**: `.gsd-t/contracts/model-profile-config-contract.md` v1.0.0 STABLE.
+
+### research-gate (M89)
+- **Summary**: Deterministic CLASSIFY step of the M89 auto-research pipeline. Takes a load-bearing claim the agent tagged `[GUESSED:*]` in its Stated Claims section. The classifier is a MECHANICAL STRING-FACT FILTER (NOT a semantic oracle) returning one of THREE classes: `internal` (grep/Read, route `grep`), `external` (web-research, route `web`), or `ambiguous` (route `judge`). No LLM call in the classifier itself — semantic judgment is deferred to the wiring's LLM judge. An `ambiguous` claim is routed to a small LLM `classify-judge` stage (model: "fable") that decides internal/external/uncertain; **uncertain → research** (never guess-internal). The research `agent()` stage (model: "fable") runs for external guesses. An ENFORCE marker (`<!-- auto-research-claim: ... status=uncited -->`) is written into the artifact (a deterministic `.gsd-t/research/...` fallback if the stage reports no artifact path — fail-closed); the verify gate FAILs if it stays uncited.
+- **Files**: `bin/gsd-t-research-gate.cjs` (D1). Contract: `.gsd-t/contracts/auto-research-contract.md` v1.3.2 STABLE. Stage prompt: `templates/prompts/research-subagent.md`. DETECT snippet: `templates/prompts/stated-claims-snippet.md`. Cite-format test: `test/m89-research-stage-cite-format.test.js`.
+- **Use when**: A workflow stage needs to classify a guessed claim before deciding whether to grep, run a web-research sub-agent, or route to the LLM judge. Called by D3 (upper phases: plan, pre-mortem, partition, discuss, milestone) and D4 (worker phases: execute, debug, quick). NOT called manually — the wiring invokes it per `[GUESSED:*]` entry in the `## Stated Claims` section.
+- **CLI**: `gsd-t research-gate classify "<guessed claim text>"`. Emits `{ok, gap, class, route, reason}` where `class` ∈ {internal, external, ambiguous} and `route` ∈ {grep, web, judge}. Exit 0 on classify · 1 on bad input.
+- **Classification rules (string facts only — the v1.3.2 4-step priority)**: (1) a CONCRETE REPO PATH (`bin/x.cjs` / `*.workflow.js` / `gsd-t-*` / `templates/…`) → `internal` (a path is decisive, beats everything). (2) a STRONG EXTERNAL signal (unambiguous vendor proper-noun + API/protocol term) → at least ambiguous: with ANY anchor phrase present → `ambiguous`; with no anchor → `external`. NO anchor phrase ("this repo" / "exit code" / "who owns") may override a strong external signal — only a concrete path can. (3) an anchor with NO strong external → `internal`. (4) else → `ambiguous`. An `ambiguous` claim → LLM judge → uncertain→research (§1.1/§5.1, owned by D3/D4). The regex never guesses a paraphrase's semantic class.
+- **Contract**: `.gsd-t/contracts/auto-research-contract.md` v1.3.2 STABLE.
+
+### architectural-trigger (M90)
+- **Summary**: Deterministic architectural-assumption trigger (M90 §2). Two fire paths: **R-ARCH-1** (divergence-sampling — N fresh-context producer answers → divergence score; competition-arm only, EXPERIMENTAL+MEASURED) and **R-ARCH-2** (protocol-class — any task whose `**Touches**` lists an EXISTING file triggers unconditionally; everywhere feed). Fires produce an instrumentation record in `.gsd-t/metrics/arch-trigger-events.jsonl`; a `provenByAdversaryOnly=true` flag from either path surfaces at the §4 fail-closed verify gate (R-FAIL-2). The module NEVER asserts it works — it emits measurement data only.
+- **Files**: `bin/gsd-t-architectural-trigger.cjs`. Contract: `.gsd-t/contracts/unproven-assumption-doctrine-contract.md` §2. Blind-adversary prompt: `templates/prompts/blind-adversary-subagent.md`. Model: `fable` (M85 RULE-ARCH-TIER).
+- **Use when**: Workflows detect that a task extends existing code (R-ARCH-2 everywhere feed) or that competition producers diverged (R-ARCH-1 competition-arm only). Called automatically by `gsd-t-execute`, `gsd-t-quick`, and `gsd-t-phase` competition arm via inline runCli helper (M81 runtime-native).
+- **CLI**: `gsd-t architectural-trigger trigger '<JSON>'`. JSON shapes: `{"type":"extend-existing-code","context":"...","basis":"..."}` or `{"type":"divergence-sampling","answers":[...],"basis":"..."}`. Emits `{ok, firePath, fired, basis, reason, ...}`. Exit 0 on success · 1 on bad input.
+- **Contract**: `.gsd-t/contracts/unproven-assumption-doctrine-contract.md` §2 v1.0.0 STABLE.
+
+### loop-ledger (M90)
+- **Summary**: Cross-process non-convergence detector (M90 §3). Records each debug cycle (symptom-signature + surface + fileClass), computes a stable signature, and detects when the SAME computed signature appears across cycles (non-convergence). After all cycles, `read-exit-state` returns `haltedButNoReExamination=true` when non-convergence is proven — the debug workflow exits with a PREMISE_RE_EXAMINATION directive (option b, re-anchored to the cycle-2 boundary) instead of the generic `needs-human`. A `haltedButNoReExamination=true` state that reaches verify triggers R-FAIL-3 (fail-closed).
+- **Files**: `bin/gsd-t-loop-ledger.cjs`. Contract: `.gsd-t/contracts/unproven-assumption-doctrine-contract.md` §3. Ledger stored at `.gsd-t/ledgers/loop-ledger.jsonl` (per project).
+- **Use when**: Debug workflow calls `append-cycle` after each iteration and `read-exit-state` after the loop. NOT called manually — the debug workflow wires it via inline runCli helper.
+- **CLI**: `gsd-t loop-ledger append-cycle --assertion "<symptom>" --surface "<file>" --fileClass unit --projectDir <dir>`. `gsd-t loop-ledger read-exit-state --projectDir <dir>`. Exit 0 on success.
+- **Contract**: `.gsd-t/contracts/unproven-assumption-doctrine-contract.md` §3 v1.0.0 STABLE.
 
 ## Unknown Command
 

@@ -381,3 +381,27 @@ Exploratory (Playwright MCP): N/A — no UI surface.
   claim that a `name:` value "is discarded"), a false negative outside the
   documented-and-accepted residual is a forbidden defect, not an accepted
   limitation.
+
+## M90 Red Team (verify-m90) — 2026-06-22
+
+### BUG-1 (HIGH): loop-ledger never halts variant-spawning loops — contract R-LOOP-1 contradicted
+- **Surface**: bin/gsd-t-loop-ledger.cjs (appendCycle, lines 230-244) + templates/workflows/gsd-t-debug.workflow.js (thisRunSigCycles, lines 378-389)
+- **Reproduction**: append-cycle 3× with the SAME --assertion ("symptom") but a DIFFERENT --surface each cycle (the variant-spawning / whack-a-mole pathology). Each variant gets a distinct SHA-256 signature key in state.cycles, so each stays at cycles:1 and the `cycles >= HALT_THRESHOLD(3)` halt NEVER fires.
+- **Expected** (contract m90-doctrine-mechanisms-contract.md §3 R-LOOP-1): "A fix that closes signature A but opens signature B still increments (variant-spawning IS the pathology)" → such a loop should HALT.
+- **Actual**: read-exit-state returns haltedSignatures:[] after 3+ variant cycles. The debug workflow's run-local detector (`thisRunSigCycles[sig] >= 2`) also misses it because the signature differs each cycle (surface = filesEdited[0] changes). Verify R-FAIL-3 then PASSES a genuinely non-converging loop.
+- **Impact**: This is the exact failure mode M90 §3 exists to catch (binvoice FB-modal saga, [Debug loop must halt, not narrate]). A whack-a-mole debug loop that "fixes" a different file each cycle is silently passed by the gate (silent-wrong-output of a safety gate). Only a same-symptom + same-file 3× loop halts.
+- **Shallow test**: test/m90-loop-ledger-halt.test.js:157 ("R-LOOP-1: ... still increments overall ledger count") ASSERTS the buggy behavior — `assert.equal(r.cycles, 1, 'signature B starts at 1')` + `assert.equal(exitState.haltedSignatures.length, 0)`. The test name claims R-LOOP-1 is satisfied; its assertions lock in the escape. Must be rewritten to require that variant-spawning across surfaces (same symptom) accumulates toward a halt.
+
+### Lower-severity observations (not verdict-blocking)
+- Legacy state-file `reExaminationPending:false` + `halted:{S:true}` migrates to not-pending → gate passes a halted sig. Only reachable from hand-crafted/legacy files (new model sets halt+pending together; recordReExamination full-resets). LOW.
+- R-FAIL-2 arch-trigger instrumentation sink is best-effort (swallows write errors) → a proven-by-adversary-only event could vanish → gate reads count 0 (fail-open). Documented interface-only this milestone (backlog #42). LOW.
+
+### Attack vectors tried
+- Contract: §1/§2/§3 signatures verified; R-LOOP-1 invariant VIOLATED (BUG-1).
+- Boundary inputs: empty/whitespace/non-string/array-typed state → all fail-closed correctly. prototype-pollution via assertion → moot (SHA-256 keyed).
+- State transitions: per-signature clear, blanket-clear refusal, milestone scoping (decision A) → all correct.
+- Error paths: corrupt state → fail-closed (exit 1) correctly; verify gate FAILs on it.
+- Classifier silent-miss: external-claim misroute attempts → all → ambiguous/judge or internal→grep→§5.1-escalate (wired). No silent-miss.
+- Regression: full suite 1993 pass / 0 fail / 4 skip.
+
+### VERDICT: FAIL (1 HIGH bug — BUG-1)

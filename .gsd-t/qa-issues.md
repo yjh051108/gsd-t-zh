@@ -46,3 +46,6 @@
 - **BUG-4 (LOW)**: model-selection-contract.md v1.0.0 froze the 3-tier union ("fourth tier requires v2.0.0"); fable added at v1.1.0 by rewriting the freeze clause. No code consumer breaks; process violation.
 
 Full detail: .gsd-t/red-team-report.md (M85 section, top of file).
+
+## M90 BUG-1 (HIGH) — 2026-06-22
+loop-ledger never halts variant-spawning loops (same symptom, rotating surface). Contract §3 R-LOOP-1 contradicted by bin/gsd-t-loop-ledger.cjs:230-244. Shallow test at test/m90-loop-ledger-halt.test.js:157 asserts the broken behavior. Repro: 3× append-cycle same --assertion, different --surface → haltedSignatures:[]. Verify R-FAIL-3 silently passes a non-converging loop.

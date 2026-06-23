@@ -7,6 +7,30 @@
 4. ALWAYS work autonomously. ONLY ask for user input when truly blocked.
 
 
+# Output Style (default: CONCISE)
+
+**Default to concise output. Optimize for fast scanning, not completeness of prose.** The user wants ALL the information — quickly, organized, scannable. Override per-project by setting `Output Style: verbose` in the project CLAUDE.md.
+
+Concise rules (this is the DEFAULT):
+- **Answer first, on the banner line or the one right after it.** The literal answer ("all correct", "Yes — runs in the service worker, uses IndexedDB", the number, the verdict) is the FIRST thing after the banner. Nothing precedes it.
+- **No process narration. Ever.** Never write what you're about to do or why: "Let me confirm…", "Let me verify, not assume", "Now I can answer…", "Let me check…", "then verify it against the code". DO the verification silently (run the tool), then state the verified answer as fact. The user wants the conclusion, not a tour of how you reached it.
+- **No answer sandwich.** State the answer ONCE. Do not answer, explain, then re-state the answer. If a verify step sits between question and answer, the answer appears once — after it — not teased before it.
+- **No affirmation/qualifier throat-clearing.** Cut "Great question(s)", "You've got it exactly right", "You're right to ask", "Yes to all three" when "all correct" says it, "to be precise / let me confirm each precisely". Affirm by answering, not by praising the question.
+- **No honesty theater.** Cut "let me think it through honestly", "now I can give you a precise, honest answer", "here's the honest breakdown", "to be fully transparent". Just give the answer — accuracy is assumed, announcing it is noise.
+- **A table replaces its prose, never repeats it.** After a table/grid, do NOT re-explain its rows in sentences. Add only what the table CAN'T carry (the so-what, the one exception). Same for a list: don't summarize the list you just wrote.
+- **Ask once.** If you ask via the question tool, do not also restate the same questions in prose ("So, to clarify with you: …"). One channel, one ask.
+- **Bullets over paragraphs.** Default to scannable lists. Use a **table/grid** whenever comparing ≥2 items across dimensions — the user finds grids ideal.
+- **Bold the keywords** so the eye can skip-scan.
+- **Say it once.** Cut hyperbole and filler ("importantly", "it's worth noting", "as you can see", "basically"). No restating the question back.
+- **Layman-first.** Plain words; use a precise technical term only when it IS the right word, then gloss it in one short clause.
+- **Detail on demand.** Put deep "why / how it works internally" behind a one-line offer ("Want the reasoning?") rather than dumping it inline — unless the user asked why.
+- **Keep load-bearing structure:** the dated status banner (first line), any verdict, and explicit warnings stay. Only the *explanatory body* gets tightened.
+
+The litmus test: if a sentence would survive being deleted without the user losing information, delete it. "Yes to all three. You've got it exactly right. Let me confirm each precisely:" → "Your three questions — all correct."
+
+Verbose mode (opt-in, `Output Style: verbose`): full narrative prose, inline rationale, the longer style. Don't apply verbose unless a project requests it.
+
+
 # GSD-T: Contract-Driven Development
 
 ## Work Hierarchy
@@ -78,6 +102,21 @@ GSD-T tracks project version in `.gsd-t/progress.md` using semantic versioning: 
 - Version is reflected in: `progress.md`, `README.md`, package manifest (if any), and git tags (`v{version}`)
 
 
+# Git Worktree Location (MANDATORY)
+
+**NEVER create a git worktree inside the project's own folder.** A worktree placed under the project tree pollutes `git status`, risks accidental commits/deletes, and breaks tooling that walks the project directory.
+
+```
+WHEN creating a worktree directly (git worktree add, isolation: "worktree", etc.):
+  └── Path MUST be:  ~/Worktrees/<project-name>/<branch-or-task>/
+        e.g.  /Users/david/Worktrees/GSD-T/fix-context-window-1m
+```
+
+- One predictable home for all worktrees: `~/Worktrees/`, namespaced by project name.
+- Create `~/Worktrees/<project-name>/` on demand (`mkdir -p`) before `git worktree add`.
+- Clean up with `git worktree remove` when the branch/task is done — don't leave prunable stragglers.
+- **Exception**: harness-managed worktrees the Agent/Workflow runtime creates under the project's gitignored `.claude/worktrees/` path are the harness's own convention — leave those alone. This rule governs worktrees *you* create directly via Bash or the `isolation: "worktree"` option.
+
 # Destructive Action Guard (MANDATORY)
 
 **NEVER perform destructive or structural changes without explicit user approval.** This applies at ALL autonomy levels, including Level 3.
@@ -120,61 +159,20 @@ Even in development, the user may have:
 
 ## Update Notices
 
-The hook output at session start is NOT visible to the user — only your response text is. So you MUST emit a dated status banner as the **very first line of every response** (every turn, not just the first), above any routing header or other content.
+The session-start hook output is NOT user-visible — so emit a dated status banner as the **first line of every response** (every turn), above any routing header. Source the date from the most recent `[GSD-T NOW]` signal (live clock; the UserPromptSubmit hook emits it each turn). NEVER use `currentDate`/SessionStart banner (both frozen) or intuition. If `[GSD-T NOW]` is absent, fall back to `currentDate` and flag the gap. Trim seconds in the display (`HH:MM TZ`).
 
-**Date source — MANDATORY**: use the timestamp from the most recent `[GSD-T NOW]` signal in your context. The UserPromptSubmit hook (`scripts/gsd-t-auto-route.js`) emits `[GSD-T NOW] Day: Mon DD, YYYY HH:MM:SS TZ` at the start of every turn — this is live system clock. Do NOT use:
-- The SessionStart banner (frozen at session start — wrong on day 2 of a long session)
-- The `currentDate` field in your context (frozen at session start — same problem)
-- Your training-cutoff intuition (always wrong)
-
-If `[GSD-T NOW]` is absent for any reason, fall back to `currentDate` and flag the gap.
-
-**Format** — one line, no changelog noise in steady state:
-
-- Steady state (`[GSD-T]` token seen at session start, or no version-check token — default):
-  ```
-  Day: Mon DD, YYYY HH:MM TZ — GSD-T v{version} — CURRENT
-  ```
-  Example: `Sun: May 3, 2026 12:21 PDT — GSD-T v3.19.00 — CURRENT`
-
-- Auto-updated this session (`[GSD-T AUTO-UPDATE]` token seen at session start):
-  ```
-  Day: Mon DD, YYYY HH:MM TZ — GSD-T v{old} → v{new} ✅ AUTO-UPDATED
-  Changelog: https://github.com/Tekyz-Inc/get-stuff-done-teams/blob/main/CHANGELOG.md
-  ```
-  (The changelog link earns its place here — there's new code to read about.)
-
-- Update available, auto-update failed (`[GSD-T UPDATE]` token seen at session start):
-  ```
-  Day: Mon DD, YYYY HH:MM TZ — GSD-T v{installed} → v{latest} ⬆️ UPDATE AVAILABLE (auto-update failed)
-  Run: /gsd-t-version-update-all
-  Changelog: https://github.com/Tekyz-Inc/get-stuff-done-teams/blob/main/CHANGELOG.md
-  ```
-  Also repeat at the **end** of your first response.
-
-(Drop seconds from the displayed banner — keep it to `HH:MM TZ` for readability. The hook emits seconds; you trim.)
-
-**Why every response, not just the first**: long sessions span multiple days. A dated header on every turn means the user can scroll back and immediately see when any exchange happened, without inferring from context.
-
-**Order**: dated status banner FIRST. Then routing header (if any). Then your response body.
+Format by session-start token:
+- `[GSD-T]` / none (steady state): `Day: Mon DD, YYYY HH:MM TZ — GSD-T v{version} — CURRENT`
+- `[GSD-T AUTO-UPDATE]`: `Day: … — GSD-T v{old} → v{new} ✅ AUTO-UPDATED` + `Changelog: https://github.com/Tekyz-Inc/get-stuff-done-teams/blob/main/CHANGELOG.md`
+- `[GSD-T UPDATE]` (auto-update failed): `Day: … — GSD-T v{installed} → v{latest} ⬆️ UPDATE AVAILABLE (auto-update failed)` + `Run: /gsd-t-version-update-all` + changelog link; also repeat at the END of your first response.
 
 ## Live Clock Rule (MANDATORY)
 
-Whenever you write a date or timestamp to any file — decision log entries in `progress.md`, `continue-here-{ts}.md` filenames, memory entries, banners, "Updated:" / "Date:" frontmatter, archive headings, anything visible — source it from **the live system clock**. Never from `currentDate` (frozen at session start), the SessionStart banner (frozen), or your intuition (unreliable).
+Every date/timestamp you write to ANY file (progress.md log, `continue-here-{ts}` filenames, memory, banners, `Date:`/`Updated:` frontmatter, archive headings) MUST come from the live clock: the latest `[GSD-T NOW]`, or `node -e "console.log(new Date().toISOString())"` if absent. Never `currentDate`/frozen banner/intuition.
 
-**How to obtain the live clock**:
-1. Read the most recent `[GSD-T NOW]` signal from your context (UserPromptSubmit hook emits it every turn).
-2. If absent, run `node -e "console.log(new Date().toISOString())"` via Bash before writing.
+A PreToolUse hook (`scripts/gsd-t-date-guard.js`) blocks Write/Edit whose timestamps drift >±5 min from the live clock (decision-log lines, filename stamps, banners, labeled `Date:`/`Updated:` stamps, and progress.md table cells); it ignores stamps present in both old/new on Edit, allowlists machine-written paths, and fails open. If blocked, re-read `[GSD-T NOW]`, regenerate, retry — do NOT bypass.
 
-**Enforcement**: a PreToolUse hook (`scripts/gsd-t-date-guard.js`) blocks Write/Edit calls whose content contains timestamps drifting more than ±5 minutes from the live system clock. The guard:
-- Validates decision-log entries (`- YYYY-MM-DD HH:MM:`), filename timestamps (`continue-here-YYYY-MM-DDTHHMMSS`), banners (`Day: Mon DD, YYYY HH:MM`), labeled stamps (`Date:`, `Updated:`, `Created:`, etc., with optional TZ abbr / numeric offset / `Z`), and **progress.md table cells carrying `YYYY-MM-DD HH:MM TZ`** (M59, v3.29.10+ — Completed Milestones + Session Log).
-- For Edit, ignores timestamps that appear in BOTH `old_string` and `new_string` (pre-existing context, not new writes).
-- Allowlists machine-written paths (`.gsd-t/events/`, `.gsd-t/transcripts/`, `.gsd-t/metrics/`, `.git/`, `node_modules/`, archives, log files).
-- Fails open on internal error — broken tool calls would be worse than drift.
-
-**Timestamp precision in progress.md (M59, v3.29.10+)**: the `## Date:` frontmatter line, the "Completed" cell of the Completed Milestones table, and the "Date" cell of the Session Log table MUST be written as `YYYY-MM-DD HH:MM TZ` (e.g. `2026-05-27 10:15 PDT`). This is **forward-only** — pre-3.29.10 rows that read date-only (`YYYY-MM-DD`) stay as-is. Readers (status, dashboard, GSD-T-Board) MUST accept both. `archive-meta.json::completedAt` is local-offset ISO (`YYYY-MM-DDTHH:MM:SS±HH:MM`) — use `localIsoWithOffset()` from `bin/gsd-t-time-format.cjs`, not `new Date().toISOString()` (which produces UTC `Z`).
-
-If the guard blocks your write, do NOT bypass it. Re-read `[GSD-T NOW]`, regenerate the timestamp, retry.
+**progress.md timestamp precision (M59+)**: `## Date:`, the Completed-Milestones "Completed" cell, and the Session-Log "Date" cell use `YYYY-MM-DD HH:MM TZ`; forward-only (older date-only rows stay; readers accept both). `archive-meta.json::completedAt` uses `localIsoWithOffset()` from `bin/gsd-t-time-format.cjs` (local-offset ISO), not `toISOString()`.
 
 ## Conversation vs. Work
 
@@ -196,122 +194,16 @@ If any are missing:
 
 **Exempt commands** (do not trigger auto-init): `gsd-t-init`, `gsd-t-init-scan-setup`, `gsd-t-help`, `gsd-t-version-update`, `gsd-t-version-update-all`.
 
-## Playwright Readiness Guard (M50 — deterministic enforcement)
+## Playwright / E2E Guards (MANDATORY)
 
-Playwright readiness is enforced by executable code, not prose. Three layers:
+Readiness is enforced by code, not by you — the verify/execute Workflow installs Playwright before any E2E stage when `hasUI && !hasPlaywright`, halting `blocked-needs-human` on failure. You do NOT run a pre-check yourself. Manual: `gsd-t setup-playwright [path]`; `gsd-t doctor` reports `playwright missing`. Internals + the commit-time gate: `.gsd-t/contracts/playwright-bootstrap-contract.md`.
 
-1. **Bootstrap library** — `bin/playwright-bootstrap.cjs` exports `hasPlaywright`, `detectPackageManager`, `installPlaywright`, `verifyPlaywrightHealth`. `bin/ui-detection.cjs` exports `hasUI`, `detectUIFlavor`. See `.gsd-t/contracts/playwright-bootstrap-contract.md`.
-2. **Workflow-stage gate** — the verify/execute Workflow scripts call `playwright-bootstrap.cjs::installPlaywright()` before any E2E stage when `hasUI(projectDir)` AND `!hasPlaywright(projectDir)`. On install failure the stage halts with a structured `blocked-needs-human` result. (M61: replaced the retired `headless-auto-spawn.cjs` spawn-time gate — the Workflow runtime owns spawning now.)
-3. **Commit-time gate** — `scripts/hooks/pre-commit-playwright-gate` (opt-in via `gsd-t doctor --install-hooks`) blocks commits that touch viewer/UI source files when Playwright tests have not passed since the most recent change. Reads `.gsd-t/.last-playwright-pass`; fails open on missing/corrupt timestamps.
-
-Operator overrides:
-- Manual install: `gsd-t setup-playwright [path]` (or `gsd-t doctor --install-playwright`).
-- Health check: `gsd-t doctor` reports `playwright missing` for any UI project without `playwright.config.*`.
-
-You no longer need to run a check yourself before testing commands — the Workflow stage runs the readiness gate before E2E.
-
-### Playwright No-Focus-Steal Invariant (MANDATORY — all projects)
-
-**E2E tests must NEVER steal keyboard focus or pop visible windows during a normal run.** The developer keeps typing in their terminal while tests run. This is non-negotiable on every project.
-
-```
-RULES:
-  ├── Headless is the DEFAULT everywhere. A visible browser is opt-in only (HEADED=1).
-  ├── Specs/configs MUST NOT hardcode `headless: false` — visibility is decided in ONE
-  │     launch helper (or the config), controlled by env var, never per-spec.
-  ├── MV3 Chrome extensions are NOT an exception: Chrome's NEW headless loads
-  │     extensions. The load-bearing invocation is `channel: 'chromium'` + `headless: true`
-  │     (Playwright ≥1.49). PITFALL: `headless: true` alone launches the
-  │     chromium_headless_shell (OLD headless — silently cannot load extensions), and
-  │     passing `--headless=new` as a raw arg fights that binary. Template:
-  │     `templates/test-helpers/launch-extension.ts`.
-  └── Off-screen windows (`--window-position=-2400,-2400`) are NOT a focus fix on
-        macOS — a headed launch ACTIVATES the app and steals the cursor regardless of
-        window position. Off-screen is a screen-takeover mitigation only; use it solely
-        as a fallback if new-headless regresses extension support.
-```
-
-Origin: binvoice 2026-06-10 — extension specs forced `headless: false`, commandeering the cursor on every spec; the prior "off-screen" mitigation stopped the window takeover but not the focus theft. Fixed permanently by the channel-selected new headless (21/21 in 9.8s, zero windows).
-
-### Playwright Cleanup
-
-After Playwright tests finish (pass or fail), **kill any app/server processes that were started for the tests**. Playwright often launches a dev server (via `webServer` config or manually). These processes must not be left running:
-1. Check for any dev server processes spawned during the test run
-2. Kill them (e.g., `npx kill-port`, or terminate the process directly)
-3. Verify the port is free before proceeding
-
-This applies everywhere Playwright tests are executed: execute, test-sync, verify, quick, wave, debug, complete-milestone, and integrate.
-
-### E2E Enforcement Rule (MANDATORY)
-
-**Running only unit tests when E2E tests exist is a test failure.** This is non-negotiable.
-
-```
-BEFORE reporting "tests pass" for ANY task:
-  ├── Does playwright.config.* or cypress.config.* exist?
-  │     YES → You MUST run the full E2E suite. Unit-only results are INCOMPLETE.
-  │     NO  → Unit/integration tests are sufficient.
-  ├── Did you run every detected test runner?
-  │     NO → Run it now. Do not commit until ALL suites pass.
-  └── Report format MUST include all suites:
-        "Unit: X/Y pass | E2E: X/Y pass" (or "E2E: N/A — no config")
-```
-
-The conditional "if UI/routes/flows changed" in command files applies to **writing new E2E specs**, not to **running existing ones**. You always run existing E2E specs. Always.
-
-### E2E Test Quality Standard (MANDATORY)
-
-**E2E tests must be FUNCTIONAL tests, not LAYOUT tests.** This is non-negotiable.
-
-A layout test checks that elements exist (`isVisible`, `toBeAttached`, `toBeEnabled`, `toHaveCount`). A functional test checks that features work — actions produce correct outcomes.
-
-```
-LAYOUT TEST (WRONG — passes even if every feature is broken):
-  await expect(page.locator('#tab-sessions')).toBeVisible();
-  await page.click('#tab-sessions');
-  // ← No assertion that the tab's content actually loaded
-
-FUNCTIONAL TEST (RIGHT — fails if the feature is broken):
-  await page.click('#tab-sessions');
-  await expect(page.locator('.session-list')).toContainText('Session 1');
-  // ← Proves clicking the tab loaded the session data
-```
-
-Every Playwright assertion must verify one of:
-- **State changed**: After click/type/submit, the app state is different (new content, updated data, changed status)
-- **Data flowed**: User input → API call → response rendered (use `page.waitForResponse` or assert on rendered data)
-- **Content loaded**: Navigation/tab switch → destination content appeared (assert on text/data unique to destination)
-- **Widget responded**: Terminal accepted keystrokes and produced output, editor saved changes, form submitted and data persisted
-
-**If a test would pass on an empty HTML page with the correct element IDs and no JavaScript, it is not a functional test.** Rewrite it.
-
-### Test Data Cleanup (MANDATORY — M58)
-
-**Tests that insert data into a project's stores MUST register those inserts with the GSD-T test-data ledger so Verify can purge them.** Tests that leave orphaned `E2E_*` records in production data violate this rule.
-
-The supported mechanism is the `withTestData()` Playwright fixture:
-
-```ts
-import { test as base } from '@playwright/test';
-import { withTestData } from '@tekyzinc/gsd-t/templates/test-helpers/test-data-fixture';
-
-export const test = base.extend(withTestData());
-
-test('drag idea creates new column', async ({ page, testData }) => {
-  const id = testData.tag('E2E_DRAG');  // → "E2E_DRAG_{runId}_{counter}"
-  await testData.register({
-    kind: 'localStorage-key-prefix',
-    store: 'gsd-t-board:idea:',
-    id,
-    taggedPrefix: 'E2E_',
-  });
-  // … UI interactions that insert a row keyed by `${store}${id}` …
-});
-```
-
-Three built-in adapters: `localStorage-key-prefix`, `file-json-array`, `sqlite-table-where`. Extend via `registerAdapter(kind, adapter)`. Each adapter refuses to delete a record whose id does not start with the ledger row's `taggedPrefix` (defense in depth — see `.gsd-t/contracts/test-data-tagging-contract.md`).
-
-After the E2E suite, `gsd-t-verify` Step 4.5 runs `gsd-t test-data --purge --run "$GSD_T_VERIFY_RUN_ID"`. If any adapter throws or refuses, verify FAILs the gate (block-promotion semantics — equivalent to a failing CI-Parity Gate). Contract: `.gsd-t/contracts/test-data-ledger-contract.md` v1.0.0 STABLE.
+The hard rules (non-negotiable, all projects):
+- **No focus-steal.** E2E must never steal keyboard focus or pop visible windows. Headless is the DEFAULT everywhere; visible is opt-in (`HEADED=1`). Never hardcode `headless: false` in a spec/config — decide visibility in ONE env-controlled launch helper. MV3 extensions: use `channel: 'chromium'` + `headless: true` (new headless loads extensions; bare `headless: true` launches the old shell that can't). Template: `templates/test-helpers/launch-extension.ts`. See [[feedback_playwright_no_focus_steal]].
+- **Cleanup.** After tests (pass or fail), kill any dev-server/app processes started for them and free the port. Applies to execute, test-sync, verify, quick, wave, debug, complete-milestone, integrate.
+- **E2E enforcement.** If `playwright.config.*`/`cypress.config.*` exists, running unit-only is a test FAILURE — run the full E2E suite, every runner, before reporting pass. Report `Unit: X/Y | E2E: X/Y` (or `E2E: N/A`). You always run existing specs; the "if UI changed" conditional governs *writing new* specs only.
+- **Functional, not layout.** Every assertion must prove state changed / data flowed / content loaded / widget responded — not mere existence (`isVisible`/`toBeAttached`). If a test would pass on empty HTML with the right IDs and no JS, rewrite it.
+- **Test-data cleanup.** Tests that insert data MUST register it via the `withTestData()` fixture so verify Step 4.5 (`gsd-t test-data --purge`) can remove it; an adapter throw/refusal FAILs the gate. Adapters refuse to delete ids lacking the ledger `taggedPrefix`. See [[feedback_test_data_cleanup_convention]] + `.gsd-t/contracts/test-data-ledger-contract.md`.
 
 ## Orthogonal Validation Triad (Mandatory)
 
@@ -337,61 +229,18 @@ Synthesis stage merges results without category collapse. Verdict: `VERIFIED` / 
 
 **Context budget:** Workflow scripts receive a `budget` global (`budget.total`, `budget.spent()`, `budget.remaining()`) tied to the user's per-turn token target. Use it for dynamic loops (`while (budget.total && budget.remaining() > 50_000) { ... }`) or to scale fleet size. Opus 4.7/4.8 ship 1M context windows; the legacy meter at `bin/token-budget.cjs` was retired in M61 — use native `/context` for live in-session usage.
 
-## Desktop as Cockpit (M61 SC7 — v4.0.10+)
+## GSD-T Workflows (M61+ — v4.0.10+)
 
-Routine GSD-T actions (milestone → partition → plan → execute → verify → deliver) run from the Claude Code desktop app via Workflows + Skills. CLI residue is intentional and limited to: (a) background hooks the harness fires automatically, (b) jobs that must outlive the desktop session. No routine build / rebuild / debug / deliver action should require terminal keystrokes.
+Routine actions (milestone → partition → plan → execute → verify → deliver) run from the desktop app via Workflows + Skills — no terminal keystrokes for routine build/debug/deliver. Phase orchestration lives in `templates/workflows/*.workflow.js`; command files are thin invokers calling `Workflow({scriptPath, args})`, where `scriptPath` is resolved to an ABSOLUTE path at invoke time via `gsd-t workflow-path <name>` (a bare relative path silently breaks `Workflow()` outside the source repo).
 
-## GSD-T Workflows (M61 — v4.0.10+)
+The deterministic gates each verify-producing Workflow runs (all FAIL-blocking; you don't self-attest them):
+- **Preflight** (`bin/cli-preflight.cjs`) — hard-fails on wrong branch / occupied required port.
+- **Brief-first** — each `agent()` threads `$BRIEF_PATH` (≤2,500-tok snapshot); workers grep it before re-walking the repo. `.gsd-t/briefs/` gitignored.
+- **Verify-gate** (`bin/gsd-t-verify-gate.cjs`) — Track 1 preflight + Track 2 CLI substrate (`tsc`, `biome`/`ruff`, `npm test`, `knip`, `gitleaks`, `scc`/`lizard`); non-zero halts before the triad.
+- **M57 CI-parity** (`build-coverage` + `ci-parity`) + **M58 test-data purge** — then the orthogonal triad (see below) → synthesis.
+- **Competition (M82/M84, auto)** on partition/milestone/discuss/design-decompose; **Plan hardening (M83)** = traceability-gate + pre-mortem before execute. Contracts: `competition-mode-contract.md`, `plan-hardening-contract.md`.
 
-GSD-T workflows live at `templates/workflows/`. Each workflow is a self-contained native Workflow script that handles one phase of the GSD-T lifecycle. Command files (`commands/gsd-t-*.md`) are thin invokers that call `Workflow({scriptPath, args})`. The `scriptPath` MUST be resolved to an absolute path at invoke time via `gsd-t workflow-path <name>` (M69) — the workflow ships inside the installed `@tekyzinc/gsd-t` package, not the consumer project, so a bare relative `templates/workflows/...` path only resolves from the GSD-T source repo and silently breaks `Workflow()` everywhere else.
-
-Canonical scripts:
-- `gsd-t-execute.workflow.js` — preflight → brief → file-disjointness → parallel(domain workers) → integrate → verify-gate
-- `gsd-t-verify.workflow.js` — preflight → verify-gate → M57 CI-parity → M58 test-data purge → parallel(/code-review ultra ∥ Red Team ∥ QA) → synthesis
-- `gsd-t-wave.workflow.js` — composes execute + verify as sub-workflows
-- `gsd-t-integrate.workflow.js` — cross-domain wire-up + light verify-gate
-- `gsd-t-debug.workflow.js` — 2-cycle diagnose/fix/verify (CLAUDE.md Prime Rule)
-- `gsd-t-quick.workflow.js` — preflight + brief + single-task + verify-gate (M56-D4)
-- `gsd-t-phase.workflow.js` — generic upper-stage runner (partition / plan / discuss / impact / milestone / prd / design-decompose / doc-ripple). **M82/M84 Competition Mode (AUTOMATIC):** on eligible upstream phases (partition / milestone / discuss / design-decompose) an Opus solution-space probe runs at phase start and self-decides whether to compete (biased toward competing — a better upstream artifact lowers total downstream cost); when it fires, 3 parallel Self-MoA producers → a judge stage → a finalizer. No flag needed; override with `competition: N` / `competition: 0` / `noCompetition: true`. Partition's judge is the OBJECTIVE file-disjointness oracle (`gsd-t competition-judge --kind partition` — a calculator, not an LLM critic, immune to judge bias, the v1 beachhead); subjective phases use a blind + shuffled + different-model + rubric judge whose pick is finalized deterministically by `--kind generic`. The generative dual of the orthogonal validation triad; watershed rule = generate-and-judge ABOVE the contract, attack-and-filter BELOW. Default off. Contract: `competition-mode-contract.md` v1.0.0. **M83 Plan Hardening:** the `plan` phase runs two blocking gates before execute — a deterministic acceptance-traceability gate (`gsd-t traceability-gate`: every AC binds to a code path + a killing test; the `Headline:` task needs both impl and test) and an adversarial pre-mortem agent (opus, fresh-context, protocol `pre-mortem-subagent.md`: predicts edge-case/dead-deliverable/NFR failures, each → a required test). The temporal dual of the Red Team (attack the design at plan, not just code at verify). Contract: `plan-hardening-contract.md` v1.0.0.
-- `gsd-t-scan.workflow.js` — preflight → volume-probe → pipeline(per-slice deep finder → single verify) → synthesis → document → render (M66: fans out by codebase VOLUME, not a fixed 5-teammate dimension count; M67: deep document phase deterministically produces the full living-doc set + dimension files, per-doc fan-out)
-
-**Runtime-native invariant (M81 — v4.0.29+):** the Workflow sandbox provides ONLY `agent/parallel/pipeline/log/phase/budget/args` — NO `require`/`fs`/`path`/`child_process`/`process`, and `args` arrives as a JSON STRING. Each workflow is self-contained: it `JSON.parse`s `args` and delegates every CLI call (preflight, verify-gate, brief, build-coverage, ci-parity, test-data, disjointness) to inline `async` helpers that run the command via an `agent()`'s Bash (preferring project-local `bin/<tool>.cjs`, else the global `gsd-t` PATH binary) and parse the JSON envelope — preserving the M55-D5 project-local-bin invariant. The old `require("./_lib.js")` pattern threw `ReferenceError` on first eval and silently broke every workflow except scan (TD-113, fixed M81); `_lib.js` is retired as a workflow dependency.
-
-## Preflight Gate (KEPT from M55)
-
-Every Workflow script begins with `lib.runPreflight({projectDir})`. Hard-fails on any `severity:"error"` check (wrong branch, occupied required port). Non-error checks record but do not block. Same envelope feeds `verify-gate` Track 1.
-
-Library: `bin/cli-preflight.cjs::runPreflight({projectDir, checks?})`.
-Contract: `.gsd-t/contracts/cli-preflight-contract.md` v1.0.0 STABLE.
-
-## Brief-First Worker Rule (KEPT from M55, REFRAMED for M61)
-
-Every Workflow `agent()` call threads `$BRIEF_PATH` — a ≤2,500-token JSON snapshot generated by `bin/gsd-t-context-brief.cjs`. Workers grep the brief instead of re-walking the repo. `execute.workflow.js` generates a per-domain brief inside the `parallel()` map (M55-D2 brief-per-spawn semantic).
-
-The 3 validation-subagent protocols (`templates/prompts/{qa,red-team,design-verify}-subagent.md`) carry the canonical instruction "If you're about to grep, read, or run a test, check the brief first at `$BRIEF_PATH`."
-
-`.gsd-t/briefs/` is gitignored — briefs are per-spawn ephemera, not committed artifacts.
-
-Library: `bin/gsd-t-context-brief.cjs::generateBrief(...)`.
-Contract: `.gsd-t/contracts/context-brief-contract.md` v1.0.0 STABLE.
-
-## Verify-Gate + Orthogonal Validation Triad (M61 v4.0.10+)
-
-`gsd-t verify-gate --json` runs as a deterministic stage inside `gsd-t-verify.workflow.js`. Track 1 = preflight envelope. Track 2 = parallel-CLI substrate (`tsc`, `biome`/`ruff`, `npm test`, `knip`, `gitleaks`, `scc`/`lizard`). Both tracks always run; non-zero exit halts before the orthogonal triad.
-
-After verify-gate, `verify.workflow.js` runs two FAIL-blocking gates inherited from M57 + M58:
-- M57 CI-Parity: `gsd-t build-coverage` + `gsd-t ci-parity` (origin TimeTracking v1.10.12 Dockerfile incident)
-- M58 Test-Data Purge: `gsd-t test-data --purge --run <id>` (origin GSD-T-Board v0.1.10 2442 E2E orphans incident)
-
-Then the orthogonal validation triad runs as `parallel()` `agent()` stages per `.gsd-t/contracts/orthogonal-validation-contract.md` v1.0.0 STABLE:
-- `/code-review ultra` — cooperative correctness + cleanup (skippable; requires `skipUltraReason`)
-- Red Team — adversarial / security / boundaries (non-skippable; verdict `FAIL` / `GRUDGING-PASS`)
-- QA — test mechanics + shallow-test detection + contract compliance (non-skippable)
-
-Synthesis stage merges results WITHOUT collapsing categories. Verdict: `VERIFIED` / `VERIFIED-WITH-WARNINGS` / `VERIFY-FAILED`. `skipUltra=true` is INELIGIBLE for `VERIFIED`.
-
-Library: `bin/gsd-t-verify-gate.cjs::runVerifyGate(...)` + `bin/gsd-t-verify-gate-judge.cjs::buildJudgePrompt(...)`.
-Contracts: `verify-gate-contract.md` v1.0.0 STABLE + `orthogonal-validation-contract.md` v1.0.0 STABLE.
+**Runtime-native invariant (M81):** the Workflow sandbox provides ONLY `agent/parallel/pipeline/log/phase/budget/args`; NO `require`/`fs`/`path`/`child_process`/`process`, and `args` is a JSON STRING. Each workflow `JSON.parse`s `args` and delegates every CLI call to an inline `async` helper running it via an `agent()`'s Bash (project-local `bin/<tool>.cjs` first, else global `gsd-t`). `budget` global (`total`/`spent()`/`remaining()`) drives dynamic loops; use native `/context` for live usage.
 
 ## API Documentation Guard (Swagger/OpenAPI)
 
@@ -421,58 +270,22 @@ KEEP GOING. Only stop for:
 
 ## Pre-Commit Gate (MANDATORY)
 
-NEVER commit code without running this checklist. This is not optional.
+NEVER commit without this checklist. For each trigger that fired, do the action BEFORE committing — no exceptions.
 
-```
-BEFORE EVERY COMMIT:
-  ├── Am I on the correct branch?
-  │     CHECK → Run `git branch --show-current`
-  │     Compare against "Expected branch" in project CLAUDE.md
-  │     WRONG BRANCH → STOP. Do NOT commit. Switch to the correct branch first.
-  │     No guard set → Proceed (but warn user to set one)
-  ├── Did I create or change an API endpoint or response shape?
-  │     YES → Update .gsd-t/contracts/api-contract.md
-  │     YES → Update Swagger/OpenAPI spec (see API Documentation Guard below)
-  │     YES → Verify Swagger URL is in CLAUDE.md and README.md
-  ├── Did I change the database schema?
-  │     YES → Update .gsd-t/contracts/schema-contract.md AND docs/schema.md
-  ├── Did I add/change a UI component interface?
-  │     YES → Update .gsd-t/contracts/component-contract.md
-  ├── Did I add new files or directories?
-  │     YES → Update the owning domain's scope.md
-  ├── Did I implement or change a requirement?
-  │     YES → Update docs/requirements.md (mark complete or revise)
-  ├── Did I add/change/remove a component or change data flow?
-  │     YES → Update docs/architecture.md
-  ├── Did I modify any document, script, or code file?
-  │     YES → Add timestamped entry to .gsd-t/progress.md Decision Log
-  │     Format: `- YYYY-MM-DD HH:MM: {what was done} — {brief context or result}`
-  │     This includes ALL file-modifying activities:
-  │       project, feature, scan, gap-analysis, milestone, partition, discuss,
-  │       plan, impact, execute, test-sync, integrate, verify, complete-milestone,
-  │       wave, quick, debug, promote-debt, populate, setup, init, init-scan-setup,
-  │       backlog-add/edit/move/remove/promote/settings, and any manual code changes
-  ├── Did I make an architectural or design decision?
-  │     YES → Also include decision rationale in the progress.md entry
-  ├── Did I discover or fix tech debt?
-  │     YES → Update .gsd-t/techdebt.md
-  ├── Did I establish a pattern future work should follow?
-  │     YES → Update CLAUDE.md or domain constraints.md
-  ├── Did I add/change tests?
-  │     YES → Verify test names and paths are referenced in requirements
-  ├── Did I change UI, routes, or user flows?
-  │     YES → Update affected E2E test specs (Playwright/Cypress)
-  ├── Did I add a new top-level dir, or change build/CI config?
-  │     This is ENFORCED MECHANICALLY by `gsd-t-verify` Step 2.6
-  │     (CI-Parity Gate: `gsd-t build-coverage` + `gsd-t ci-parity`,
-  │     FAIL-blocking). You do NOT self-attest this — verify runs the
-  │     real CI build. It exists because TimeTracking v1.10.12 shipped
-  │     VERIFIED+tagged with a new dir absent from the Dockerfile COPY.
-  └── Did I run the affected tests?
-        YES → Verify they pass. NO → Run them now.
-```
-
-If ANY answer is YES and the doc is NOT updated, update it BEFORE committing. No exceptions.
+- **Branch** — `git branch --show-current` must match the project CLAUDE.md "Expected branch". Wrong branch → STOP, do not commit, switch first. No guard set → proceed but warn.
+- **API endpoint/response shape changed** → update `.gsd-t/contracts/api-contract.md` + Swagger/OpenAPI spec + verify Swagger URL in CLAUDE.md & README.md.
+- **DB schema changed** → `.gsd-t/contracts/schema-contract.md` + `docs/schema.md`.
+- **UI component interface changed** → `.gsd-t/contracts/component-contract.md`.
+- **New files/dirs** → owning domain's `scope.md`.
+- **Requirement implemented/changed** → `docs/requirements.md`.
+- **Component or data-flow changed** → `docs/architecture.md`.
+- **ANY document/script/code file modified** → timestamped `.gsd-t/progress.md` Decision Log entry (`- YYYY-MM-DD HH:MM: {what} — {result}`); covers every workflow command AND manual edits. Architectural decision → include rationale in that entry.
+- **Tech debt found/fixed** → `.gsd-t/techdebt.md`.
+- **New pattern for future work** → CLAUDE.md or domain `constraints.md`.
+- **Tests added/changed** → test names/paths referenced in requirements.
+- **UI/routes/flows changed** → affected E2E specs.
+- **Affected tests** → run them, confirm pass.
+- New top-level dir / build/CI config: ENFORCED mechanically by `gsd-t-verify` CI-Parity Gate (`build-coverage` + `ci-parity`, FAIL-blocking) — you do NOT self-attest; verify runs the real CI build.
 
 ## Document Ripple Completion Gate (MANDATORY)
 
@@ -552,22 +365,41 @@ If not specified, use Level 3.
 
 ## Workflow Preferences (Defaults — override in project CLAUDE.md)
 
-### Research Policy
-Before planning a phase, evaluate whether research is needed:
+### Unproven-Assumption Doctrine (M90 — governed, enforced — supersedes M89 advisory prose)
 
-**Run research when:**
-- Phase involves unfamiliar libraries, APIs, or services
-- Architectural decisions are required
-- Integrating external systems
-- Phase scope is ambiguous or complex
+**Contract:** `.gsd-t/contracts/unproven-assumption-doctrine-contract.md` v1.0.0 STABLE
 
-**Skip research when:**
-- Patterns are already established from earlier phases
-- Straightforward CRUD, UI, or config work
-- Domain is well understood
-- Phase builds directly on existing code patterns
+Never act on an unproven assumption — FACTUAL OR ARCHITECTURAL. Three enforced mechanisms:
 
-If in doubt, skip research and proceed — research if execution reveals gaps.
+**§1 — Factual Classifier (`gsd-t research-gate classify "<claim>"`):**
+For every load-bearing claim, tag it:
+- **`[KNOWN]`** — verified (repo-internal-evident via grep/Read, or cited this session).
+- **`[GUESSED:unknown]`** — you lack the fact outright.
+- **`[GUESSED:assumed]`** — you ASSERT a shape / value / behavior you NEVER verified.
+- **`[GUESSED:stale]`** — external/time-varying fact that may have changed.
+
+A `[GUESSED:*]` claim is then CLASSIFIED — mechanical string-fact filter, three classes:
+- **`class: external`** → research agent (`model: "fable"`) writes a `## Verified Facts (auto-research)` block (URL + fetch date); ENFORCE marker `<!-- auto-research-claim: class=external key=<key> status=uncited -->` is written; verify FAILs if it stays `status=uncited` (R-FAIL-1).
+- **`class: internal`** → grep/Read only; escalate to external if grep empty.
+- **`class: ambiguous`** → LLM judge (`model: "fable"`) decides; uncertain → research (never guess-internal).
+
+**§2 — Architectural Trigger (`gsd-t architectural-trigger trigger '<JSON>'`):**
+Two fire paths — both INSTRUMENTED (fire-rate emitted to `.gsd-t/metrics/arch-trigger-events.jsonl`):
+- **R-ARCH-1 (divergence-sampling, competition-arm-only, EXPERIMENTAL+MEASURED):** N fresh-context producer outputs → divergence score → fires on high variance. NEVER claimed to work — measured.
+- **R-ARCH-2 (protocol-class, everywhere):** a task whose `**Touches**` lists an EXISTING file → extend-class → trigger fires unconditionally. COMPUTED from real runtime inputs.
+
+If the trigger fires with `provenByAdversaryOnly=true` and it is never resolved, verify FAILs (R-FAIL-2).
+
+**§3 — Loop Ledger (`gsd-t loop-ledger append-cycle/read-exit-state`):**
+Debug workflow calls `append-cycle` each iteration. When the SAME computed symptom-signature appears across both cycles (cycle-2 boundary), `read-exit-state` returns `haltedButNoReExamination=true` → workflow exits with **PREMISE_RE_EXAMINATION directive** (option b, not generic needs-human). Verify FAILs if this flag is unresolved (R-FAIL-3).
+
+**§4 — Fail-Closed (verify gates):** R-FAIL-1/2/3 ALWAYS FAIL, never warn-and-proceed. When a mechanism is R1-de-scoped (not wired), the corresponding check is a DOCUMENTED no-op-PASS distinguishable from wired-but-broken.
+
+**SC6 — Conversation-scope directive:** when answering the USER about an external or time-varying fact
+(API behavior, library version, pricing, rate limits, current best-practice), verify-or-flag before
+asserting. If you lack a fresh source, say so explicitly: *"I believe X, but I do not have a current
+source — please verify."* Do NOT state an external/time-varying fact as known when it is a guess.
+See memory pointer: `feedback_auto_research_external_gaps`.
 
 ### Phase Flow
 - Upon completing a phase, automatically proceed to the next phase
@@ -577,31 +409,17 @@ If in doubt, skip research and proceed — research if execution reveals gaps.
 
 ### Next Command Hint
 
-When a GSD-T command completes (and does NOT auto-advance to the next phase), display a "Next Up" block at the very end of your response. This format is designed to trigger Claude Code's prompt suggestion engine — making the next command appear as ghost text in the user's input field.
-
-**MANDATORY format** — use this exact structure:
+When a GSD-T command completes and does NOT auto-advance, end your response with a "Next Up" block (triggers the prompt-suggestion ghost text). Exact format:
 
 ```
-───────────────────────────────────────────────────────────────
-
 ## ▶ Next Up
 
-**{Phase Name}** — {one-line description of what happens next}
+**{Phase Name}** — {one-line description}
 
 `/gsd-t-{command}`
-
-───────────────────────────────────────────────────────────────
 ```
 
-If there are alternative commands that also make sense, add them:
-
-```
-**Also available:**
-- `/gsd-t-{alt-1}` — {description}
-- `/gsd-t-{alt-2}` — {description}
-```
-
-Successor mapping:
+Add `**Also available:**` with `- /gsd-t-{alt} — {desc}` lines if alternatives make sense. Successor mapping:
 | Completed | Next | Also available |
 |-----------|------|----------------|
 | `project` | `milestone` | |

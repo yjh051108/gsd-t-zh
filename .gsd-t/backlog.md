@@ -469,9 +469,9 @@ Run against binvoice session `692fe9fc-2e09-490c-bb1d-3ae54f865c41`: must cluste
 - **Added:** 2026-06-09
 - Fable 5 promotional access ends **2026-06-22 23:59 PT** (support article 15424964). After that, Fable is NOT in plan limits — every Fable token bills usage credits (~API rates $10/$50 per MTok). Decisions due by then: (1) flip the SESSION default back to opus (`/model`) — the dominant cost (~$20-60/heavy day if left on fable); (2) re-decide the 5 GSD-T Fable stages — measured estimate ~$15-25/typical milestone at credit rates; suggested posture: keep Red Team + pre-mortem on fable (~$8-10/milestone), revert probes + judge to opus unless M86-era measurements show a quality delta. Thanks to M85 this is a ONE-FILE edit (`bin/gsd-t-model-tier-policy.cjs` + lint ripple). Counter-consideration: the measured A/B showed a fable single-draft TIED 3-opus competition at 42% cost — on some phases fable may REDUCE cost; re-measure with real billing. (3) M86 retro-agent silence-judge tier — same decision, same file.
 
-## 30. Model profiles — standard/pro/premium tier-spend switch with per-stage overrides
+## 30. Model profiles — standard/pro/premium tier-spend switch with per-stage overrides — **PROMOTED → DEFINED as M86 (2026-06-10)**
 - **Type:** feature | **App:** gsd-t | **Category:** cli
-- **Added:** 2026-06-10
+- **Added:** 2026-06-10 | **Status:** DEFINED — see `.gsd-t/progress.md` § Current Milestone M86 (branch `m86-model-profiles`)
 - **HARD DEADLINE: must ship before 2026-06-22** (Fable promo end, backlog #29) — it converts the June-22 checklist into one command per project. Origin: user cadence is 10–20+ milestones/week; even the pro posture ($8–10/milestone in usage credits post-promo) is $300–800+/month, so Fable spend needs a selectable control surface, not a code edit.
 
 ### Design (settled in discussion 2026-06-10)
@@ -482,3 +482,233 @@ Run against binvoice session `692fe9fc-2e09-490c-bb1d-3ae54f865c41`: must cluste
 - **Scope guard:** profiles govern GSD-T workflow stages ONLY — the session default model (`/model`) is explicitly out of scope (documented).
 - **Bonus capture:** the first partition run of this milestone banks the outstanding M85 AC(c) partition-probe live `⚙ [fable]` line (documented evidence gap).
 - Scope: ~2 domains (policy-module profiles + config/CLI; invoker wiring + workflow `??` forms + lint update + docs), 1 wave. Contract: model-tier-policy-contract.md → v1.1.0.
+
+## 31. Platform-invariants injection + micro-pre-mortem for debug fixes (left-shift the platform knowledge)
+- **Type:** improvement | **App:** gsd-t | **Category:** templates
+- **Added:** 2026-06-10
+- Upstream the binvoice S2-M2 retrospective fixes into GSD-T proper. **Two-project evidence base, same week (clears the retro-agent silence bar: same root cause ≥2 sessions):** binvoice S2-M2 — 13 verify findings over 4 debug cycles, ~half plan-knowable platform facts, cycle-3 fix created cycle-4's cross-realm bug (session `2ecf0179`, retro 2026-06-10 13:55, artifact `binvoice/.gsd-t/contracts/platform-invariants.md` v1.0.0 STANDING); GSD-T M85 — 4 pre-mortem cycles 6→3→1→3 non-quiescing (TD-294) with two cycles spent attacking mechanism-pinned bindings.
+
+### Three coherent pieces
+1. **Platform-invariants template** (`templates/platform-invariants.md`): per-project standing checklist of platform facts + failure-mode questions, seeded from binvoice's generalizable items — invariants-not-mechanisms (state "no payload reaches persist unvalidated on ANY transport", not "the Fastify schema validates X"), every async subsystem names its production trigger + a test firing the REAL trigger, stateless-deploy rules (fail-closed config: dead deploy > open deploy; no in-process state on restartable targets), field-class validation (one date field validated ⇒ all are), exact-match origin checks, sanitized errors on every channel, test-weakening-is-a-defect. Project-specific sections (MV3 realms, Cloud Run) stay per-project; the template ships the question framework + the universal items. Bootstrap during init/partition when absent.
+2. **Pre-mortem consumes it** (`templates/prompts/pre-mortem-subagent.md` + plan phase wiring): the protocol gains a MANDATORY input — read the project's `platform-invariants.md` if present and check the plan against EVERY item (checklist pass, cheap and deterministic-ish) BEFORE the adversarial pass; plans must answer the failure-mode questions per subsystem (restart? missing config in prod? second transport? cross-context state? who triggers it in production?). Rationale: pre-mortems are adversarial generalists reasoning from plan text — platform facts are checklistable knowledge that should be INJECTED, not rediscovered at ~300k tokens per cycle.
+3. **Micro-pre-mortem for debug-cycle fixes** (`gsd-t-debug.workflow.js` + debug-loop contract): milestone work gets 3 pre-mortem cycles; debug hotfixes currently get ZERO adversarial review before commit — "cycle-3 fix creates cycle-4 finding" is the predictable result (measured in binvoice). Add a bounded micro-stage after each cycle's proposed fix, before commit: one fresh-context agent (sonnet-tier, small: the diff + the invariants file + the symptom), verdict proceed/revise, capped at 1 round (no recursion — the quiescence lesson from TD-294 applies here too).
+
+### Relation to existing items
+- Complements TD-294 (gate quiescence) — #31 reduces what adversarial cycles must FIND; TD-294 fixes when they STOP.
+- Feeds the retro agent (#27): this item is itself the manual prototype of the retro pipeline (cross-session pattern → evidence-cited proposal → governor review) and `platform-invariants.md` is the natural home for future retro-adopted platform rules.
+- Origin artifacts: binvoice commit of platform-invariants.md (2026-06-10), GSD-T Decision Log M85 plan-hardening entries (archived in m85 milestone snapshot).
+- Scope: ~2 domains (template + pre-mortem/plan wiring; debug workflow micro-stage + contract + lint), 1 wave.
+
+## 32. Proportional gating — deterministic diff-scoped verification lanes (trivial changes stop paying the full toll)
+
+**Added**: 2026-06-12
+**Type**: framework feature
+**Origin**: user, watching binvoice 2026-06-11/12 — "mostly UI changes taking a very long time… they should be completed very quickly," then proposing a scoping/risk session that skips preflight + full gating when changes are trivial. Evidence: 11 quick runs in ~27h each paying the full battery (server 426 + web 288 + root 567 + tsc ×3 + builds + 39 Playwright + live smoke + doc ripple) — truly-UI-only quicks landed in ~12 min, so the fixed floor dominated; meanwhile 3 of 5 "trivial UI" requests were actually pipe bugs (silent extension egress CRITICAL, missing /orders/stats endpoint, orphaned PairingTokenPanel), proving INTENT-based triage misclassifies.
+
+### Design (settled in discussion 2026-06-12)
+- **Triage is computed from the DIFF, not judged from intent.** Post-edit, pre-commit, a deterministic classifier (a calculator in the disjointness-oracle/competition-judge house style — NOT an LLM confidence claim; the agent wanting to skip the gate must not grade its own exam, per feedback_deterministic_orchestration) assigns a lane from changed files/surfaces:
+  - **Lane 0** docs/comments/md → commit gates only.
+  - **Lane 1** style-only (tokens/CSS/classNames, zero logic delta) → tsc + affected package units + Playwright specs mapped to affected screens (M52 journey-coverage tooling already maps components→specs).
+  - **Lane 2** single-package logic, no contract/schema/API/IPC/money surface → package battery + targeted E2E.
+  - **Lane 3** contracts/schema/IPC/cross-package/payment paths → full battery (today's behavior).
+  - Ambiguity, allowlist miss, or mixed batch → FAIL TOWARD Lane 3.
+- **Skip = deferral, never exemption** (preserves feedback_no_silent_degradation): lane-skipped changes accumulate in a ledger; the FULL battery sweeps the accumulated delta at next milestone verify or every N skipped commits. Lane decision surfaced loudly per run (`lane: style-only · full battery deferred (4 commits pending)` — model-profile-style surfacing).
+- **Tripwire learning loop**: a sweep-attributed regression from a lane-skipped commit promotes that file-class out of its cheap lane.
+- **Up-front scoping session** = planning/estimation aid only ("looks like Lane 1, ~10 min"), never the enforcement point — intent-time enforcement is exactly how "just UI" becomes an unverified server endpoint.
+
+### Lane-scoped EXECUTION path + per-lane SLOs (added 2026-06-12 from the unit-price-column discussion)
+The full battery is only ~half the 15–20 min cost of a trivial change; the other half is workflow CEREMONY (preflight agent + brief generation + worker spawns ≈ 3–5 min) and milestone-grade doc ripple (~2–3 min) that buy nothing for a one-component edit. So lanes scope the EXECUTION PATH, not just the tests:
+- **Lane ≤2 → LEAD-DIRECT**: the lead agent makes the change in-session — no preflight agent, no brief, no worker spawn (codifies the existing "localized bugs: hands-on fix, not spawns" memory as a classifier-triggered rule, not a judgment call). Lane 3 → full quick/execute workflow as today.
+- **Right-sized doc ripple**: Lane 0/1 = one-line decision-log entry + commit; milestone-grade paragraphs reserved for Lane 3.
+- **Falsifiable per-lane SLOs (measured, not claimed — per feedback_measure_dont_claim)**: Lane 1 exemplar — "add a unit-price column to a grid where the data is already captured": command-start → commit **≤5 min wall-clock**, demonstrated on a real change in a real project (edit ~2 min + targeted gates ~1.5 min [tsc + affected package units + mapped Playwright spec] + one-line ripple + commit ~1 min). Current measured baseline: 15–20 min (binvoice 2026-06-12, user-reported + commit-cadence-confirmed).
+
+### Relation to existing items
+- Same proportionality theme as #31 (pre-mortem severity floors/cycle budgets) — the framework lacks effort calibration in BOTH directions: gates that can't shrink (this item) and adversarial loops that can't stop (#31/TD-294).
+- Tension acknowledged: Lane 1/2 deliberately relax the E2E-always enforcement rule (born from real burns) — the deferral ledger + sweep is what makes that relaxation safe and repayable, not silent.
+- Scope: ~2-3 domains (diff classifier cjs + ledger; quick/execute workflow lane wiring + surfacing; contract + lint + docs), 1-2 waves.
+
+## 33. Firing debug-cycle circuit-breaker + repro-fixture-on-regression (stop the whack-a-mole)
+
+**Added**: 2026-06-15
+**Type**: framework feature
+**Origin**: user, after the binvoice FB-modal-comment-capture saga of 2026-06-15 — a "working perfectly yesterday afternoon" feature that took **~50–100 conversational turns across two sessions** to (partially) fix. Forensic retro of sessions `4d91f5df` (fix saga) + `74d40b58` (still-open continuation). Two genuinely EXTERNAL root causes (FB moved the "Open post" modal into a child iframe → content script ran top-frame only; FB dropped `data-comment-id` off comment articles) were first misdiagnosed as binvoice's own reconcile/PAST work, then GSD-T spent an afternoon patching DOM-position heuristics one variant at a time — **7 commits, all `m61(debug-cycle1)`, each a fix-for-the-prior-fix** — culminating in a commit literally titled "end the 5-cycle whack-a-mole." The convergent architectures (TEXT-FIRST; then one-scanner/two-views) were **designed and FORCED by the user**, not arrived at by GSD-T. As of the last session the bug is still open (no commit; user demanding pseudocode before allowing more edits).
+
+### The two diagnosed failure modes (both have a documented rule that did NOT fire)
+1. **The debug loop has no circuit-breaker that actually fires.** The rule exists ([[feedback_coverage_check_structural_not_substring]]: ">2 cycles, each fix spawns a variant = design defect → halt + escalate"). GSD-T COULD see it was looping — it explicitly counted "third distinct cause", "four cycles deep… may be a 5th variant", "wrong twice in a row… that oscillation is a signal" — and **immediately dispatched another point fix each time**, routing to `/gsd-t-debug` 18 times. Self-aware NARRATION was substituted for the required ACTION. It deferred the rethink to "after this next patch lands" (a contingent future halt = no halt).
+2. **No reproduction-first discipline on a "worked yesterday" regression.** Diagnosis depended entirely on the user hand-running console probes and pasting DOM blobs; there was no fixture-driven repro until the user's two HTML blobs became "killing fixtures" — at the very END. Failures were silent (comments vanished, no signal) → an hour of console spelunking to localize ONE drop. Each fix was eyeballed by the user, not measured.
+
+### Design (three pieces; deterministic, in the disjointness-oracle / competition-judge house style — the agent in the loop must not grade its own exit)
+1. **Hard same-symptom cycle counter that BLOCKS, not warns** (`gsd-t-debug.workflow.js` + debug-loop contract + a `bin/gsd-t-debug-cycle-ledger.cjs`): a deterministic ledger keys cycles by symptom-signature (failing assertion / surface / file-class — computed, not the agent's prose label). On the **3rd** dispatch against the same signature the workflow HARD-STOPS the patch path and forces a mode switch: stop dispatching point fixes → write the INVARIANT being violated → re-derive the model → escalate to the user with the cycle history. No "I'll stop after this one." This is the firing teeth #31's micro-pre-mortem and TD-294's quiescence both assume but neither enforces at the loop level. (Counts variant-spawning: a fix that closes signature A but opens signature B still increments the loop, because "each fix spawns a new variant" is the exact pathology.)
+2. **Repro-fixture-on-regression, captured BEFORE the first fix** (debug workflow preflight, when symptom = "worked before / regression"): the failing input is captured as a deterministic fixture (DOM blob, payload, state snapshot) and a RED test asserting the symptom is written first; every subsequent cycle must move that test red→green and keep it green. Converts "eyeballed by the user each round" into "measured each round" (per [[feedback_measure_dont_claim]]), and turns silent drops into loud failures. The user's own DOM blobs becoming "killing fixtures" at the END is the proof this belongs at the START.
+3. **Anchor-last default for DOM/scraping work** (stack rule `templates/stacks/_scraping.md` or `web-extension.md`): when extracting from a third-party DOM you don't control, default to **text/content-first, structural-anchors-last** — locate the stable content (e.g. `dir="auto"` comment bodies — "the single most stable thing in FB's DOM"), then walk up to synthesize structure; never gate capture on a structural attribute (`data-comment-id`) that the platform can drift overnight. The user derived TEXT-FIRST from first principles in one turn; GSD-T should ship it as a default so the next scraper doesn't relearn it over 50 turns. Pairs with #31's platform-invariants ("invariants not mechanisms" — anchor on content, not on the vendor's current attribute names).
+
+### Relation to existing items
+- **Completes the #31/TD-294 pair from the OTHER side.** #31 adds a micro-pre-mortem to REDUCE what each debug cycle introduces; TD-294 fixes when adversarial gates STOP; this item makes the debug loop ITSELF stop and escalate when it's not converging. #31 reviews the fix; #33 governs the loop dispatching fixes.
+- **Same root evidence base as #31** (binvoice, "cycle-N fix creates cycle-N+1 finding") — now reproduced a second time in the same week on the FB-modal saga, which is exactly the ≥2-session same-root-cause bar the retro agent (#27) is supposed to clear. This item is another manual prototype of that pipeline.
+- Tension: piece 2 (repro-first) overlaps #32's proportional gating — a Lane-≤2 hands-on fix should NOT pay full milestone repro ceremony. Resolution: the regression-fixture is cheap (one RED test + the captured input), is itself the Lane gate for the fix, and only escalates to full battery if the cycle counter fires.
+
+## 34. Intention-first pseudocode as the milestone source-of-truth (two-altitude behavior map BEFORE the build)
+
+**Added**: 2026-06-17
+**Status**: PROMOTED → M87 (risk-first framing, DEFINED 2026-06-17; partition/plan deferred)
+**Type**: framework feature (HIGH leverage — changes the front of every milestone)
+**Origin**: user, from the binvoice `PseudoCode-PayPal.md` + `PseudoCode-Extension.md` exchange (session `35b4cbd7`, 2026-06-17). Reframed by the user: this is NOT a corrective tool (catching what the agent got wrong) — it is a GENERATIVE one. "It allowed me to work out all of the details in an expressive way that made it clear what's going to happen and why and when." The PayPal exchange did expose one unintended web-app assumption (agent over-trusted the shipped S2-M4 stored-draft model; user killed it: "We shouldn't be saving any draft of anything"), but that was a side effect. **The thesis: do the pseudocode FIRST so you never get it wrong** — and it applies MOST to greenfield, where there is no shipped code to ground in, so the pseudocode IS the spec. The user wrote the original Extension doc by hand precisely because GSD-T "wasn't understanding me"; this bakes that hand-rolled rescue into the methodology so it's never needed as a rescue again.
+
+### The format that works (observed, from the two binvoice docs)
+Each section pairs an `> **Intention ({Author}, {date}).**` prose block (the WHY / the directive — dated + attributed for durable provenance) ABOVE a `text` pseudocode block (the verified HOW), plus: a "one call in one breath" summary table, a guard-enumeration map rendering every invariant as a one-line `[RULE]`, explicit `⚠ Divergence` flags wherever a new intention supersedes shipped code, and a raw-pseudocode appendix with the intention prose stripped (the build's quick-reference). Grounds in EXISTING contracts/schema rather than inventing field names; defers concrete identifiers to plan-time-against-real-schema ("the concept is what matters here").
+
+### Design (settled with user 2026-06-17)
+- **Lives INSIDE milestone definition** (`/gsd-t-milestone` + its workflow), at TWO ALTITUDES:
+  1. **High-level pseudocode first** — the general approach: what happens, why, when, the actors and the one-breath summary. User signs off that the APPROACH is right before any detail.
+  2. **Detailed pseudocode** — decomposed to `PseudoCode-[Title].md` at the granularity of the binvoice PayPal doc (per-step intention+mechanism, guard map, divergence flags, appendix). **The milestone is not "DEFINED" until the detailed doc is signed off.** Naming: `[Title]` = the doc's SUBJECT (e.g. `PseudoCode-PayPal.md`), not a milestone id — many per project, possibly several per milestone (one per subsystem). `templates/PseudoCode-spec.md` is the shipped mold, not an instance.
+- **Source of truth, mechanically downstream (the load-bearing decision):** partition/plan TRACE tasks to pseudocode sections (each task cites the section it implements; a section with no task = coverage gap, like journey-coverage); verify CHECKS the build against the doc's intentions + guard map — **the `[RULE]` map becomes test assertions**, and a divergence is a FAILURE, same severity as a contract breach. This is what makes the user's payoff real: "if the pseudocode is done well before the milestone starts, partition→plan→execute→verify runs autonomously and delivers exactly what's expected" — no 50-turn course-corrections, because the course was set in confirmed language.
+- **Default ON for ALL milestones** (greenfield included — it benefits most), explicitly skippable per-milestone for trivial work (skip is a logged decision, not silent — per [[feedback_no_silent_degradation]]).
+- **The one guardrail from the observed failure:** before encoding ANY model inherited from shipped code, the agent MUST ask **"keep this or supersede it?"** per inherited model (the stored-draft over-trust is the exact failure this prevents) — and every supersede gets a `⚠ Divergence` flag. Combines keep-or-supersede (prevents the wrong draft) + divergence-flag (documents it durably).
+- **Document ripple (user-required):** `PseudoCode-[Title].md` joins the living-documents ripple set — when code/contract/schema changes during the milestone, the pseudocode doc updates in the same pass (Pre-Commit Gate + `commands/gsd-t-doc-ripple.md` + the Living Documents table in `templates/CLAUDE-global.md`). The doc stays the truth, not a stale start-of-milestone snapshot.
+- **Template:** ship `templates/PseudoCode-spec.md` (the intention/mechanism/guard-map/divergence/appendix skeleton + the two-altitude structure), anchored to the binvoice exemplars rather than a blank page.
+- **Conciseness:** the observed exchange had wordy explanation detours (the rejected "snapshot" tangent). The doc's prose is INTENTION (yours), not the agent's reasoning — agent reasoning stays out of the doc; the Output Style rules apply to the chat around it.
+
+### Relation to existing items
+- **Reframes #33 from the front.** #33 (debug circuit-breaker) and #31 (micro-pre-mortem) reduce/stop damage DURING the build; #34 prevents the wrong build from starting — "do it right first" vs "stop doing it wrong." The strongest pairing in the backlog: #34 sets the contract, #31 hardens the plan against it, #33 halts if execution drifts.
+- **Supersedes part of the partition/plan competition framing for spec'd milestones** — when the behavior map is signed off, there is less solution-space to compete over; competition (M82) shifts UP to the high-level-approach altitude (which general approach), not down at mechanism.
+- **Feeds verify's orthogonal triad** — the guard `[RULE]` map gives QA concrete contract-compliance assertions and the Red Team a pre-enumerated attack surface (every guard is a thing to try to break).
+- Scope: ~2–3 domains (milestone command + workflow two-altitude flow + sign-off gate; pseudocode template + traceability wiring into plan/verify [extend the #83 traceability-gate to cite pseudocode sections]; doc-ripple integration + Living Documents table + contract). 1–2 waves. Candidate for early promotion — it's the highest-leverage process change in the queue and directly attacks the "50–100 turns to get it right" pain measured twice this month.
+- Scope: ~2–3 domains (debug-cycle ledger cjs + workflow block + contract; repro-fixture preflight + workflow wiring; scraping stack rule + docs), 1–2 waves. The cycle-ledger + the firing block are the load-bearing half.
+
+## 35. M88 — Deterministic gates for PseudoCode soft-ACs (sign-off state, map-generation path, triad-consumption seam, divergence grammar)
+
+**Added**: 2026-06-17
+**Type**: framework feature
+**Origin**: M87 plan-phase pre-mortem cycle-4 split (2026-06-17). M87 ("Intention-First PseudoCode as Milestone Source-of-Truth") was split after 4 pre-mortem cycles (8→5→2→6 findings): the deterministic core (the `[RULE]` guard-bridge gate A1, section-coverage A2, ripple drift lint A4, regression bar A6) stays in M87 and ships now; FOUR acceptance criteria that set the same deterministic-gate bar but cannot meet it as-scoped without their own design move here. **Depends on M87** — the guard-bridge gate (`bin/gsd-t-guard-map.cjs`) and the two-altitude milestone FLOW must exist before these gates can attach to them.
+
+### The four moved pieces (each: WHAT moved + WHY it needs its own design)
+
+1. **A3 — machine-checkable sign-off STATE + `isDefined(milestone)` predicate.**
+   - **WHY**: there is NO milestone-state artifact in the codebase today — "DEFINED" is prose an LLM writes into `.gsd-t/progress.md`, not a code-readable marker. A deterministic gate ("milestone is not DEFINED until the detailed `PseudoCode-[Title].md` is signed off; signing flips the state; skip is a logged decision, never silent default-off") requires first DESIGNING a concrete sign-off marker (a structured field / sidecar / front-matter stamp the gate can read) and a `isDefined(milestone)` predicate over it. M87 ships only the two-altitude FLOW + keep-or-supersede PROMPT as prose/protocol; M88 designs the STATE the gate reads and the gate itself.
+   - Killing test (M88): unsigned detailed doc → predicate returns NOT-DEFINED; signing flips it; skip emits an assertable logged decision.
+
+2. **A1 map-GENERATION path + its end-to-end test.**
+   - **WHY**: M87's A1 proves the gate DISCRIMINATES a build→rule map (faithful map → exit 0, doctored map → exit non-zero, RULE-ID named). But the A1 doctored fixture differs only in the LLM-PRODUCED `--map` JSON (the doc stays byte-identical) — so the path that DERIVES the map from the build (which test assertions back which `[RULE]`) is untested. M88 designs the mechanical map-generation seam (build evidence → `{rules:{<id>:{backedBy:[...],contradicted:bool}}}`) and an end-to-end test that runs derivation → gate on a real build, closing the gap M87's map-only doctoring leaves open.
+   - Killing test (M88): a real build's derived map, fed to M87's gate, exits 0 on a faithful build and non-zero when a backing assertion is removed — derivation included, not hand-authored.
+
+3. **A5 — verify-triad consumption as a DETERMINISTIC seam-check.**
+   - **WHY**: A5 ("the `[RULE]` set is consumed by verify's QA + Red Team frames") was framed as observable on a live triad run, which is non-deterministic (an LLM frame's contents). Reframe it as a deterministic SEAM-CHECK: assert the `qa-subagent.md` / `red-team-subagent.md` prompts contain the structured directive to ingest the rule set, plus a unit test that feeds guard-map JSON through the consuming code path and asserts the rule IDs surface — NOT a live triad run. M88 gives it that deterministic design (M87 leaves A5 out of the gated core entirely — the integrate-time seam M87-INT-T1 is descoped).
+   - Killing test (M88): prompt-presence assertion (structured directive present) + a unit test feeding guard-map JSON to the consumer, asserting each derived RULE-ID surfaces in both the QA contract-compliance frame and the Red Team attack-surface frame; a missing directive or dropped rule FAILS.
+
+4. **SC4 — divergence-grammar `parseDivergence()`/`formatDivergence()` round-trip.**
+   - **WHY**: SC4 has two halves. The "agent ASKS keep-or-supersede per inherited model" half is an inherent prose PROTOCOL (its reliability is bounded by how forcing the prompt is — not a deterministic gate) and ships in M87's D3 keep-or-supersede prompt. The OTHER half — a deterministic `parseDivergence()`/`formatDivergence()` grammar round-trip over the `⚠ Divergence: …` flag (per contract §4) so the divergence count is a checkable artifact that can feed the rule map — IS deterministically gateable but needs its own grammar-implementation design. M88 builds the parse/format round-trip; the §4 grammar definition already exists in `pseudocode-source-of-truth-contract.md` (annotated "M88", not deleted).
+   - Killing test (M88): a `⚠ Divergence` line round-trips format→parse→format byte-stable; a malformed flag FAILS; the divergence count is emitted as a checkable artifact.
+
+### The deterministic-gate bar (set by M87, the entry criterion for M88)
+M87 establishes the bar these four must meet: a gate's pass/fail is DETERMINISTIC CODE with ZERO LLM judgment, structural/path-as-path never substring (`feedback_coverage_check_structural_not_substring`), proven by a killing test against byte-verbatim fixtures, with no silent degradation (`feedback_no_silent_degradation`). Each moved piece fails this bar AS-SCOPED in M87 (no state artifact / untested derivation path / non-deterministic live-run framing / unimplemented grammar) — M88 designs each up to the bar.
+
+### Relation to existing items
+- **Strictly downstream of M87** — cannot start until M87 ships the guard-bridge gate + the two-altitude flow these gates attach to.
+- Pairs with #31 (micro-pre-mortem) + #33 (debug circuit-breaker): #34/M87 sets the contract front-of-milestone, M88 closes the deterministic gates around it, #31 hardens the plan, #33 halts on drift.
+- Scope: ~3–4 domains (sign-off state + `isDefined` predicate; map-generation seam + e2e test; triad seam-check; divergence grammar round-trip), 1–2 waves. Each piece is independently gateable once its design lands.
+
+## 36. M89 — Auto-Research: deterministic external-info-gap resolution at every workflow phase — **PROMOTED → M89 (2026-06-18), IN PROGRESS**
+
+**Added**: 2026-06-18
+**Type**: framework capability (HIGH leverage — affects every phase)
+**Origin**: user, 2026-06-18, watching binvoice S2-M5 (PayPal Invoicing v2) plan block on a pre-mortem where 2–3 of 6 findings were EXTERNAL-API facts not in the repo (PayPal OAuth `/v1/oauth2/token` mint/seed contract; PayPal v2 invoice TOTAL amount limit; browser popup-blocker behavior). These recur every PayPal cycle because the agent GUESSES the third-party contract instead of looking it up. Contrast M87 (0 of 7 findings web-resolvable — pure introspection): the discriminator is **internal vs external fact**. User directive: "implement this now, pause M87; include it at any phase where web research can resolve issues or improve the result."
+
+### Design (full definition in progress.md § Current Milestone M89)
+Deterministic trigger (not advisory prose — the existing CLAUDE-global Research Policy is LLM-discretion that doesn't fire, per `feedback_deterministic_orchestration`): DETECT gap → CLASSIFY internal/external (`bin/gsd-t-research-gate.cjs`) → external runs a web-research `agent()` stage that returns facts WITH SOURCE URLs → CITE into the phase artifact as a Verified-Facts block before proceeding. Internal gaps route to grep/Read, never the web (no latency/noise tax — the M87 lesson). Hooks into plan/pre-mortem/partition/discuss/milestone/execute/debug/impact/quick/wave — every phase where external info pays. Labeled-corpus A1 test = the 13 real findings (7 M87 → 0 external, 6 S2-M5 → 2–3 external). Risk-first: W1 proves the classifier on the corpus before wiring. Immediate dogfood: S2-M5's blocked plan re-runs with auto-research → #1/#3 resolved by cited PayPal facts.
+
+### Relation
+- **Why first, ahead of M87:** its evidence came partly FROM M87's plan loop (external-fact findings recurring) + binvoice S2-M5 live; M87 is paused at plan-cleared/pre-execute and resumes after M89.
+- Complements #33 (debug circuit-breaker): a debug cycle whose root is an external unknown should RESEARCH, not patch-guess — M89's debug hook + #33's halt are the two halves.
+- Supersedes the advisory "Research Policy" prose in CLAUDE-global.md with a deterministic trigger (doc-ripple).
+
+## 37. Flaky CLI-subprocess test: `gsd-t status` hangs ~123s under cold parallel load → false CI-parity FAIL
+
+**Added**: 2026-06-18
+**Type**: tech debt (test-infra) | **App**: gsd-t | **Category**: test
+**Origin**: surfaced during M89 verify (2026-06-18). `test/filesystem.test.js` → "CLI subcommands" → "status subcommand runs without error" `execFileSync(node, [CLI, "status"], {timeout: 15000})` ran **~123s** and false-failed the cache-cleared CI-parity gate, blocking M89's verify BEFORE the triad. In isolation the same test passes 40/40 in **372ms**. Last touched M61 (`e6afbab`) — NOT M89; M89's own suite is 1804/0 warm. So it's a pre-existing flake exposed by cold + parallel suite load.
+- **Symptom:** the `gsd-t status` child exceeds its own 15s `timeout` (execFileSync SIGTERM doesn't reliably kill a child that spawns its own subprocesses / stalls on git or file reads under contention), runs to ~123s, fails the run.
+- **Two candidate root causes (investigate):** (a) the TEST is fragile — needs a real child-tree kill + a generous-but-enforced timeout, or stub the subprocess; (b) `gsd-t status` itself has a latent slow/hanging path under cold cache or parallel git access (the more concerning one — a command that hangs 123s in CI is a real UX/CI bug, not just a test issue). Determine which before fixing — if (b), fix the command, not the test.
+- **Decision (user, 2026-06-18):** backlog it, do NOT fix inline; re-verify M89 as-is and accept it may re-flake. If it re-blocks M89 repeatedly, escalate to fix-now.
+- Scope: ~1 domain (diagnose status-under-load, then either harden the test [child-tree kill + timeout] or fix the command's slow path), <1 wave.
+
+## 38. Unproven-assumption guard: stop → research-how-others-solved-it → re-examine premise → then proceed (supersedes M89's narrow scope) — **PROMOTED → M90 (2026-06-21, DEFINED — RESEARCH-GATED; partition/plan deferred; full definition in progress.md § Current Milestone M90)**
+
+**Added**: 2026-06-21
+**Type**: framework capability (HIGHEST leverage — addresses the root pattern behind a week of thrash) | **App**: gsd-t
+**Origin**: user, 2026-06-21, correcting M89's scope mid-flight. M89 framed "guessing" as only "do I know what the code/API currently SAYS?" (factual). The user named the dangerous omission: the system also assumes **an APPROACH/architecture is correct without proof** — "I'll fix it this way", "the existing code was written the right way so I'll build on it" — and **plows forward on the unproven approach**, repeatedly. Evidence (user: "review the last week across several projects"): binvoice FB-modal whack-a-mole + PayPal premise; GSD-T M87 7-cycle plan loop; GSD-T M89 8-cycle verify loop — same pattern every time: guess an approach → plow forward → fail → guess another → repeat, instead of ONE step-back + research + re-architect. M89 PAUSED to redesign around this.
+
+### The doctrine (the real feature)
+Any time the system relies on an UNPROVEN ASSUMPTION — factual (internal/external) OR judgmental (is this approach/architecture correct?) — it must **STOP, research how the problem has been solved successfully by others, RE-EXAMINE the premise, then proceed.** Plowing forward on an unverified approach is the deadly recurring pattern. "Don't act on belief; if not grounded in definitive knowledge or research, research first" — applied to APPROACH, not just facts. See memory `feedback_unproven_assumption_stop_and_research`.
+
+### Design directions (to settle at milestone definition)
+- **Two assumption classes, each with a trigger:** (a) FACTUAL → grep (internal) / web-research (external) — M89's mechanism, kept; (b) ARCHITECTURAL/APPROACH → research how others solved this class of problem + re-examine the premise BEFORE building. The second is new and load-bearing.
+- **Non-convergence = an unproven premise, not a tuning gap.** Hook into the debug-cycle circuit-breaker (#33) and the plan/verify loops: when a loop produces variant-after-variant (binvoice/M87/M89 signature), the system must HALT and re-examine the PREMISE/approach — research-then-rearchitect — not patch the next variant. This is what should have fired ~5 cycles earlier in all three sagas.
+- **No hardcoded finite list for an open category (the M89 vendor-list lesson):** the mechanical/regex layer can only recognize CLOSED knowable sets (this repo's own files); it must NOT enumerate open-ended real-world sets (vendors, API terms, library names). Anything not confidently-internal → LLM judges → uncertain → research. M89's redesign folds into this.
+- **M89's external-fact auto-research becomes the FACTUAL slice of this larger capability** — finish it under this umbrella (delete the vendor list, regex-knows-only-own-paths, LLM-judges-rest), and add the architectural-assumption slice.
+
+### Relation
+- Supersedes/absorbs M89 (#36) — M89's "auto-research external facts" is one slice. Complements #33 (debug circuit-breaker — the loop-halt mechanism this needs) and #31 (micro-pre-mortem). The strongest single GSD-T improvement in the queue: it attacks the root cause of every multi-cycle thrash measured this month.
+- Scope: re-scope at milestone definition; likely ~3–4 domains (factual auto-research [M89 redesigned] + architectural-assumption detection/research + non-convergence→re-examine-premise loop-hook + contract/docs). Multiple waves.
+
+## 39. Red Team Realism gate — separate adversarial-collaboration agent bounds edge-case scope
+
+**Added**: 2026-06-21
+**Type**: framework improvement (verify quality) | **App**: gsd-t | **Category**: prompts/verify
+**Origin**: user, 2026-06-21. The Red Team has NO instruction to weigh likelihood/scope — it escalates contrived/unlikely edge cases to CRITICAL with equal weight to real money/security bugs (rewarded only for FINDING breakage). Inflated the M89 verify loop (cycles spent on baroque homograph/vendor/phrasing combos raised as blocking). The user WANTS hard edge-case hunting — but also wants the question asked: "given the system's purpose + realistic likelihood, is this worth defending NOW?"
+
+### Design (user's instinct + 2 refinements)
+A SEPARATE **Realism agent** the Red Team argues scope with (adversarial-collaboration, mirroring GSD-T's bounded-loop pattern):
+- Red Team finds an edge case, argues it's in-scope → Realism ACCEPTS (blocking finding stands) or REJECTS with an out-of-scope reason.
+- Red Team may push back with updated reasoning — **max 2 attempts.** **2 rejections → DOCUMENTED as "identified, currently out of scope," NOT blocking.**
+- **Refinement 1 (anti-silencer):** the Red Team already proved the bug is REAL; the Realism agent rules ONLY on scope/likelihood-given-purpose, NEVER on validity. **HARD FLOOR: money / security / data-loss / silent-wrong-output is ALWAYS in-scope** — Realism cannot defer it regardless of likelihood. (Would correctly keep M89's out-of-list-vendor finding in-scope — silent-wrong-output.)
+- **Refinement 2 (deferral ≠ dismissal):** out-of-scope cases go to a VISIBLE LEDGER (re-surfaced next milestone, promotable as the product matures) — never silently dropped. Matches the "skip = deferral not exemption" principle (#32).
+- User asked "better suggestion?" — kept the shape, added the two refinements above; user to confirm at milestone definition.
+
+### Relation
+- Lives in `templates/prompts/red-team-subagent.md` + a NEW realism-subagent protocol + the verify workflow triad-synthesis stage. The verify-time dual of the pre-mortem/debug-cycle caps. See memory `feedback_red_team_realism_gate`.
+- Scope: ~1–2 domains (realism-subagent protocol + red-team protocol update + verify-workflow wiring + deferred-ledger + contract/docs), 1 wave.
+
+## 40. complete-milestone must DETERMINISTICALLY archive+sweep the completed milestone's domain dirs (stale-domain accumulation)
+
+**Added**: 2026-06-22
+**Type**: tech debt (workflow-enforcement) | **App**: gsd-t | **Category**: cli/command
+**Scheduled**: implement AFTER M90 is complete AND shipped (CPUA) — user directive 2026-06-22.
+**Origin**: 2026-06-22, M90 plan-phase `gsd-t parallel --dry-run` surfaced 77 stale domain dirs in `.gsd-t/domains/` from ~30 already-completed/archived milestones (m43–m67 prefixed + unprefixed legacy), polluting the file-disjointness oracle. Manually pruned them (commit `5b48384`, kept the 12 in-flight: m90-*/M87/m89-*). That manual sweep is a SYMPTOM — the root cause is permanent.
+- **Root cause (verified on disk):** `commands/gsd-t-complete-milestone.md` Step 7 (lines 404-405) is **prose-only** — "1. Archive current domains → `.gsd-t/milestones/{name}/domains/`  2. Clear `.gsd-t/domains/` (empty, ready for next partition)" — with NO deterministic enforcement. A Level-3 autonomous agent skipped/partially-did the clear every milestone for ~30 milestones. Classic prompt-based-blocking-doesn't-work ([[feedback_deterministic_orchestration]]).
+- **Fix:** a deterministic helper (`bin/gsd-t-archive-domains.cjs` or fold into an existing complete-milestone gate) that, at complete-milestone time, (a) copies the just-completed milestone's domain dirs → `.gsd-t/milestones/{name}-{date}/domains/`, then (b) `git rm`s them from `.gsd-t/domains/`, leaving ONLY domains belonging to still-active (defined-but-incomplete) milestones. Must be IDEMPOTENT and identify "this milestone's domains" precisely (the partition's domain set for the completing milestone — NOT a blanket wipe, since a later milestone may legitimately have live domains, e.g. M90 completing while M87/M88 are still queued). Verify with a test: seed N stale + M live domains, run the sweep, assert exactly the completed set is archived+removed and the live set untouched.
+- **Containment guard:** apply the destructive-path rule ([[feedback_destructive_path_ops_containment]]) — the recursive remove must refuse any path resolving outside `.gsd-t/domains/` or equal to it.
+- **Doc-ripple:** Step 7 prose → "runs `bin/gsd-t-archive-domains.cjs` (deterministic)"; complete-milestone command + GSD-T-README + CHANGELOG.
+- Scope: ~1 domain (the helper + its test + complete-milestone wiring + doc-ripple), 1 wave. Small, localized — hands-on fix, not a headless spawn ([[feedback_dont_keep_spawning_milestones]]).
+
+## 41. `buildTaskBrief` / `extractTask` (bin/gsd-t-task-brief.js) can't parse Shape-D tasks.md headings — dead against real domains
+
+**Added**: 2026-06-22
+**Type**: tech debt (stale-tool) | **App**: gsd-t | **Category**: cli
+**Origin**: 2026-06-22, while fixing the m40 self-test that my domain-prune broke. `extractTask` (bin/gsd-t-task-brief.js:33) builds `headerRe = /^###\s+Task\s+<num>\b/` — the OLD `### Task N: title` heading format. Current domains use Shape-D `### Mxx-Dx-Tx — title` (since the M61 Shape-D migration, per [[feedback_plan_for_parallel_execution]]). So `buildTaskBrief` returns "task not found" for EVERY real domain on disk — the tool is effectively dead against live milestones; only the synthetic `### Task N` fixture in m40-task-brief.test.js exercises it.
+- **Question to resolve first (don't assume):** is `bin/gsd-t-task-brief.js` still USED anywhere? The M61 platform reconciliation moved briefs to `bin/gsd-t-context-brief.cjs` (the workflow brief collector). If `gsd-t-task-brief.js` is superseded/orphaned, the fix is RETIRE it (grep requirers, inline-then-delete per [[feedback_retire_scan_against_keep_list]]), NOT update its parser. If still live, update `extractTask` to parse Shape-D headings (`### Mxx-Dx-Tx` + the `**Files**`/`**Test**`/`**Acceptance criteria**` fields).
+- **Interim (done 2026-06-22):** the m40 self-test was repointed from "live repo self-test" to a `mkFixtureProject()` end-to-end test (still exercises the tool, decoupled from live domains) so M90 verify isn't blocked. The deeper parser/retirement decision is this item.
+- Scope: ~1 domain (decide retire-vs-fix, then either delete + requirer-inline or update parser + add a Shape-D fixture test), <1 wave.
+
+## 42. Wire a LIVE spike-feasibility producer for the architectural-trigger response modes (R-FAIL-2 enforcement — M90 option B, deferred)
+
+**Added**: 2026-06-22
+**Type**: feature (doctrine-enforcement) | **App**: gsd-t | **Category**: workflow
+**Origin**: M90 verify, 2026-06-22. User chose option A (declare interface-only) to ship M90; this is the deferred option B.
+- **Plain version:** M90 has a safety check meant to STOP the build when the AI commits to an approach it only *argued* was fine but never actually *tested* (ran code to prove it). Today that check is a smoke detector with no sensor wired — installed, looks real, can never beep. M90 shipped it DECLARED interface-only (honest "not wired yet") rather than hidden-hollow. This item wires the sensor.
+- **What's missing:** a DECIDER that, given an approach an agent is about to build on, judges "can I write a quick throwaway script to actually test this premise? (spikeFeasible yes/no)" and feeds that into `bin/gsd-t-architectural-trigger.cjs::resolveResponseMode({spikeFeasible, spikePassed})`. Only then does `provenByAdversaryOnly:true` ever get raised, and only then can R-FAIL-2 genuinely fire. The natural home is the blind-adversary stage (`templates/prompts/blind-adversary-subagent.md`) wired into execute/quick/phase.
+- **EXPERIMENTAL — no published precedent** for reliably auto-deciding spike feasibility; expect this to need its own prove-or-kill. Likely re-opens the same convergence risk M90's verify hit, so gate it hard.
+- **Companion rule (user, 2026-06-22):** an UNSTATED requirement is a QUESTION FOR THE USER, never an assumption to spike or adversarially argue. The decider must route "is this even a requirement?" to the human, not auto-resolve it. ([[feedback_no_confabulated_examples]])
+- **Flip-on-land:** doctrine contract §2.2/§4 currently say "interface-only this milestone"; when this lands, R-FAIL-2 flips from declared-interface-only-PASS to genuinely-fireable, and the verify gate's grep-for-live-producer detects it automatically.
+- **Fold in (Red Team LOW, M90 verify fc9):** the arch-trigger instrumentation sink swallows write errors (best-effort append) — when a live producer exists, an unwritable sink → R-FAIL-2 count stays 0 → fail-OPEN. The live-producer wiring must make the sink write fail-closed (or verify must detect an unwritable/absent sink as a hard error, not a 0-count pass).
+- Scope: ~1–2 domains (the spike-feasibility decider + blind-adversary wiring + the human-ask routing for unstated requirements + R-FAIL-2 live-fire test), multi-wave, EXPERIMENTAL.
+
+## 43. Classifier mis-routes an external SDK fact to internal/grep when a repo path co-occurs (M90 D3 MEDIUM edge)
+
+**Added**: 2026-06-22
+**Type**: tech debt (classifier-edge) | **App**: gsd-t | **Category**: cli
+**Origin**: M90 verify Red Team MEDIUM, 2026-06-22. Confirmed on disk.
+- **Plain version:** Ask "what does AWS's `putObject` return — check our `upload.js`." The right move is look up AWS's docs (external). But because you named one of your own files in the same breath, the classifier says "this is about your code, just grep locally" and never checks AWS — it'd answer confidently from your repo alone and could be wrong about AWS.
+- **Repro:** `node bin/gsd-t-research-gate.cjs classify "what does the AWS S3 putObject return — see our src/upload.js"` → `{class:internal, route:grep}`. AWS/S3/putObject is an unlisted external SDK fact; the no-strong-external branch lets a repo path-anchor win, violating §1's "never guess-internal for an external fact."
+- **Root:** the premise-corrected vendor list (kept as an external→web *upgrade*) doesn't cover AWS/S3/putObject, so `hasStrongExternal` is false; then the path-anchor makes it internal. A co-occurring external-SDK signal should at least downgrade to `ambiguous→judge`, not assert internal.
+- **Fix direction:** when an external-API-shaped token co-occurs with a repo path and there's no strong-external vendor match, route `ambiguous→judge` (let the LLM decide), never `internal`. Add to the corpus + held-out fixture.
+- Scope: ~1 domain (classifier branch + corpus rows), <1 wave. Deferred from M90 to avoid a classifier change right before shipping (kept verify stable).

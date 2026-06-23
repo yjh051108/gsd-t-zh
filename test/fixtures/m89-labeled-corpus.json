@@ -1,0 +1,97 @@
+{
+  "_comment": "M89 D1 SEEN labeled corpus (the A1 killing oracle), v1.3.0 3-result mechanical-filter design. 13 items hand-labeled. Input is a GUESSED CLAIM. The classifier is a MECHANICAL STRING-FACT FILTER returning internal | external | AMBIGUOUS: internal ONLY on a string-fact this-repo signal (concrete repo path/file/tool shape OR explicit this-repo anchor); external ONLY on an unambiguous vendor proper-noun co-occurring with an API/protocol term; AMBIGUOUS for everything else (semantic placement = the LLM judge's call, then uncertain->research). Items 1-7 (M87 findings) are repo-internal: 6 carry an explicit string fact (this-repo anchor or path/tool shape) -> internal; M87-F5 ('which contract FILE defines the disjointness rules') carries NO concrete string fact (generic 'contract file', no -contract.md shape) so it is AMBIGUOUS -> LLM judge -> grep resolves it internally (no silent miss). Items 8-13 (binvoice S2-M5): S2M5-F1 + S2M5-F4 carry an unambiguous vendor(PayPal)+api-term string fact with NO anchor -> external; S2M5-F5 (browser popup-blocker, NO vendor proper noun) is AMBIGUOUS -> LLM judge -> research; S2M5-F2 (invoice schema in this repo's Mongo) + S2M5-F3 (route handler in this repo) carry a this-repo anchor with NO strong external signal -> internal; S2M5-F6 (this-repo DB fields VS the PayPal API return) has BOTH a this-repo anchor AND a strong external signal (paypal+api) -> CONFLICT -> AMBIGUOUS (v1.3.2 class-closing rule: a generic anchor cannot override a strong external signal). The point of the oracle is unchanged: the classifier decides by string FACTS, never by guessing; and an anchor phrase NEVER routes an external-vendor claim internal (only a CONCRETE REPO PATH beats a strong external signal).",
+  "items": [
+    {
+      "id": "M87-F1",
+      "source": "M87 plan findings",
+      "gap": "Which domain in this repo owns the gsd-t-wave.workflow.js file?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep"
+    },
+    {
+      "id": "M87-F2",
+      "source": "M87 plan findings",
+      "gap": "What exit code does the gsd-t-verify-gate return when the Biome linter finds violations?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep"
+    },
+    {
+      "id": "M87-F3",
+      "source": "M87 plan findings",
+      "gap": "Does the current Workflow sandbox allow require() calls inside a .workflow.js file?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep"
+    },
+    {
+      "id": "M87-F4",
+      "source": "M87 plan findings",
+      "gap": "What is the shape of the envelope that gsd-t-competition-judge.cjs returns on a valid partition input?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep"
+    },
+    {
+      "id": "M87-F5",
+      "source": "M87 plan findings",
+      "gap": "Which contract file defines the disjointness rules for file-ownership across domains?",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge"
+    },
+    {
+      "id": "M87-F6",
+      "source": "M87 plan findings",
+      "gap": "What test in this repo asserts that every workflow model: literal matches the tier policy?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep"
+    },
+    {
+      "id": "M87-F7",
+      "source": "M87 plan findings",
+      "gap": "How does the existing gsd-t-traceability-gate.cjs enumerate behavioral tasks vs non-behavioral tasks in tasks.md?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep"
+    },
+    {
+      "id": "S2M5-F1",
+      "source": "binvoice S2-M5 findings",
+      "gap": "What is the exact endpoint path and required request body fields for the PayPal OAuth /v1/oauth2/token token-mint call?",
+      "expectedClass": "external",
+      "expectedRoute": "web"
+    },
+    {
+      "id": "S2M5-F2",
+      "source": "binvoice S2-M5 findings",
+      "gap": "What is the schema of the invoice object stored in the invoices collection in this repo's Mongo schema?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep"
+    },
+    {
+      "id": "S2M5-F3",
+      "source": "binvoice S2-M5 findings",
+      "gap": "Which route handler in this repo handles the POST /invoices/send request?",
+      "expectedClass": "internal",
+      "expectedRoute": "grep"
+    },
+    {
+      "id": "S2M5-F4",
+      "source": "binvoice S2-M5 findings",
+      "gap": "What is the maximum total amount allowed on a single PayPal v2 invoice before the API returns an error?",
+      "expectedClass": "external",
+      "expectedRoute": "web"
+    },
+    {
+      "id": "S2M5-F5",
+      "source": "binvoice S2-M5 findings",
+      "gap": "Does the browser's built-in popup blocker block window.open() calls triggered from setTimeout handlers rather than direct user events?",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge"
+    },
+    {
+      "id": "S2M5-F6",
+      "source": "binvoice S2-M5 findings",
+      "gap": "What fields does the PayPal invoice draft stored in this repo's database contain vs what the API returns?",
+      "expectedClass": "ambiguous",
+      "expectedRoute": "judge",
+      "_note": "v1.3.2 class-closing rule: this claim has TWO subjects — this-repo DB fields (anchor 'this repo's') AND the external PayPal API return (vendor 'paypal' + api term). A generic anchor cannot override a strong external signal, so this is a genuine CONFLICT → ambiguous → LLM judge (which can split it: grep the DB fields, research the API return). Was 'internal' under the obsolete anchor-wins rule that allowed the silent-miss class; correctly ambiguous now."
+    }
+  ]
+}

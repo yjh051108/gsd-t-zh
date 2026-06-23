@@ -1011,12 +1011,17 @@ function configureAutoRouteHook(scriptPath) {
 const HOOKS_DIR = path.join(SCRIPTS_DIR, "hooks");
 const PKG_HOOKS = path.join(PKG_SCRIPTS, "hooks");
 
-// Each entry: { script, events, async } — `events` is the array of hook event
-// names this script must be wired into. The `gsd-t-conversation-capture.js`
-// hook runs on SessionStart, UserPromptSubmit, and Stop (per the global
-// CLAUDE.md M45 D2 install block — PostToolUse stays opt-in via the
-// GSD_T_CAPTURE_TOOL_USES env flag, so we don't auto-register it).
-// `gsd-t-in-session-usage-hook.js` runs on Stop (per M43 D1 contract).
+// Each entry: { script, events, async, runner } — `events` is the array of hook
+// event names this script must be wired into. `runner` is the interpreter
+// ("node" default, "bash" for *.sh hooks). `async: true` lets the hook run
+// detached; OMIT it for hooks whose stdout must reach the terminal (the
+// ctx-cue banner is synchronous by design — see its header).
+// The `gsd-t-conversation-capture.js` hook runs on SessionStart,
+// UserPromptSubmit, and Stop (per the global CLAUDE.md M45 D2 install block —
+// PostToolUse stays opt-in via the GSD_T_CAPTURE_TOOL_USES env flag, so we
+// don't auto-register it). `gsd-t-in-session-usage-hook.js` runs on Stop (per
+// M43 D1 contract). `gsd-t-ctx-cue.sh` runs synchronously on Stop (M85 —
+// low-context red banner; sync so its stdout reaches the terminal).
 const IN_SESSION_HOOKS = [
   {
     script: "gsd-t-conversation-capture.js",
@@ -1027,6 +1032,11 @@ const IN_SESSION_HOOKS = [
     script: "gsd-t-in-session-usage-hook.js",
     events: ["Stop"],
     async: true,
+  },
+  {
+    script: "gsd-t-ctx-cue.sh",
+    events: ["Stop"],
+    runner: "bash",
   },
 ];
 
@@ -1072,7 +1082,8 @@ function configureInSessionHooks() {
   let added = 0;
   for (const hook of IN_SESSION_HOOKS) {
     const scriptPath = path.join(HOOKS_DIR, hook.script);
-    const cmd = `node "${scriptPath.replace(/\\/g, "\\\\")}"`;
+    const runner = hook.runner || "node";
+    const cmd = `${runner} "${scriptPath.replace(/\\/g, "\\\\")}"`;
 
     for (const event of hook.events) {
       if (!settings.hooks[event]) settings.hooks[event] = [];
@@ -1101,6 +1112,67 @@ function configureInSessionHooks() {
   try {
     fs.writeFileSync(SETTINGS_JSON, JSON.stringify(settings, null, 2));
     success(`${added} in-session hook entr${added === 1 ? "y" : "ies"} configured in settings.json`);
+  } catch (e) {
+    warn(`Failed to write settings.json: ${e.message}`);
+  }
+}
+
+// ─── Status Line ─────────────────────────────────────────────────────────────
+
+// The GSD-T status bar. Canonical source: scripts/statusline-command.sh. Copy
+// it to ~/.claude/statusline-command.sh and point settings.statusLine at it so
+// edits in the package survive install/update/update-all. We only set
+// statusLine when it is absent or already points at our script — never clobber
+// a user's custom status line.
+const STATUSLINE_SCRIPT = "statusline-command.sh";
+
+function installStatusLine() {
+  ensureDir(CLAUDE_DIR);
+  const src = path.join(PKG_SCRIPTS, STATUSLINE_SCRIPT);
+  if (!fs.existsSync(src)) {
+    info("No statusline-command.sh in package — skipping status line");
+    return;
+  }
+  const dest = path.join(CLAUDE_DIR, STATUSLINE_SCRIPT);
+  const srcContent = fs.readFileSync(src, "utf8");
+  const destContent = fs.existsSync(dest) ? fs.readFileSync(dest, "utf8") : "";
+  if (normalizeEol(srcContent) !== normalizeEol(destContent)) {
+    copyFile(src, dest, STATUSLINE_SCRIPT);
+    try { fs.chmodSync(dest, 0o755); } catch {}
+  } else {
+    info("Status line script unchanged");
+  }
+
+  const parsed = readSettingsJson();
+  if (parsed === null && fs.existsSync(SETTINGS_JSON)) {
+    warn("settings.json has invalid JSON — cannot configure status line");
+    return;
+  }
+  const settings = parsed || {};
+  const desiredCmd = `bash ${dest}`;
+  const existing = settings.statusLine;
+  // Set only when absent or already ours (command references our script).
+  const isOurs =
+    existing &&
+    existing.type === "command" &&
+    typeof existing.command === "string" &&
+    existing.command.includes(STATUSLINE_SCRIPT);
+  if (existing && !isOurs) {
+    info("Custom status line present — leaving it untouched");
+    return;
+  }
+  if (isOurs && existing.command === desiredCmd) {
+    info("Status line already configured");
+    return;
+  }
+  if (isSymlink(SETTINGS_JSON)) {
+    warn("Skipping settings.json write — target is a symlink");
+    return;
+  }
+  settings.statusLine = { type: "command", command: desiredCmd };
+  try {
+    fs.writeFileSync(SETTINGS_JSON, JSON.stringify(settings, null, 2));
+    success("Status line configured in settings.json");
   } catch (e) {
     warn(`Failed to write settings.json: ${e.message}`);
   }
@@ -1188,6 +1260,14 @@ const GLOBAL_BIN_TOOLS = [
   "gsd-t-traceability-gate.cjs",
   // M85 — Model-tier policy single source of truth (resolver + predicate).
   "gsd-t-model-tier-policy.cjs",
+  // M86 — Model-profile config + resolver CLI (standard/pro/premium tier-spend switch).
+  "gsd-t-model-profile.cjs",
+  // M89 — Auto-research gate classifier (internal vs external claim routing; no LLM call).
+  "gsd-t-research-gate.cjs",
+  // M90 D1 — Architectural-assumption trigger (divergence-sampling + extend-signal; §2).
+  "gsd-t-architectural-trigger.cjs",
+  // M90 D2 — Loop ledger (non-convergence detection + halt directive; §3).
+  "gsd-t-loop-ledger.cjs",
 ];
 
 function installGlobalBinTools() {
@@ -1537,8 +1617,11 @@ async function doInstall(opts = {}) {
   heading("Auto-Route (UserPromptSubmit)");
   installAutoRoute();
 
-  heading("In-Session Hooks (Conversation Capture + Token Usage)");
+  heading("In-Session Hooks (Conversation Capture + Token Usage + Ctx Cue)");
   installInSessionHooks();
+
+  heading("Status Line");
+  installStatusLine();
 
   heading("Figma MCP (Design-to-Code)");
   configureFigmaMcp();
@@ -2484,6 +2567,18 @@ const PROJECT_BIN_TOOLS = [
   // M85 — Model-tier policy resolver, so command invokers in consumer projects
   // can resolve stage tiers at invoke time (M69 injection pattern).
   "gsd-t-model-tier-policy.cjs",
+  // M86 — Model-profile config + resolver CLI (standard/pro/premium tier-spend switch).
+  "gsd-t-model-profile.cjs",
+  // M89 — Auto-research gate classifier (classify a guessed claim as internal vs external;
+  // propagated to each registered project's bin/ so the workflow runCli fallback resolves
+  // downstream — per [[project_global_bin_propagation_gap]]).
+  "gsd-t-research-gate.cjs",
+  // M90 D1 — Architectural-assumption trigger (divergence-sampling + extend-signal; §2).
+  // Propagated so project-local runCli helpers can invoke it without the global binary.
+  "gsd-t-architectural-trigger.cjs",
+  // M90 D2 — Loop ledger (non-convergence detection + halt directive; §3).
+  // Propagated so project-local runCli helpers (gsd-t-debug.workflow.js) can invoke it.
+  "gsd-t-loop-ledger.cjs",
 ];
 
 // Files that older versions of this installer copied into project bin/ but
@@ -2543,7 +2638,37 @@ function _matchedStraySignature(name, content) {
   return null;
 }
 
+// Self-protection identity check: is this project dir GSD-T's own source repo?
+// Guards BOTH the bin-tool copy loop (copying the installed package's tools over
+// the source repo reverts in-flight work — Red Team M86 r2 HIGH, fired live) and
+// the deprecated-stray sweep (signature-matching bin/gsd-t.js — the installer
+// itself — would delete the source file). Identity is by package.json name, NOT
+// by path — when update-all runs from the globally-installed package, PKG_ROOT
+// points to the global install and realpath comparison against the local source
+// always fails.
+function _isGsdTSourcePackage(projectDir) {
+  try {
+    const pkgPath = path.join(projectDir, "package.json");
+    if (!fs.existsSync(pkgPath)) return false;
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    return !!pkg && pkg.name === "@tekyzinc/gsd-t";
+  } catch {
+    return false;
+  }
+}
+
 function copyBinToolsToProject(projectDir, projectName) {
+  // Self-protection for the COPY loop, not just the stray sweep below: the GSD-T
+  // source repo is legitimately registered as a project during development, and
+  // copying the installed package's bin tools over it REVERTS in-flight work —
+  // fired live during M86 verify (Red Team r2 HIGH: a 4.4.11 update-all clobbered
+  // the committed M86 policy module mid-run; every model-profile call then
+  // hard-crashed until restored from HEAD). The source repo IS the canonical
+  // origin of these tools; propagating into it is wrong in every case.
+  if (_isGsdTSourcePackage(projectDir)) {
+    info(`${projectName} — GSD-T source repo: bin propagation skipped (canonical origin)`);
+    return false;
+  }
   const projectBinDir = path.join(projectDir, "bin");
   if (!fs.existsSync(projectBinDir)) {
     try {
@@ -2577,25 +2702,8 @@ function copyBinToolsToProject(projectDir, projectName) {
       }
     }
   }
-  // Self-protection: NEVER sweep GSD-T's own source repo. Without this guard,
-  // running `gsd-t update-all` with the GSD-T source repo itself registered
-  // as a project (legitimate during development) would signature-match
-  // bin/gsd-t.js — which IS the installer — and delete the source file.
-  // Identity is by package.json name, NOT by path — when update-all runs from
-  // the globally-installed package, PKG_ROOT points to the global install and
-  // realpath comparison against the local source always fails.
-  const isSourcePackage = (() => {
-    try {
-      const pkgPath = path.join(projectDir, "package.json");
-      if (!fs.existsSync(pkgPath)) return false;
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-      return pkg && pkg.name === "@tekyzinc/gsd-t";
-    } catch {
-      return false;
-    }
-  })();
   let cleaned = 0;
-  if (!isSourcePackage) {
+  if (!_isGsdTSourcePackage(projectDir)) {
     for (const stray of DEPRECATED_BIN_STRAYS) {
       const strayPath = path.join(projectBinDir, stray);
       if (!fs.existsSync(strayPath)) continue;
@@ -4247,7 +4355,10 @@ function showHelp() {
   log(`  ${CYAN}graph${RESET}          Code graph operations (index, status, query)`);
   log(`  ${CYAN}headless${RESET}       Non-interactive execution via claude -p + fast state queries`);
   log(`  ${CYAN}design-build${RESET}   Deterministic design→code pipeline (elements → widgets → pages)`);
-  log(`  ${CYAN}help${RESET}           Show this help\n`);
+  log(`  ${CYAN}research-gate${RESET}         Classify a guessed claim as internal (grep) or external (web-research)`);
+  log(`  ${CYAN}architectural-trigger${RESET} Fire the arch-assumption trigger (divergence-sampling | extend-signal)`);
+  log(`  ${CYAN}loop-ledger${RESET}           Record a debug cycle, read exit-state, or clear re-examination flag`);
+  log(`  ${CYAN}help${RESET}                  Show this help\n`);
   log(`${BOLD}Examples:${RESET}`);
   log(`  ${DIM}$${RESET} npx @tekyzinc/gsd-t install`);
   log(`  ${DIM}$${RESET} npx @tekyzinc/gsd-t init my-saas-app`);
@@ -4585,6 +4696,59 @@ if (require.main === module) {
       // resolver (single source of truth for model-tier assignments).
       const { spawnSync } = require("child_process");
       const js = path.join(__dirname, "gsd-t-model-tier-policy.cjs");
+      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
+        stdio: "inherit",
+      });
+      process.exit(res.status == null ? 1 : res.status);
+    }
+    case "model-profile": {
+      // M86 — `gsd-t model-profile` thin dispatcher to the profile config +
+      // resolver (standard/pro/premium tier-spend switch, per-project config).
+      const { spawnSync } = require("child_process");
+      const js = path.join(__dirname, "gsd-t-model-profile.cjs");
+      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
+        stdio: "inherit",
+      });
+      process.exit(res.status == null ? 1 : res.status);
+    }
+    case "research-gate": {
+      // M89 — `gsd-t research-gate classify "<claim>"` thin dispatcher to the
+      // auto-research gate classifier (internal vs external routing; no LLM call).
+      const { spawnSync } = require("child_process");
+      const js = path.join(__dirname, "gsd-t-research-gate.cjs");
+      if (!require("node:fs").existsSync(js)) {
+        error(`gsd-t-research-gate.cjs not found at ${js} — install or build M89-D1 first`);
+        process.exit(1);
+      }
+      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
+        stdio: "inherit",
+      });
+      process.exit(res.status == null ? 1 : res.status);
+    }
+    case "architectural-trigger": {
+      // M90 D1 — `gsd-t architectural-trigger <subcommand>` thin dispatcher to
+      // the architectural-assumption trigger (divergence-sampling + extend-signal; §2).
+      const { spawnSync } = require("child_process");
+      const js = path.join(__dirname, "gsd-t-architectural-trigger.cjs");
+      if (!require("node:fs").existsSync(js)) {
+        error(`gsd-t-architectural-trigger.cjs not found at ${js} — install or build M90-D1 first`);
+        process.exit(1);
+      }
+      const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
+        stdio: "inherit",
+      });
+      process.exit(res.status == null ? 1 : res.status);
+    }
+    case "loop-ledger": {
+      // M90 D2 — `gsd-t loop-ledger <subcommand>` thin dispatcher to the loop-ledger
+      // (non-convergence detection + halt; §3). Subcommands: append-cycle, read-exit-state,
+      // record-re-examination.
+      const { spawnSync } = require("child_process");
+      const js = path.join(__dirname, "gsd-t-loop-ledger.cjs");
+      if (!require("node:fs").existsSync(js)) {
+        error(`gsd-t-loop-ledger.cjs not found at ${js} — install or build M90-D2 first`);
+        process.exit(1);
+      }
       const res = spawnSync(process.execPath, [js, ...args.slice(1)], {
         stdio: "inherit",
       });

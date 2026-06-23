@@ -1,13 +1,22 @@
 "use strict";
 
-// M85 / M71-family — Model-Tier Policy Drift Enforcer
+// M85 / M71-family / M86 — Model-Tier Policy Drift Enforcer
 //
 // Asserts every workflow model: literal is a member of the published tier set,
-// the 5 designated stages resolve to the correct tiers (5 → fable, producers → opus,
+// the 6 designated stages resolve to the correct tiers (6 → fable, producers → opus,
 // debug cycle-1 → opus, debug cycle-2 → fable), and deliberately-drifted fixtures
 // FAIL the checker.
 //
-// Contract: .gsd-t/contracts/model-tier-policy-contract.md v1.0.0 STABLE
+// M86 EXTENDS: also recognises the `??`-override form:
+//   model: overrides["<stage>"] ?? "<premium-literal>"
+// and validates BOTH the bracket key (must be an injectable designated stage, NOT
+// competition-producers) AND the fallback literal (tier set + stage policy).
+// Also handles the combined debug form:
+//   model: cycle === 1 ? "opus" : (overrides["debug-cycle-2"] ?? "fable")
+// FAIL-CLOSED: any model:-bearing line the extractor cannot parse FAILS the lint.
+//
+// Contract: .gsd-t/contracts/model-tier-policy-contract.md v1.1.0 STABLE
+// Contract: .gsd-t/contracts/model-profile-config-contract.md §Drift-Lint Obligation
 // Contract: .gsd-t/contracts/model-selection-contract.md
 
 const { test, describe } = require("node:test");
@@ -34,6 +43,14 @@ const { MODEL_IDS, STAGE_TIERS } = policy;
 
 // Published tier set (keys of MODEL_IDS)
 const VALID_TIERS = new Set(Object.keys(MODEL_IDS)); // {opus, fable, sonnet, haiku}
+
+// Injectable designated stages: STAGE_TIERS keys MINUS competition-producers.
+// A bracket key overrides["competition-producers"] is an EXPLICIT violation (M82 HELD).
+// Pre-mortem c2 #1: producers IS in STAGE_TIERS, so a naive keys-of-policy check
+// would bless overrides["competition-producers"] ?? "opus" — that form is forbidden.
+const INJECTABLE_STAGES = new Set(
+  Object.keys(STAGE_TIERS).filter((k) => k !== "competition-producers")
+);
 
 // ---------------------------------------------------------------------------
 // Explicit stage-key → live source-label mapping table
@@ -101,13 +118,27 @@ const DESIGNATED_STAGE_MAP = [
 // ---------------------------------------------------------------------------
 
 /**
- * Extract all model: "..." literals from source text (handles both
- * { model: "opus" } and model: "opus" patterns).
- * Also extracts ternary model values like `cycle === 1 ? "opus" : "fable"`.
- * Returns an array of { value: string, line: number, raw: string } objects.
- * value is always a tier alias string (e.g. "opus", "fable", "sonnet", "haiku").
+ * Extract all model: values from source text.
  *
- * For ternary expressions, returns BOTH operand tiers as separate entries.
+ * Recognised forms (evaluated in order, first match wins per line):
+ *   1. Combined debug ternary with parenthesized ?? else-branch (M86 pre-mortem r1 #6):
+ *        model: cycle === 1 ? "opus" : (overrides["debug-cycle-2"] ?? "fable")
+ *      → emits {value:"opus", ternaryBranch:"if"} and
+ *              {value:"fable", overrideKey:"debug-cycle-2", isOverrideForm:true, ternaryBranch:"else"}
+ *   2. Simple ternary (no ?? in else-branch):
+ *        model: cycle === 1 ? "opus" : "fable"
+ *      → emits {value:"opus", ternaryBranch:"if"} and {value:"fable", ternaryBranch:"else"}
+ *   3. Override form (M86):
+ *        model: overrides["stage"] ?? "fallback"
+ *      → emits {value:"fallback", overrideKey:"stage", isOverrideForm:true}
+ *   4. Bare literal:
+ *        model: "opus"   or   model: 'opus'
+ *      → emits {value:"opus"}
+ *   5. FAIL-CLOSED: any line containing \bmodel\s*: that did not match any form above
+ *      → emits {parseError:true} — the checker treats this as a violation.
+ *
+ * All entries include { line: number, raw: string }.
+ * "value" is always a tier alias string (e.g. "opus", "fable", "sonnet", "haiku").
  */
 function extractModelLiterals(source) {
   const lines = source.split("\n");
@@ -120,21 +151,61 @@ function extractModelLiterals(source) {
     // Skip pure comment lines
     const codeOnly = line.replace(/\/\/.*$/, "");
 
-    // Pattern: model: "somevalue"  OR  model: 'somevalue'
-    // (NOT inside a template literal — those are handled below)
-    const simpleMatch = codeOnly.match(/\bmodel\s*:\s*["']([^"']+)["']/);
-    if (simpleMatch) {
-      results.push({ value: simpleMatch[1], line: lineNum, raw: line.trim() });
-      continue; // don't double-count
+    // Not a model: line at all — skip
+    if (!/\bmodel\s*:/.test(codeOnly)) continue;
+
+    // ----- Form 1: combined debug ternary with parenthesized ?? else-branch -----
+    // model: <cond> ? "a" : (overrides["key"] ?? "fallback")
+    const combinedTernaryMatch = codeOnly.match(
+      /\bmodel\s*:.*\?\s*["']([^"']+)["']\s*:\s*\(\s*overrides\s*\[\s*["']([^"']+)["']\s*\]\s*\?\?\s*["']([^"']+)["']\s*\)/
+    );
+    if (combinedTernaryMatch) {
+      results.push({ value: combinedTernaryMatch[1], line: lineNum, raw: line.trim(), ternaryBranch: "if" });
+      results.push({
+        value: combinedTernaryMatch[3],
+        overrideKey: combinedTernaryMatch[2],
+        isOverrideForm: true,
+        line: lineNum,
+        raw: line.trim(),
+        ternaryBranch: "else",
+      });
+      continue;
     }
 
-    // Pattern: ternary — model: condition ? "a" : "b"
-    // e.g. model: cycle === 1 ? "opus" : "fable"
+    // ----- Form 2: simple ternary — model: condition ? "a" : "b" -----
+    // (MUST come before Form 3/4 to avoid partial-matching ?? ternaries)
     const ternaryMatch = codeOnly.match(/\bmodel\s*:.*\?\s*["']([^"']+)["']\s*:\s*["']([^"']+)["']/);
     if (ternaryMatch) {
       results.push({ value: ternaryMatch[1], line: lineNum, raw: line.trim(), ternaryBranch: "if" });
       results.push({ value: ternaryMatch[2], line: lineNum, raw: line.trim(), ternaryBranch: "else" });
+      continue;
     }
+
+    // ----- Form 3: ?? override form — model: overrides["key"] ?? "fallback" -----
+    const overrideMatch = codeOnly.match(
+      /\bmodel\s*:\s*overrides\s*\[\s*["']([^"']+)["']\s*\]\s*\?\?\s*["']([^"']+)["']/
+    );
+    if (overrideMatch) {
+      results.push({
+        value: overrideMatch[2],
+        overrideKey: overrideMatch[1],
+        isOverrideForm: true,
+        line: lineNum,
+        raw: line.trim(),
+      });
+      continue;
+    }
+
+    // ----- Form 4: bare literal — model: "opus"  or  model: 'opus' -----
+    const simpleMatch = codeOnly.match(/\bmodel\s*:\s*["']([^"']+)["']/);
+    if (simpleMatch) {
+      results.push({ value: simpleMatch[1], line: lineNum, raw: line.trim() });
+      continue;
+    }
+
+    // ----- Form 5: FAIL-CLOSED — unrecognized model: line -----
+    // Any line that has \bmodel\s*: but didn't match a known form is a parse error.
+    results.push({ parseError: true, line: lineNum, raw: line.trim() });
   }
 
   return results;
@@ -143,25 +214,86 @@ function extractModelLiterals(source) {
 /**
  * For the debug workflow, extract the ternary branches as { cycle1Tier, cycle2Tier }.
  * Returns null if no ternary is found (flat literal — a lint violation).
+ *
+ * Handles both the simple form:
+ *   model: cycle === 1 ? "opus" : "fable"
+ * and the M86 combined form:
+ *   model: cycle === 1 ? "opus" : (overrides["debug-cycle-2"] ?? "fable")
+ * In the combined form, cycle2Tier is the fallback literal "fable".
  */
 function extractDebugCycleTernary(source) {
-  // Matches: model: cycle === 1 ? "opus" : "fable"  or similar
-  // The cycle check expression can vary (cycle === 1, cycle == 1, 1 === cycle, etc.)
-  // We accept any ternary on a model: line inside the debug-cycle agent call.
+  // Try combined form first: model: cond ? "a" : (overrides["key"] ?? "fallback")
+  const combinedMatch = source.match(
+    /\bmodel\s*:.*?\?\s*["']([^"']+)["']\s*:\s*\(\s*overrides\s*\[\s*["'][^"']+["']\s*\]\s*\?\?\s*["']([^"']+)["']\s*\)/
+  );
+  if (combinedMatch) return { cycle1Tier: combinedMatch[1], cycle2Tier: combinedMatch[2] };
+
+  // Simple ternary form: model: cond ? "a" : "b"
   const match = source.match(/\bmodel\s*:.*?\?\s*["']([^"']+)["']\s*:\s*["']([^"']+)["']/);
   if (!match) return null;
   return { cycle1Tier: match[1], cycle2Tier: match[2] };
 }
 
 /**
- * Extract agent() calls from source and return a list of
- * { label: string, modelLiteral: string|null, lineNum: number } objects.
+ * Scan one window line for a model: value in all recognised forms.
+ * Returns the first match found, or null.
+ *
+ * Returned shape (one of):
+ *   { kind: "combined-ternary", ternaryIf: string, ternaryElse: string,
+ *     overrideKey: string }  ← debug combined form
+ *   { kind: "ternary",         ternaryIf: string, ternaryElse: string }
+ *   { kind: "override",        overrideKey: string, overrideFallback: string }
+ *   { kind: "bare",            modelValue: string }
+ *   null
+ */
+function scanLineForModel(wline) {
+  const codeOnly = wline.replace(/\/\/.*$/, "");
+  if (!/\bmodel\s*:/.test(codeOnly)) return null;
+
+  // Combined debug ternary: model: cond ? "a" : (overrides["key"] ?? "fallback")
+  const combinedM = codeOnly.match(
+    /\bmodel\s*:.*\?\s*["']([^"']+)["']\s*:\s*\(\s*overrides\s*\[\s*["']([^"']+)["']\s*\]\s*\?\?\s*["']([^"']+)["']\s*\)/
+  );
+  if (combinedM) {
+    return { kind: "combined-ternary", ternaryIf: combinedM[1], overrideKey: combinedM[2], ternaryElse: combinedM[3] };
+  }
+
+  // Simple ternary: model: cond ? "a" : "b"
+  const ternaryM = codeOnly.match(/\bmodel\s*:.*?\?\s*["']([^"']+)["']\s*:\s*["']([^"']+)["']/);
+  if (ternaryM) return { kind: "ternary", ternaryIf: ternaryM[1], ternaryElse: ternaryM[2] };
+
+  // Override form: model: overrides["key"] ?? "fallback"
+  const overrideM = codeOnly.match(
+    /\bmodel\s*:\s*overrides\s*\[\s*["']([^"']+)["']\s*\]\s*\?\?\s*["']([^"']+)["']/
+  );
+  if (overrideM) return { kind: "override", overrideKey: overrideM[1], overrideFallback: overrideM[2] };
+
+  // Bare literal
+  const simpleM = codeOnly.match(/\bmodel\s*:\s*["']([^"']+)["']/);
+  if (simpleM) return { kind: "bare", modelValue: simpleM[1] };
+
+  return null;
+}
+
+/**
+ * Extract agent() calls from source and return a list of objects describing
+ * the label and model form found for each call.
  *
  * Handles:
  *   agent(prompt, { label: "foo", model: "opus" })
+ *   agent(prompt, { label: "red-team", model: overrides["red-team"] ?? "fable" })  (M86)
  *   agent(prompt, { label: `candidate:${ids[i]}`, model: "opus" })
+ *   model: cycle === 1 ? "opus" : (overrides["debug-cycle-2"] ?? "fable")         (M86)
  *   const opts = { label: "solution-space-probe", model: "opus" }; agent(prompt, opts)
  *   (multi-line objects)
+ *
+ * Each returned object: { label, labelRaw, lineNum,
+ *   modelValue: string|null,  ← for bare/override-fallback
+ *   ternaryIf: string|null, ternaryElse: string|null,
+ *   overrideKey: string|null,        ← set when model is the ?? form
+ *   overrideFallback: string|null,   ← set when model is the ?? form (bare override or combined else)
+ *   isOverrideForm: boolean,
+ * }
  */
 function extractAgentCallsWithLabels(source) {
   const lines = source.split("\n");
@@ -181,39 +313,74 @@ function extractAgentCallsWithLabels(source) {
     let modelValue = null;
     let ternaryIf = null;
     let ternaryElse = null;
+    let overrideKey = null;
+    let overrideFallback = null;
+    let isOverrideForm = false;
+    let found = false;
 
     const windowEnd = Math.min(lines.length, i + 7);
     for (let j = i; j < windowEnd; j++) {
-      const wline = lines[j].replace(/\/\/.*$/, "");
-
-      // Check ternary first (more specific)
-      const ternaryM = wline.match(/\bmodel\s*:.*?\?\s*["']([^"']+)["']\s*:\s*["']([^"']+)["']/);
-      if (ternaryM) {
-        ternaryIf = ternaryM[1];
-        ternaryElse = ternaryM[2];
+      const hit = scanLineForModel(lines[j]);
+      if (!hit) continue;
+      if (hit.kind === "combined-ternary") {
+        ternaryIf = hit.ternaryIf;
+        ternaryElse = hit.ternaryElse;
+        overrideKey = hit.overrideKey;
+        overrideFallback = hit.ternaryElse;
+        isOverrideForm = true;
+        found = true;
         break;
-      }
-
-      const simpleM = wline.match(/\bmodel\s*:\s*["']([^"']+)["']/);
-      if (simpleM) {
-        modelValue = simpleM[1];
+      } else if (hit.kind === "ternary") {
+        ternaryIf = hit.ternaryIf;
+        ternaryElse = hit.ternaryElse;
+        found = true;
+        break;
+      } else if (hit.kind === "override") {
+        overrideKey = hit.overrideKey;
+        overrideFallback = hit.overrideFallback;
+        modelValue = hit.overrideFallback;
+        isOverrideForm = true;
+        found = true;
+        break;
+      } else if (hit.kind === "bare") {
+        modelValue = hit.modelValue;
+        found = true;
         break;
       }
     }
 
     // Also look backwards (for `const opts = { label: ..., model: ... }` where label comes first)
-    if (modelValue === null && ternaryIf === null) {
+    if (!found) {
       const lookBack = Math.max(0, i - 6);
       for (let j = lookBack; j < i; j++) {
-        const wline = lines[j].replace(/\/\/.*$/, "");
-        const ternaryM = wline.match(/\bmodel\s*:.*?\?\s*["']([^"']+)["']\s*:\s*["']([^"']+)["']/);
-        if (ternaryM) { ternaryIf = ternaryM[1]; ternaryElse = ternaryM[2]; break; }
-        const simpleM = wline.match(/\bmodel\s*:\s*["']([^"']+)["']/);
-        if (simpleM) { modelValue = simpleM[1]; break; }
+        const hit = scanLineForModel(lines[j]);
+        if (!hit) continue;
+        if (hit.kind === "combined-ternary") {
+          ternaryIf = hit.ternaryIf;
+          ternaryElse = hit.ternaryElse;
+          overrideKey = hit.overrideKey;
+          overrideFallback = hit.ternaryElse;
+          isOverrideForm = true;
+          break;
+        } else if (hit.kind === "ternary") {
+          ternaryIf = hit.ternaryIf;
+          ternaryElse = hit.ternaryElse;
+          break;
+        } else if (hit.kind === "override") {
+          overrideKey = hit.overrideKey;
+          overrideFallback = hit.overrideFallback;
+          modelValue = hit.overrideFallback;
+          isOverrideForm = true;
+          break;
+        } else if (hit.kind === "bare") {
+          modelValue = hit.modelValue;
+          break;
+        }
       }
     }
 
-    calls.push({ label: labelValue, labelRaw, modelValue, ternaryIf, ternaryElse, lineNum });
+    calls.push({ label: labelValue, labelRaw, modelValue, ternaryIf, ternaryElse,
+                 overrideKey, overrideFallback, isOverrideForm, lineNum });
   }
 
   return calls;
@@ -223,6 +390,15 @@ function extractAgentCallsWithLabels(source) {
  * Check a source string for tier-policy violations.
  * Returns an array of violation strings (empty = no violations).
  *
+ * Checks performed:
+ *   1. Every model: value is in the valid tier set (bare AND ?? fallback).
+ *   2. Fail-closed: unparseable model: lines are violations.
+ *   3. ?? override form: bracket key must be in INJECTABLE_STAGES
+ *      (STAGE_TIERS keys minus competition-producers — M82 HELD).
+ *   4. ?? fallback must equal the premium tier for that designated stage.
+ *   5. Designated stage label mapping / ternary checks (unless skipDesignatedCheck).
+ *   6. Judge ≠ producer blindness invariant (phase.workflow.js only).
+ *
  * @param {string} source - the workflow source code
  * @param {string} filename - basename, used for error messages
  * @param {object} opts
@@ -231,13 +407,40 @@ function extractAgentCallsWithLabels(source) {
 function checkWorkflowSource(source, filename, opts = {}) {
   const violations = [];
 
-  // --- 1. Every model: literal must be a member of the valid tier set ---
+  // --- 1 + 2 + 3 + 4. Scan every model: line ---
   const allLiterals = extractModelLiterals(source);
   for (const lit of allLiterals) {
+
+    // Fail-closed: unparseable model: line
+    if (lit.parseError) {
+      violations.push(
+        `[${filename}] model:-bearing line could not be parsed (fail-closed): "${lit.raw}" (line ${lit.line})`
+      );
+      continue;
+    }
+
+    // Validate tier membership (bare and ?? fallback)
     if (!VALID_TIERS.has(lit.value)) {
       violations.push(
         `[${filename}] model: "${lit.value}" (line ${lit.line}) is NOT in the valid tier set {${[...VALID_TIERS].join(", ")}}`
       );
+    }
+
+    // ?? form: validate bracket key
+    if (lit.isOverrideForm && lit.overrideKey !== undefined) {
+      if (!INJECTABLE_STAGES.has(lit.overrideKey)) {
+        violations.push(
+          `[${filename}] ?? form bracket key "${lit.overrideKey}" (line ${lit.line}) is NOT in the injectable stage set {${[...INJECTABLE_STAGES].join(", ")}} — pre-mortem r1 #2 / c2 #1 class`
+        );
+      } else {
+        // Key is injectable: fallback must equal the premium tier for this stage
+        const expectedFallback = STAGE_TIERS[lit.overrideKey]; // the policy tier (= premium tier for designated stages)
+        if (lit.value !== expectedFallback) {
+          violations.push(
+            `[${filename}] ?? form key "${lit.overrideKey}" fallback is "${lit.value}", expected "${expectedFallback}" (line ${lit.line})`
+          );
+        }
+      }
     }
   }
 
@@ -268,28 +471,36 @@ function checkWorkflowSource(source, filename, opts = {}) {
       continue;
     }
 
-    // Special case: debug-cycle ternary
+    // Special case: debug-cycle ternary (M85 and M86 combined form)
     if (entry.stageKey === "debug-cycle-2") {
-      // Must be a ternary, not a flat literal
+      // Must be a ternary (simple or combined ??), not a flat literal
       for (const call of matchingCalls) {
         if (call.ternaryIf !== null) {
-          // Assert cycle-1 → opus, cycle-2 → fable
+          // Assert cycle-1 → opus
           if (call.ternaryIf !== "opus") {
             violations.push(
               `[${filename}] debug-cycle ternary cycle-1 branch is "${call.ternaryIf}", expected "opus" (line ~${call.lineNum})`
             );
           }
-          if (call.ternaryElse !== "fable") {
+          // Assert cycle-2 → fable (bare else value OR ?? fallback)
+          const cycle2Tier = call.ternaryElse;
+          if (cycle2Tier !== "fable") {
             violations.push(
-              `[${filename}] debug-cycle ternary cycle-2 branch is "${call.ternaryElse}", expected "fable" (line ~${call.lineNum})`
+              `[${filename}] debug-cycle ternary cycle-2 branch is "${cycle2Tier}", expected "fable" (line ~${call.lineNum})`
             );
           }
-        } else if (call.modelValue !== null) {
+          // If it's the combined form (isOverrideForm), the bracket key must be debug-cycle-2
+          if (call.isOverrideForm && call.overrideKey && call.overrideKey !== "debug-cycle-2") {
+            violations.push(
+              `[${filename}] debug-cycle combined ?? form bracket key is "${call.overrideKey}", expected "debug-cycle-2" (line ~${call.lineNum})`
+            );
+          }
+        } else if (call.modelValue !== null && !call.isOverrideForm) {
           // Flat literal — VIOLATION (can't distinguish cycle-1 vs cycle-2)
           violations.push(
             `[${filename}] debug-cycle agent() has flat model: "${call.modelValue}" instead of a ternary — cycle-1 and cycle-2 cannot be distinguished (line ~${call.lineNum})`
           );
-        } else {
+        } else if (!call.isOverrideForm) {
           violations.push(
             `[${filename}] debug-cycle agent() has no model: found near label (line ~${call.lineNum})`
           );
@@ -298,7 +509,9 @@ function checkWorkflowSource(source, filename, opts = {}) {
       continue;
     }
 
-    // Standard designated stage: every matching call must use expectedTier
+    // Standard designated stage: every matching call must use expectedTier.
+    // For the ?? form, modelValue is the fallback literal (already set by extractAgentCallsWithLabels).
+    // For the bare form, modelValue is the literal itself.
     for (const call of matchingCalls) {
       const actual = call.modelValue;
       const expected = entry.expectedTier;
@@ -314,7 +527,7 @@ function checkWorkflowSource(source, filename, opts = {}) {
     }
   }
 
-  // --- 3. Judge ≠ producer blindness invariant (only in phase.workflow.js) ---
+  // --- 6. Judge ≠ producer blindness invariant (only in phase.workflow.js) ---
   if (filename === "gsd-t-phase.workflow.js") {
     const judgeEntry = DESIGNATED_STAGE_MAP.find((e) => e.stageKey === "competition-judge");
     const producerEntry = DESIGNATED_STAGE_MAP.find((e) => e.stageKey === "competition-producers");
@@ -374,6 +587,94 @@ test("STAGE_TIERS contains all 7 designated stage keys", () => {
   for (const key of expectedKeys) {
     assert.ok(key in STAGE_TIERS, `STAGE_TIERS missing key: "${key}"`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// T1.1b — M86: INJECTABLE_STAGES set (sourced from policy module, NOT re-hardcoded)
+// Pre-mortem c2 #1: competition-producers IS in STAGE_TIERS but must NOT be injectable.
+// ---------------------------------------------------------------------------
+
+test("INJECTABLE_STAGES contains the 6 injectable designated stages (not producers)", () => {
+  const expectedInjectable = [
+    "solution-space-probe",
+    "partition-probe",
+    "competition-judge",
+    "pre-mortem",
+    "red-team",
+    "debug-cycle-2",
+  ];
+  for (const key of expectedInjectable) {
+    assert.ok(INJECTABLE_STAGES.has(key), `INJECTABLE_STAGES missing injectable stage: "${key}"`);
+  }
+  assert.ok(
+    !INJECTABLE_STAGES.has("competition-producers"),
+    "competition-producers must NOT be in INJECTABLE_STAGES (M82 HELD — never injectable)"
+  );
+  assert.equal(
+    INJECTABLE_STAGES.size,
+    6,
+    `Expected exactly 6 injectable stages, got ${INJECTABLE_STAGES.size}: ${[...INJECTABLE_STAGES].join(", ")}`
+  );
+});
+
+// ---------------------------------------------------------------------------
+// T1.1c — M86: extractModelLiterals handles ?? form and combined debug ternary
+// ---------------------------------------------------------------------------
+
+describe("M86: extractModelLiterals recognises ?? forms", () => {
+
+  test("bare literal is still extracted (M85 invariant preserved)", () => {
+    const src = `const r = await agent(prompt, { label: "red-team", model: "fable" });`;
+    const lits = extractModelLiterals(src);
+    assert.equal(lits.length, 1, "must find 1 literal");
+    assert.equal(lits[0].value, "fable");
+    assert.ok(!lits[0].isOverrideForm, "bare literal is not override form");
+    assert.ok(!lits[0].parseError, "bare literal is not a parse error");
+  });
+
+  test("?? form: yields overrideKey + fallback value", () => {
+    const src = `const opts = { label: "red-team", model: overrides["red-team"] ?? "fable" };`;
+    const lits = extractModelLiterals(src);
+    assert.equal(lits.length, 1);
+    assert.equal(lits[0].value, "fable");
+    assert.equal(lits[0].overrideKey, "red-team");
+    assert.ok(lits[0].isOverrideForm, "must be flagged as override form");
+    assert.ok(!lits[0].parseError);
+  });
+
+  test("combined debug ternary: yields if-branch (opus) and else ?? fallback (fable)", () => {
+    const src = `model: cycle === 1 ? "opus" : (overrides["debug-cycle-2"] ?? "fable")`;
+    const lits = extractModelLiterals(src);
+    assert.equal(lits.length, 2, "must yield 2 entries (if-branch + else-branch)");
+    const ifBranch = lits.find((l) => l.ternaryBranch === "if");
+    const elseBranch = lits.find((l) => l.ternaryBranch === "else");
+    assert.ok(ifBranch, "must have if-branch entry");
+    assert.ok(elseBranch, "must have else-branch entry");
+    assert.equal(ifBranch.value, "opus");
+    assert.equal(elseBranch.value, "fable");
+    assert.equal(elseBranch.overrideKey, "debug-cycle-2");
+    assert.ok(elseBranch.isOverrideForm);
+  });
+
+  test("fail-closed: unrecognized model: line yields parseError entry", () => {
+    // A hypothetical future form the extractor doesn't know about
+    const src = `model: someFunction("fable")`;
+    const lits = extractModelLiterals(src);
+    assert.equal(lits.length, 1, "must yield 1 entry (the parse error)");
+    assert.ok(lits[0].parseError, "unrecognised model: line must produce parseError");
+  });
+
+  test("fail-closed: checkWorkflowSource reports violation for unparseable line", () => {
+    const src = `
+      const r = await agent("p", { label: "some-stage", model: someFunction("fable") });
+    `;
+    const violations = checkWorkflowSource(src, "gsd-t-phase.workflow.js", { skipDesignatedCheck: true });
+    assert.ok(violations.length >= 1, "unparseable model: must produce a violation");
+    assert.ok(
+      violations.some((v) => v.includes("could not be parsed")),
+      `violation must mention parse failure, got: ${violations.join("; ")}`
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -707,80 +1008,52 @@ describe("meta-tests: drifted copies of real workflow files fail the checker (pr
   test("verify.workflow.js copy with red-team drifted to opus → checker returns violation", () => {
     const realSrc = fs.readFileSync(path.join(WF_DIR, "gsd-t-verify.workflow.js"), "utf8");
 
-    // Drift: replace model: "fable" near red-team with model: "opus"
-    // The real file (post-D3) has model: "fable" for red-team.
-    // But we need to test the checker FUNCTION, not whether D3 has shipped.
-    // Strategy: take the real source, find the red-team agent() call,
-    // and replace whatever model it has with "opus" — then assert violation.
-    const agentCalls = extractAgentCallsWithLabels(realSrc);
-    const redTeamCall = agentCalls.find((c) => c.label === "red-team");
-    assert.ok(redTeamCall, "red-team agent() call must exist in gsd-t-verify.workflow.js");
-
-    // Build a drifted source: replace the model value for red-team with "opus"
-    // Regardless of what it currently is, we simulate D3 having shipped fable
-    // then someone drifting it back to opus.
+    // Drift: replace the model assignment for red-team with a drifted literal.
+    // The real file (post-D2) may have model: overrides["red-team"] ?? "fable"
+    // or the pre-D2 bare literal model: "fable".
+    // Strategy: use a regex that handles BOTH forms and replaces with model: "opus".
+    // (1) Replace ?? form: overrides["red-team"] ?? "fable" → "opus"
+    // (2) Replace bare literal form near red-team label
     let driftedSrc = realSrc;
 
-    // Find the red-team block and replace its model: with "opus"
-    // Use a targeted replacement: find the label: "red-team" line and then the next model: line
-    const lines = realSrc.split("\n");
-    const driftedLines = [...lines];
-    let redTeamLineIdx = -1;
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].replace(/\/\/.*$/, "").includes('"red-team"')) {
-        redTeamLineIdx = i;
-        break;
-      }
-    }
-    assert.ok(redTeamLineIdx >= 0, "Must find red-team label line in verify workflow");
+    // Replace the ?? form for red-team (M86 D2 shipped form)
+    driftedSrc = driftedSrc.replace(
+      /\bmodel\s*:\s*overrides\s*\[\s*"red-team"\s*\]\s*\?\?\s*"[^"]+"/,
+      'model: "opus"'
+    );
 
-    // Replace model in the vicinity (within 6 lines)
-    let replaced = false;
-    for (let j = redTeamLineIdx; j < Math.min(lines.length, redTeamLineIdx + 7); j++) {
-      if (driftedLines[j].match(/\bmodel\s*:\s*["'][^"']+["']/)) {
-        driftedLines[j] = driftedLines[j].replace(/\bmodel\s*:\s*["'][^"']+["']/, 'model: "opus"');
-        replaced = true;
-        break;
-      }
-    }
-    // If not found after, look before
-    if (!replaced) {
-      for (let j = Math.max(0, redTeamLineIdx - 6); j < redTeamLineIdx; j++) {
-        if (driftedLines[j].match(/\bmodel\s*:\s*["'][^"']+["']/)) {
-          driftedLines[j] = driftedLines[j].replace(/\bmodel\s*:\s*["'][^"']+["']/, 'model: "opus"');
-          replaced = true;
+    // If the above didn't change anything (pre-D2 bare form), do a targeted line-level replace
+    if (driftedSrc === realSrc) {
+      const lines = realSrc.split("\n");
+      const driftedLines = [...lines];
+      let redTeamLineIdx = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].replace(/\/\/.*$/, "").includes('"red-team"')) {
+          redTeamLineIdx = i;
           break;
         }
       }
+      assert.ok(redTeamLineIdx >= 0, "Must find red-team label line in verify workflow");
+
+      // Replace model: in the vicinity (within 6 lines after label)
+      for (let j = redTeamLineIdx; j < Math.min(lines.length, redTeamLineIdx + 7); j++) {
+        if (driftedLines[j].match(/\bmodel\s*:/)) {
+          driftedLines[j] = driftedLines[j].replace(/\bmodel\s*:.*/, 'model: "opus",');
+          break;
+        }
+      }
+      driftedSrc = driftedLines.join("\n");
     }
 
-    // Write to temp file and run checker on its content
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "m85-lint-"));
-    const tmpFile = path.join(tmpDir, "gsd-t-verify.workflow.js");
-    const driftedSrcFinal = driftedLines.join("\n");
-    fs.writeFileSync(tmpFile, driftedSrcFinal, "utf8");
-
-    try {
-      const tmpSrc = fs.readFileSync(tmpFile, "utf8");
-      // Manually set the red-team model to opus in the source before checking
-      // This ensures the test works regardless of D3 shipping state
-      const forceOpusSrc = tmpSrc.replace(
-        /(label:\s*"red-team"[^}]*?)model:\s*["'][^"']*["']/,
-        '$1model: "opus"'
-      );
-
-      const violations = checkWorkflowSource(forceOpusSrc, "gsd-t-verify.workflow.js");
-      assert.ok(
-        violations.length >= 1,
-        `Real-file copy with red-team drifted to opus must produce violations. Checker is decorative on real-file path. Got: none`
-      );
-      assert.ok(
-        violations.some((v) => v.includes("red-team")),
-        `Violation must mention "red-team", got: ${violations.join("; ")}`
-      );
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
+    const violations = checkWorkflowSource(driftedSrc, "gsd-t-verify.workflow.js");
+    assert.ok(
+      violations.length >= 1,
+      `Real-file copy with red-team drifted to opus must produce violations. Checker is decorative on real-file path. Got: none`
+    );
+    assert.ok(
+      violations.some((v) => v.includes("red-team")),
+      `Violation must mention "red-team", got: ${violations.join("; ")}`
+    );
   });
 });
 
