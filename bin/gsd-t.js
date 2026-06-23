@@ -395,6 +395,53 @@ function addHeartbeatHook(hooks, event, cmd) {
   return true;
 }
 
+// ─── Brevity Guard (M93) ────────────────────────────────────────────────────
+// A BLOCKING Stop hook (not async — it must run synchronously to block a verbose
+// answer-mode reply). Enforces the Reader Contract: answer-first, no preamble,
+// jargon glossed. Fail-open by design (the script never blocks on error).
+
+const BREVITY_GUARD_SCRIPT = "gsd-t-brevity-guard.js";
+
+function installBrevityGuard() {
+  ensureDir(SCRIPTS_DIR);
+  const src = path.join(PKG_SCRIPTS, BREVITY_GUARD_SCRIPT);
+  const dest = path.join(SCRIPTS_DIR, BREVITY_GUARD_SCRIPT);
+  if (!fs.existsSync(src)) { warn("Brevity-guard script not found in package — skipping"); return; }
+
+  const srcContent = fs.readFileSync(src, "utf8");
+  const destContent = fs.existsSync(dest) ? fs.readFileSync(dest, "utf8") : "";
+  if (normalizeEol(srcContent) !== normalizeEol(destContent)) {
+    copyFile(src, dest, BREVITY_GUARD_SCRIPT);
+  } else {
+    info("Brevity-guard script unchanged");
+  }
+
+  const parsed = readSettingsJson();
+  if (parsed === null && fs.existsSync(SETTINGS_JSON)) {
+    warn("settings.json has invalid JSON — cannot configure brevity-guard hook");
+    return;
+  }
+  const settings = parsed || {};
+  if (!settings.hooks) settings.hooks = {};
+  if (!settings.hooks.Stop) settings.hooks.Stop = [];
+
+  const already = settings.hooks.Stop.some((entry) =>
+    entry.hooks && entry.hooks.some((h) => h.command && h.command.includes(BREVITY_GUARD_SCRIPT))
+  );
+  if (already) { info("Brevity-guard hook already configured"); return; }
+
+  // Blocking (no async) so the Stop-hook block decision is honored.
+  const cmd = `node "${dest.replace(/\\/g, "\\\\")}"`;
+  settings.hooks.Stop.push({ matcher: "", hooks: [{ type: "command", command: cmd }] });
+
+  if (!isSymlink(SETTINGS_JSON)) {
+    fs.writeFileSync(SETTINGS_JSON, JSON.stringify(settings, null, 2));
+    success("Brevity-guard Stop hook configured in settings.json");
+  } else {
+    warn("Skipping settings.json write — target is a symlink");
+  }
+}
+
 // ─── Context Meter ──────────────────────────────────────────────────────────
 
 const CONTEXT_METER_SCRIPT = "gsd-t-context-meter.js";
@@ -1613,6 +1660,9 @@ async function doInstall(opts = {}) {
   heading("Heartbeat (Real-time Events)");
   installHeartbeat();
 
+  heading("Brevity Guard (M93 — concise replies)");
+  installBrevityGuard();
+
   heading("Update Check (Session Start)");
   installUpdateCheck();
 
@@ -2592,6 +2642,9 @@ const PROJECT_BIN_TOOLS = [
   // divergence-grammar = §4 parse/format round-trip (G4).
   "gsd-t-guard-map.cjs", "gsd-t-guard-map-derive.cjs", "gsd-t-milestone-state.cjs",
   "gsd-t-rule-consume.cjs", "gsd-t-divergence-grammar.cjs",
+  // M93 — jargon-gloss lint for written docs (the file surface the brevity-guard
+  // Stop hook can't reach). Propagated so a project's doc checks can invoke it.
+  "gsd-t-jargon-lint.cjs",
 ];
 
 // Files that older versions of this installer copied into project bin/ but

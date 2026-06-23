@@ -1,0 +1,17 @@
+{
+  "milestone": "M93",
+  "title": "Brevity Guard — enforce concise, answer-first, jargon-glossed output",
+  "version": "4.9.11",
+  "tag": "v4.9.11",
+  "completedAt": "2026-06-23T13:13:26-07:00",
+  "verdict": "VERIFIED-WITH-WARNINGS",
+  "domains": ["m93-brevity-guard-hook", "m93-reader-contract", "m93-jargon-lint"],
+  "waves": 1,
+  "suite": { "tests": 2230, "pass": 2226, "fail": 0, "skip": 4 },
+  "verifyFixes": [
+    "Red Team MEDIUM: jargon-lint over-flagged common acronyms (AWS/GPU/M1) — allowlist extended + M-code requires GSD-T shape",
+    "Red Team LOW: loop-guard hardened to truthy check"
+  ],
+  "warnings": ["Red Team on opus (Fable unavailable, tier-substituted)"],
+  "liveWiring": "brevity-guard wired into ~/.claude/settings.json Stop (active); scripts copied to ~/.claude/"
+}

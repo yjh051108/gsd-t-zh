@@ -1,4 +1,4 @@
-# GSD-T Framework Reference — v4.9.10
+# GSD-T Framework Reference — v4.9.11
 
 This file is a companion to `README.md` and tracks framework-level documentation — methodology decisions, internal architecture, and per-milestone capability summaries. Maintained alongside `README.md` per the Pre-Commit Gate.
 
@@ -103,6 +103,7 @@ Contract: `.gsd-t/contracts/plan-hardening-contract.md` v1.0.0.
 
 | Version | Milestone | Key capability |
 |---------|-----------|----------------|
+| 4.9.11 | M93 | Brevity Guard — concise, answer-first replies are now ENFORCED, not just requested. A blocking `Stop` hook (`gsd-t-brevity-guard.js`) catches answer-mode preamble/process-narration (action-mode intent-first is still allowed) and blocks it before you read it; a Reader Contract in CLAUDE-global + the subagent prompts sets the default; a `gsd-t-jargon-lint.cjs` flags unglossed jargon in docs. Fail-open by design (never gags legitimate work). |
 | 4.9.10 | M92 (#44a) | Understand-Before-Build, the paradigm half — GSD-T now prefers the SMALLEST change: M90's §2 arch-trigger gets a cheaper-first look→smallest→spike→defer response (look is the default; spike demoted), verify can SAY "we made it smaller" (deterministic `git diff` shrink-metric + additive `shrink` verdict dimension), and the milestone/quick default is inverted so ceremony is opt-in. No graph (that's #44b, gated). |
 | 4.8.10 | M91 (M87+M88) | PseudoCode Source-of-Truth — intention-first behavior map as the milestone source-of-truth: `[RULE]` guard-map verify gate, section-citation traceability, two-altitude flow, + 4 deterministic M88 gates (sign-off `isDefined`, build→map derivation, triad-consumption seam, divergence-grammar round-trip) |
 | 4.7.11 | #40 | Deterministic domain archive+sweep at complete-milestone (`bin/gsd-t-archive-domains.cjs`) — stops stale-domain accumulation |

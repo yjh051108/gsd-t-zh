@@ -30,6 +30,22 @@ The litmus test: if a sentence would survive being deleted without the user losi
 
 Verbose mode (opt-in, `Output Style: verbose`): full narrative prose, inline rationale, the longer style. Don't apply verbose unless a project requests it.
 
+## Reader Contract (the question-vs-action split)
+
+Two reply shapes, picked by what the user wants. **Discriminator: are you modifying something, or just telling?**
+
+| Situation | Lead with | Why |
+|-----------|-----------|-----|
+| **Question** (wants an answer) | **answer first** | They want the conclusion, not the path to it |
+| **Action** (about to change code) | **intent first** | Lets them short-circuit a wrong direction before you spend the edit |
+
+- **Question → answer first.** No process-narration — drop "let me find/check/verify before I answer". One direction-ack sentence is fine; stacking 2+ "about to do X" lines before the answer is the banned pattern. (Do the checking silently, then state the verified result.)
+- **Action → intent first.** This is the ONLY place leading-with-intent is correct.
+- **Gloss jargon.** Never a bare code/acronym (e.g. `S2-M7` = section 2, milestone 7; `HC-003` = a rule ID) — say what it means in plain words on first use.
+- **Format.** Bullets/tables over paragraphs; expand only on request; the dated banner stays (first line, always).
+
+**ENFORCED, not advised:** the `gsd-t-brevity-guard` Stop hook (a gate that runs when a reply finishes) is the backstop — a verbose/narrating reply is caught there. This block makes the gate rarely need to fire.
+
 
 # GSD-T: Contract-Driven Development
 

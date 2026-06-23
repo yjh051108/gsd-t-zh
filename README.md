@@ -1,6 +1,6 @@
 # GSD-T: Contract-Driven Development for Claude Code
 
-**v4.9.10** - A methodology for reliable, parallelizable development using Claude Code with optional Agent Teams support.
+**v4.9.11** - A methodology for reliable, parallelizable development using Claude Code with optional Agent Teams support.
 
 **Eliminates context rot** — task-level fresh dispatch (one subagent per task, ~10-20% context each) means compaction never triggers.
 **Compaction-proof debug loops** — `gsd-t headless --debug-loop` runs test-fix-retest cycles as separate `claude -p` sessions. A JSONL debug ledger persists all hypothesis/fix/learning history across fresh sessions. Anti-repetition preamble injection prevents retrying failed hypotheses. Escalation tiers (sonnet → opus → human) and a hard iteration ceiling enforced externally.

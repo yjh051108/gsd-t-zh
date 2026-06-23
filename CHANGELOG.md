@@ -2,6 +2,18 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.9.11] - 2026-06-23 (M93 — Brevity Guard: enforce concise, answer-first output — patch)
+
+### Added — conciseness is now enforced, not just requested
+
+The user has asked for concise, jargon-free replies for weeks; prose instructions kept getting ignored (a "no process narration" rule even existed and was violated). The fix is a deterministic gate, because that is the only mechanism GSD-T reliably obeys. 3 file-disjoint domains; full suite 2230 / 2226 pass / 0 fail / 4 skip.
+
+- **Brevity-guard Stop hook** (`scripts/gsd-t-brevity-guard.js`) — runs when a reply finishes. For a **question** (a pure-text answer), it blocks egregious preamble: 2+ stacked process-narration sentences ("let me find X before I answer…") before the actual answer, or an unglossed jargon code (`S2-M7`, `HC-003`). For an **action** (the turn changed code), intent-first is allowed — you still get to short-circuit a wrong direction. **Fail-open by design**: any error, malformed input, or uncertainty → allow, so it can never gag legitimate work.
+- **Reader Contract** in `templates/CLAUDE-global.md` + the QA / Red Team / pre-mortem / blind-adversary subagent prompts — sets the concise, answer-first, gloss-jargon default at the source, so the gate rarely needs to fire.
+- **Jargon lint** (`bin/gsd-t-jargon-lint.cjs`) — flags an unglossed jargon code in a written document (the file surface the Stop hook can't reach), so decision docs stay readable.
+
+The dated banner at the top of each reply is unchanged (kept by request).
+
 ## [4.9.10] - 2026-06-23 (M92 — Understand-Before-Build, the paradigm half / backlog #44a — minor)
 
 ### Changed — GSD-T now prefers the SMALLEST change that hits the crux
