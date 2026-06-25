@@ -2,6 +2,16 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.9.13] - 2026-06-25 (M93 — Reader Contract every turn, retire the selective gate — patch)
+
+### Changed — concise output is now enforced on EVERY reply, not by pattern-matching
+
+The deterministic brevity-guard Stop hook kept missing verbose replies: a gate that matches a hardcoded list of known-bad opener phrases can only ever be **selective** — every new phrasing slips through (whack-a-mole). Per the user, the fix is to stop detecting and always apply the standard.
+
+- **Retired the brevity-guard Stop hook.** `gsd-t update-all` now *removes* it from any install that still has it.
+- **Reader Contract injected every turn** by the `UserPromptSubmit` hook (`scripts/gsd-t-auto-route.js`) — applies to ALL reader-facing output in every project: assume the first draft is wordy and rewrite it tight; answer first (intent-first only when about to change code); gloss jargon; bullets over paragraphs. Includes generic before→after examples that teach the shape.
+- This is wording-independent (no enumeration of bad phrasings) and universal (the standard is in front of the model each turn, not a backstop guessing which replies are bad).
+
 ## [4.9.12] - 2026-06-23 (M93 brevity-guard live-tuning — patch)
 
 ### Changed — brevity guard catches more, false-blocks less

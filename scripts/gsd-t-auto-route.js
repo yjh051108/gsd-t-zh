@@ -26,6 +26,21 @@
 const fs = require("fs");
 const path = require("path");
 
+// Reader Contract — emitted every turn so the standard is in front of the model
+// each response (not a selective after-the-fact gate). Concise + jargon-free by
+// its own rule. Generic before/after examples teach the shape.
+const READER_CONTRACT = [
+  "[GSD-T READER CONTRACT] Before sending ANY reply, assume your first draft is too wordy and rewrite it tight. Rules:",
+  "• Answer FIRST. No preamble, no restating the question, no narrating what you're about to do (\"let me check…\"). Do the work silently, then give the result.",
+  "• Exception — when you're about to CHANGE code/files: state intent in one line first, so the user can stop a wrong direction.",
+  "• Gloss every code/jargon term in plain words on first use. No bare IDs or acronyms the reader must decode.",
+  "• Bullets/tables over paragraphs. Cut hedging and meta-commentary. Expand only if asked.",
+  "EXAMPLES (before → after):",
+  "• \"That's a great question, and it touches on something subtle. Let me look into how the cache works before I answer…\" → \"The cache lives in memory, cleared on restart.\"",
+  "• \"There are a few moving parts here. First, I want to make sure I understand the goal, because X has a gotcha…\" → \"Set X in .env. Gotcha: also add the localhost redirect URI or it rejects.\"",
+  "• \"Good catch — I conflated two things. Here's the honest correction: the files actually stack rather than overwrite…\" → \"You're right — files stack, they don't overwrite.\"",
+].join("\n");
+
 /**
  * Resolve the active model profile from .gsd-t/model-profile.json.
  *
@@ -122,6 +137,12 @@ process.stdin.on("end", () => {
   // Always emit live timestamp first — every turn, every project.
   // [GSD-T NOW] format is date-guard-invariant: NEVER alter it.
   process.stdout.write(`[GSD-T NOW] ${liveTimestamp()}\n`);
+
+  // Reader Contract — injected EVERY turn, EVERY project (M93). The deterministic
+  // brevity gate was retired (it could only ever be selective); this puts the
+  // standard in front of the model each turn instead. Assume the first draft is
+  // wordy; rewrite it tight before sending.
+  process.stdout.write(READER_CONTRACT + "\n");
 
   // Parse stdin ONCE; both the profile token and auto-route reuse it.
   let data = null;

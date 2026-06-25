@@ -44,7 +44,7 @@ Two reply shapes, picked by what the user wants. **Discriminator: are you modify
 - **Gloss jargon.** Never a bare code/acronym (e.g. `S2-M7` = section 2, milestone 7; `HC-003` = a rule ID) — say what it means in plain words on first use.
 - **Format.** Bullets/tables over paragraphs; expand only on request; the dated banner stays (first line, always).
 
-**ENFORCED, not advised:** the `gsd-t-brevity-guard` Stop hook (a gate that runs when a reply finishes) is the backstop — a verbose/narrating reply is caught there. This block makes the gate rarely need to fire.
+**Applied to EVERY reply, not selectively.** Assume your first draft is too wordy and rewrite it tight before sending — do not wait to be told. The `[GSD-T READER CONTRACT]` block (injected every turn by the UserPromptSubmit hook) restates this each response. (The old pattern-matching brevity Stop hook was retired: a gate that matches known-bad phrasings can only ever be selective and misses every new wording. The fix is to hold the standard for ALL output, every turn.)
 
 
 # GSD-T: Contract-Driven Development

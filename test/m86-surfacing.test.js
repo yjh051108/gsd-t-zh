@@ -111,6 +111,17 @@ describe('T1 — Banner surfacing (gsd-t-auto-route.js)', () => {
     assert.match(firstLine, /^\[GSD-T NOW\]/, '[GSD-T NOW] must be the first line');
   });
 
+  it('[GSD-T READER CONTRACT] emits every turn, every project (M93 — concise enforcement)', () => {
+    // In a GSD-T project AND in a bare dir — the contract is universal, not gated.
+    for (const cwd of [PROJECT_ROOT, os.tmpdir()]) {
+      const out = spawnAutoRoute({ cwd });
+      assert.match(out, /\[GSD-T READER CONTRACT\]/, `Reader Contract must emit (cwd=${cwd})`);
+      // It must carry the load-bearing rules + at least one before→after example.
+      assert.match(out, /[Aa]nswer FIRST/, 'must state answer-first');
+      assert.match(out, /→/, 'must include a before→after example');
+    }
+  });
+
   it('[GSD-T PROFILE] present config → names that profile (SC(f))', () => {
     const dir = makeTmpProject('banner-present');
     writeProfileConfig(dir, 'pro');

@@ -395,48 +395,39 @@ function addHeartbeatHook(hooks, event, cmd) {
   return true;
 }
 
-// ─── Brevity Guard (M93) ────────────────────────────────────────────────────
-// A BLOCKING Stop hook (not async — it must run synchronously to block a verbose
-// answer-mode reply). Enforces the Reader Contract: answer-first, no preamble,
-// jargon glossed. Fail-open by design (the script never blocks on error).
+// ─── Reader Contract (M93) ──────────────────────────────────────────────────
+// RETIRED the deterministic brevity-guard Stop hook: a pattern-matching gate can
+// only ever be SELECTIVE (it catches the phrasings it enumerates and misses every
+// new one — the whack-a-mole the user hit). Replaced by the every-turn Reader
+// Contract injected by scripts/gsd-t-auto-route.js (the UserPromptSubmit hook):
+// the standard is put in front of the model each turn, applied to ALL replies,
+// instead of a backstop guessing which ones are bad. This function now REMOVES
+// the old Stop hook from any install that still has it.
 
 const BREVITY_GUARD_SCRIPT = "gsd-t-brevity-guard.js";
 
-function installBrevityGuard() {
-  ensureDir(SCRIPTS_DIR);
-  const src = path.join(PKG_SCRIPTS, BREVITY_GUARD_SCRIPT);
-  const dest = path.join(SCRIPTS_DIR, BREVITY_GUARD_SCRIPT);
-  if (!fs.existsSync(src)) { warn("Brevity-guard script not found in package — skipping"); return; }
-
-  const srcContent = fs.readFileSync(src, "utf8");
-  const destContent = fs.existsSync(dest) ? fs.readFileSync(dest, "utf8") : "";
-  if (normalizeEol(srcContent) !== normalizeEol(destContent)) {
-    copyFile(src, dest, BREVITY_GUARD_SCRIPT);
-  } else {
-    info("Brevity-guard script unchanged");
-  }
-
+function uninstallBrevityGuardHook() {
   const parsed = readSettingsJson();
   if (parsed === null && fs.existsSync(SETTINGS_JSON)) {
-    warn("settings.json has invalid JSON — cannot configure brevity-guard hook");
+    warn("settings.json has invalid JSON — cannot remove brevity-guard hook");
     return;
   }
   const settings = parsed || {};
-  if (!settings.hooks) settings.hooks = {};
-  if (!settings.hooks.Stop) settings.hooks.Stop = [];
-
-  const already = settings.hooks.Stop.some((entry) =>
-    entry.hooks && entry.hooks.some((h) => h.command && h.command.includes(BREVITY_GUARD_SCRIPT))
+  if (!settings.hooks || !Array.isArray(settings.hooks.Stop)) {
+    info("Reader Contract active every turn (no legacy brevity-guard hook to remove)");
+    return;
+  }
+  const before = settings.hooks.Stop.length;
+  settings.hooks.Stop = settings.hooks.Stop.filter((entry) =>
+    !(entry.hooks && entry.hooks.some((h) => h.command && h.command.includes(BREVITY_GUARD_SCRIPT)))
   );
-  if (already) { info("Brevity-guard hook already configured"); return; }
-
-  // Blocking (no async) so the Stop-hook block decision is honored.
-  const cmd = `node "${dest.replace(/\\/g, "\\\\")}"`;
-  settings.hooks.Stop.push({ matcher: "", hooks: [{ type: "command", command: cmd }] });
-
+  if (settings.hooks.Stop.length === before) {
+    info("Reader Contract active every turn (no legacy brevity-guard hook present)");
+    return;
+  }
   if (!isSymlink(SETTINGS_JSON)) {
     fs.writeFileSync(SETTINGS_JSON, JSON.stringify(settings, null, 2));
-    success("Brevity-guard Stop hook configured in settings.json");
+    success("Removed legacy brevity-guard Stop hook — Reader Contract now applies every turn");
   } else {
     warn("Skipping settings.json write — target is a symlink");
   }
@@ -1660,8 +1651,8 @@ async function doInstall(opts = {}) {
   heading("Heartbeat (Real-time Events)");
   installHeartbeat();
 
-  heading("Brevity Guard (M93 — concise replies)");
-  installBrevityGuard();
+  heading("Reader Contract (M93 — concise replies, every turn)");
+  uninstallBrevityGuardHook();
 
   heading("Update Check (Session Start)");
   installUpdateCheck();
