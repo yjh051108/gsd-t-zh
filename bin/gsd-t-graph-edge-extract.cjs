@@ -196,9 +196,28 @@ function walkPython(rootNode, relPath, entities, edges) {
         }
       }
     } else if (t === 'import_from_statement') {
-      // from foo import bar, baz
+      // from foo import bar, baz   /   from .utils import x   /   from ..pkg.mod import y
       const moduleNode = node.childForFieldName('module_name');
-      const target = moduleNode ? moduleNode.text.replace(/\./g, '/') : '?';
+      // Python relative imports use LEADING dots for package level: a single
+      // leading '.' = the current package (the file's own directory), '..' = the
+      // parent package, etc. A non-leading '.' is a submodule separator. The old
+      // code did a blind dot→slash replace, so `from .utils` became `/utils` (a
+      // bogus absolute id) instead of a './utils' relative specifier the query
+      // layer can resolve to a real file id. Translate leading dots to '../' levels.
+      let target = '?';
+      if (moduleNode) {
+        const raw = moduleNode.text; // e.g. '.utils', '..pkg.mod', 'django.db'
+        const lead = raw.match(/^\.+/);
+        if (lead) {
+          const dots = lead[0].length;            // 1 = current pkg, 2 = parent, ...
+          const rest = raw.slice(dots).replace(/\./g, '/'); // submodule dots → slashes
+          // 1 dot → './rest'  ;  2 dots → '../rest'  ;  3 dots → '../../rest'
+          const up = '../'.repeat(dots - 1);
+          target = './' + up + rest;              // a relative specifier the query layer resolves
+        } else {
+          target = raw.replace(/\./g, '/');       // absolute/package import (e.g. django/db)
+        }
+      }
       const names = [];
       for (let i = 0; i < node.namedChildCount; i++) {
         const child = node.namedChild(i);
