@@ -6,7 +6,7 @@ When all tasks complete: a measured Atos full-index build wall-clock (PASS under
 ## Wave 1
 
 ### M94-D2-T1 — Parser-floor contract (edge taxonomy from M20–M21 lessons)
-- **Status**: [ ] pending
+- **Status**: [x] done
 - **Files**: `.gsd-t/contracts/graph-parser-floor-contract.md`
 - **Touches**: `.gsd-t/contracts/graph-parser-floor-contract.md`
 - **ImplPath**: `.gsd-t/contracts/graph-parser-floor-contract.md` — the entity/edge taxonomy (imports/exports/functions/classes/requires/call-sites) + the per-file parse-harness + parallelism interface D3 consumes
@@ -19,7 +19,7 @@ When all tasks complete: a measured Atos full-index build wall-clock (PASS under
   - Marked STABLE once the throughput probe passes (or re-scoped if K2 kills)
 
 ### M94-D2-T2 — Tree-sitter throughput probe (K2 = AC-1 kill-criterion)
-- **Status**: [ ] pending
+- **Status**: [x] done
 - **Headline**: true
 - **Files**: `bin/gsd-t-graph-ts-throughput.cjs`, `test/m94-k2-treesitter-throughput.test.js`
 - **Touches**: `bin/gsd-t-graph-ts-throughput.cjs`, `test/m94-k2-treesitter-throughput.test.js`
@@ -39,7 +39,7 @@ When all tasks complete: a measured Atos full-index build wall-clock (PASS under
   - tree-sitter + grammar packages used by the probe are dev/spike-only — NEVER added to shipped installer `dependencies`
 
 ### M94-D2-T3 — K2 result doc + progress.md (AC-1 wall-clock)
-- **Status**: [ ] pending
+- **Status**: [x] done
 - **Files**: `.gsd-t/spikes/k2-treesitter-atos-throughput-results.md`
 - **Touches**: `.gsd-t/spikes/k2-treesitter-atos-throughput-results.md`
 - **ImplPath**: `.gsd-t/spikes/k2-treesitter-atos-throughput-results.md` — the AC-1 build wall-clock + PASS/KILL verdict record
