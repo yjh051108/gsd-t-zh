@@ -166,6 +166,59 @@ const RESEARCH_RESULT_SCHEMA = {
   properties: { ok: { type: "boolean" }, gapKey: { type: "string" }, citedBlock: { type: "string" }, sourceUrls: { type: "array", items: { type: "string" } }, fetchDates: { type: "array", items: { type: "string" } }, reason: { type: "string" } },
 };
 
+// M94-D11 §READER: Query blast-radius / who-imports for structural impact before editing.
+// Returns a short text snippet injected into the Execute phase agent prompt.
+// On graph-unavailable: logs the fail-loud message and returns null (no grep fallback).
+// [RULE] quick-writer-pattern
+async function queryGraphForQuick(projectDir, task, phaseName) {
+  // Extract a plausible target hint from the task description (first word-token that
+  // looks like a file or function name). Heuristic — the agent uses the full slice.
+  const words = (task || "").split(/\s+/).filter(Boolean);
+  const targetHint = words.find((w) => w.includes("/") || w.includes(".") || w.includes("#")) || words[0] || "";
+  if (!targetHint || targetHint.length < 2) return null;
+
+  const r = await runCli(
+    projectDir,
+    "graph",
+    ["blast-radius", targetHint],
+    "gsd-t-graph-query-cli.cjs",
+    "graph-blast-radius",
+    true,
+    phaseName
+  ).catch(() => ({ ok: false, exitCode: -1, envelope: null }));
+
+  const env = r && r.envelope;
+  if (!env) return null;
+  if (!env.ok && env.reason === "graph-unavailable") {
+    log(`M94-D11 READER: graph unavailable — fix it (gsd-t graph status). Quick proceeds without structural slice.`);
+    return null; // Fail-loud logged; no grep fallback [RULE consumer-structural-grep-removed]
+  }
+  if (env.ok && Array.isArray(env.results)) {
+    return `## Graph structural slice (blast-radius for "${targetHint}"):\n${JSON.stringify(env.results.slice(0, 20), null, 2)}`;
+  }
+  return null;
+}
+
+// M94-D11 §WRITER: Trigger a freshness pass over the touched set after edits.
+// who-imports triggers freshness_check_on_query inline (D4 surface) — re-indexes any
+// content-hash-dirty file before answering. Best-effort (non-blocking).
+// [RULE] quick-writer-pattern
+async function reindexTouchedFilesQuick(projectDir, filesEdited, phaseName) {
+  if (!Array.isArray(filesEdited) || filesEdited.length === 0) return;
+  for (const f of filesEdited.slice(0, 10)) {
+    await runCli(
+      projectDir,
+      "graph",
+      ["who-imports", f],
+      "gsd-t-graph-query-cli.cjs",
+      `graph-reindex-touched:${f.slice(-30)}`,
+      true,
+      phaseName
+    ).catch(() => {});
+  }
+  log(`M94-D11 WRITER: re-indexed ${Math.min(filesEdited.length, 10)} touched file(s) after quick task`);
+}
+
 if (!task) {
   log("quick: args.task required");
   return { status: "failed", reason: "no-task" };
@@ -176,11 +229,16 @@ const pre = await runPreflight(projectDir);
 if (!pre.ok) return { status: "failed", reason: "preflight-failed", preflight: pre.envelope };
 const brief = await generateBrief(projectDir, { kind: "execute", id: "quick-brief" });
 
+// M94-D11 §READER: query graph for structural impact before the Execute agent reasons
+// [RULE] quick-writer-pattern
+const _graphSliceLine = await queryGraphForQuick(projectDir, task, "Preflight") || "";
+
 phase("Execute");
 const result = await agent(
   [
     `Quick task: ${task}`,
     `**Brief:** ${brief.briefPath || "(no brief)"}`,
+    _graphSliceLine ? `\n**Graph structural slice (M94-D11 READER — blast-radius impact):**\n${_graphSliceLine}\nUse this slice for structural impact assessment — do NOT grep for import/dependency relationships.` : "",
     ``,
     `**CRUX-FIRST — START HERE (smallest change is the default, ceremony is opt-in):**`,
     `1. CRUX: state the crux of this ask in ONE line — the single thing that must become true.`,
@@ -211,6 +269,12 @@ const result = await agent(
 
 if (result.status === "failed" || result.status === "blocked") {
   return { status: result.status, result };
+}
+
+// M94-D11 §WRITER: re-index touched files after edits land (freshness trigger).
+// [RULE] quick-writer-pattern
+if (Array.isArray(result.filesEdited) && result.filesEdited.length > 0) {
+  await reindexTouchedFilesQuick(projectDir, result.filesEdited, "Execute");
 }
 
 // ── M89 Research Phase — Stated-Claims→classify→cite (§6.5/§1/§2/§3/§4/§7) ──

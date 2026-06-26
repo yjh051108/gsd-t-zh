@@ -174,6 +174,16 @@ fi
 ```
 <!-- /M56-D4: preflight + brief + verify-gate wire-in -->
 
+## Graph-Enhanced Structural Impact — WRITER Pattern (M94-D11)
+
+Quick applies the **WRITER pattern** from `graph-consumer-wiring-contract.md`:
+
+**READER half:** Before the task agent edits code, the quick workflow queries `blast-radius` / `who-imports` to assess the structural impact of the change — which files depend on the target, what is in the blast radius. This structural slice replaces grep/raw-read for the dependency question. The slice is injected into the task agent's context.
+
+**WRITER half:** After edits land, the workflow triggers a re-index of the touched files (`freshness_check_on_query` from `graph-freshness-contract.md` D4 surface) so downstream graph queries see fresh edges. `[RULE] quick-writer-pattern`.
+
+**FAIL-LOUD on graph-unavailable:** On `{ok:false, reason:"graph-unavailable"}`, the structural-impact query surfaces `"graph unavailable — fix it (gsd-t graph status)"` and the agent proceeds without the structural slice — it does NOT fall back to grep for the structural question. `[RULE] consumer-structural-grep-removed`.
+
 ## Step 1.5: Graph-Enhanced Scope Check
 
 ```bash
