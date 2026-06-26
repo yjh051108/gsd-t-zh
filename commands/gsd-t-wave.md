@@ -91,6 +91,14 @@ Call the `Workflow` tool with:
 
 For milestones with multiple waves (see `.gsd-t/contracts/m{NN}-integration-points.md` "Wave Sequencing"), invoke `gsd-t-wave` once per wave. Each call uses the domain list for that wave. Checkpoints (C1, C2, C3, …) gate between waves — verify the prior wave's verdict before starting the next.
 
+## Graph-Aware Disjointness (inherited from execute — M94-D11)
+
+Wave composes `gsd-t-execute` as a sub-workflow. The **graph-aware disjointness** invariant (M94-D11) applies through execute:
+- The disjointness check uses `gsd-t graph blast-radius` and `gsd-t graph who-imports` for transitive dependency overlap (not only literal `Touches` overlap).
+- On `graph-unavailable`, the disjointness check **FAILS LOUD and HALTS** — does NOT fan out on a grep-reconstructed guess. `[RULE] execute-disjointness-fail-loud-halts-never-grep-guess`.
+- Bootstrap escape hatch: `--disjointness-fallback=touches-only` is available on `graph-unavailable` (but NOT on `graph-says-non-disjoint`). See `commands/gsd-t-execute.md` for the full escape-hatch protocol.
+- **WRITER half:** touched files re-indexed after each domain's edits (freshness trigger per `graph-freshness-contract.md`).
+
 ## Document Ripple
 
 Wave delegates to execute and verify; their doc-ripple guarantees apply. Wave itself adds:

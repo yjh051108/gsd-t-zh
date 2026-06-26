@@ -57,6 +57,21 @@ The Workflow returns:
 - `status === "verify-failed"`: domains completed but verify-gate found regressions. Invoke `gsd-t-debug` (or its Workflow) before retry.
 - `status === "failed"`: a domain reported `failed`, integrate failed, or preflight blocked. Read `domainResults` for the blocking entry.
 
+## Graph-Aware Disjointness (SAFETY-CRITICAL — M94-D11)
+
+The file-disjointness check (`bin/gsd-t-file-disjointness.cjs`) is **graph-aware** as of M94. It uses `gsd-t graph blast-radius` and `gsd-t graph who-imports` to detect **transitive dependency overlap** — two domains whose touched files share a transitive dependency (one's files import a module that the other's files also import) are NOT disjoint even if their declared `Touches` lists have no literal overlap.
+
+**FAIL-LOUD halt on graph-unavailable:**
+On `graph-unavailable`, the disjointness check **FAILS LOUD and HALTS** — it does NOT fan out on a grep-reconstructed disjointness guess. A grep-reconstructed disjointness guess risks a concurrent-edit conflict (two agents editing overlapping code). This is the safety-critical invariant: `[RULE] execute-disjointness-fail-loud-halts-never-grep-guess`.
+
+**Bootstrap escape hatch (fresh repo or parser regression):**
+`graph-unavailable` in a fresh repo (no index yet built) or after a parser regression must not permanently brick parallel execution. When the graph is genuinely unavailable:
+- The HALT message clearly states `graph-unavailable` (not `graph-says-non-disjoint`) and surfaces the remediation: `gsd-t graph status` and `gsd-t graph build`.
+- The operator may pass `--disjointness-fallback=touches-only` to fall back to the literal-Touches-overlap check with a **loud announced WARNING** (never silent). This escape is NOT applicable to `graph-says-non-disjoint` verdicts — a real non-disjoint block stays absolute.
+- `[RULE] disjointness-bootstrap-escape-not-a-no-recourse-brick`
+
+**WRITER half:** After each domain's edits land, the workflow triggers a freshness pass over the touched set so downstream graph queries see fresh edges (`graph-freshness-contract.md` D4 surface). `[RULE] execute-disjointness-graph-aware-dependency-overlap`.
+
 ## Document Ripple
 
 After execute completes, ensure these are updated in the same commit chain:

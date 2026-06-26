@@ -19,6 +19,29 @@
  *   - D5 checks WRITE targets only; reads never conflict
  *   - Mode-agnostic
  *   - Git-history heuristic bounded to 100 commits
+ *
+ * M94-D11 additions (graph-aware disjointness — SAFETY-CRITICAL):
+ *   The graph-aware layer consults `bin/gsd-t-graph-query-cli.cjs` (blast-radius /
+ *   who-imports) to detect TRANSITIVE dependency overlap between two domain
+ *   touch-lists. Two domains whose touched files share a transitive dependency (one
+ *   imports a module the other also imports) are NOT disjoint even if their declared
+ *   Touches lists have no literal overlap.
+ *
+ *   FAIL-LOUD invariant: on `graph-unavailable`, the graph-aware check either HALTS
+ *   (returns {ok:false, reason:"GRAPH_UNAVAILABLE"}) or falls back to the literal-
+ *   Touches-overlap check ONLY when `opts.disjointnessFallback === "touches-only"` is
+ *   explicitly set by the operator (the bootstrap escape hatch). A grep-reconstructed
+ *   disjointness guess is NEVER taken. [RULE] execute-disjointness-fail-loud-halts-never-grep-guess
+ *
+ *   Bootstrap escape hatch: a fresh repo with no graph yet, or a parser regression,
+ *   must NOT permanently brick parallel execution. The operator may pass
+ *   `opts.disjointnessFallback = "touches-only"` to degrade to the Touches-only check
+ *   with a loud ANNOUNCED WARNING. This escape applies ONLY to `graph-unavailable` —
+ *   it NEVER applies to `graph-says-non-disjoint` (a real non-disjoint verdict stays
+ *   absolute and un-escapable). [RULE] disjointness-bootstrap-escape-not-a-no-recourse-brick
+ *
+ *   The existing Touches-overlap check is PRESERVED (additive — Destructive Action Guard).
+ *   [RULE] execute-disjointness-output-flips-on-graph-edge
  */
 
 const fs = require("node:fs");
@@ -163,21 +186,275 @@ function groupByOverlap(items) {
   return Array.from(groups.values());
 }
 
+// ─── Graph-aware disjointness (M94-D11 — SAFETY-CRITICAL) ───────────────────
+
+/**
+ * Query the graph CLI for the blast-radius of a file (transitive downstream set).
+ *
+ * Returns { blastRadius: string[], graphAvailable: boolean, cliPresent: boolean }.
+ *
+ * `cliPresent: false` means no local `bin/gsd-t-graph-query-cli.cjs` was found —
+ * the project has no graph infrastructure at all. Callers should skip the graph
+ * check entirely in that case (not FAIL LOUD — this is "no graph", not "broken graph").
+ *
+ * `cliPresent: true, graphAvailable: false` means the CLI exists but the graph index
+ * is missing or broken → FAIL LOUD (callers should halt fan-out).
+ *
+ * Only the LOCAL `bin/gsd-t-graph-query-cli.cjs` is used — no global `gsd-t` fallback.
+ * The global `gsd-t` binary serves other purposes; only the local CLI is the graph
+ * query interface. This ensures projects without graph infrastructure do not accidentally
+ * query a global binary (which would have no graph data for this project anyway).
+ *
+ * Never throws.
+ *
+ * @param {string} projectDir
+ * @param {string} filePath — repo-relative path to query
+ */
+function queryBlastRadius(projectDir, filePath) {
+  const queryCliPath = path.join(projectDir, "bin", "gsd-t-graph-query-cli.cjs");
+  const cliPresent = fs.existsSync(queryCliPath);
+
+  // No local CLI → no graph infrastructure. Skip the graph check; do NOT FAIL LOUD.
+  if (!cliPresent) {
+    return { blastRadius: [], graphAvailable: false, cliPresent: false };
+  }
+
+  let raw;
+  try {
+    raw = execSync(`node "${queryCliPath}" blast-radius "${filePath}"`, {
+      cwd: projectDir,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 10000,
+    });
+  } catch {
+    // CLI present but query failed (graph index broken / parse error).
+    return { blastRadius: [], graphAvailable: false, cliPresent: true };
+  }
+  try {
+    const envelope = JSON.parse((raw || "").trim());
+    if (!envelope.ok && envelope.reason === "graph-unavailable") {
+      // CLI present but graph index not built yet.
+      return { blastRadius: [], graphAvailable: false, cliPresent: true };
+    }
+    if (envelope.ok && Array.isArray(envelope.results)) {
+      const files = envelope.results.map((r) =>
+        typeof r === "string" ? r : (r && (r.file || r.path || ""))
+      ).filter(Boolean);
+      return { blastRadius: files, graphAvailable: true, cliPresent: true };
+    }
+    return { blastRadius: [], graphAvailable: false, cliPresent: true };
+  } catch {
+    return { blastRadius: [], graphAvailable: false, cliPresent: true };
+  }
+}
+
+/**
+ * M94-D11: Graph-aware disjointness check between two touch-lists.
+ *
+ * Returns one of:
+ *   { verdict: "disjoint" }
+ *   { verdict: "non-disjoint", reason: "graph-overlap"|"literal-touches-overlap", overlap: [...] }
+ *   { verdict: "graph-unavailable", reason: "GRAPH_UNAVAILABLE" }
+ *     — CLI present, graph index broken/missing → FAIL LOUD
+ *   { verdict: "no-cli" }
+ *     — no local graph CLI binary → skip graph check, Touches-only path
+ *
+ * The literal-Touches-overlap check runs FIRST (fast path). The graph check runs ONLY
+ * when the literal check returns disjoint — to discover transitive overlaps.
+ *
+ * [RULE] execute-disjointness-graph-aware-dependency-overlap
+ * [RULE] execute-disjointness-output-flips-on-graph-edge
+ */
+function graphAwareDisjointCheck(projectDir, touchesA, touchesB) {
+  // Fast path: literal Touches overlap — already know they're non-disjoint.
+  if (haveOverlap(touchesA, touchesB)) {
+    return { verdict: "non-disjoint", reason: "literal-touches-overlap", overlap: [] };
+  }
+
+  // Slow path: query the graph for transitive dependency overlap.
+  let graphAvailableConfirmed = false;
+
+  for (const fileA of touchesA.slice(0, 5)) {
+    const { blastRadius, graphAvailable, cliPresent } = queryBlastRadius(projectDir, fileA);
+    if (!cliPresent) {
+      // No local graph CLI in this project — skip graph check entirely.
+      return { verdict: "no-cli" };
+    }
+    if (!graphAvailable) {
+      // CLI present but index missing/broken → FAIL LOUD.
+      return { verdict: "graph-unavailable", reason: "GRAPH_UNAVAILABLE" };
+    }
+    graphAvailableConfirmed = true;
+    const setBtouch = new Set(touchesB);
+    const overlap = blastRadius.filter((f) => setBtouch.has(f));
+    if (overlap.length > 0) {
+      return {
+        verdict: "non-disjoint",
+        reason: "graph-overlap",
+        overlap,
+        detail: `"${fileA}" has transitive dependents in domain B: ${overlap.slice(0, 3).join(", ")}`,
+      };
+    }
+  }
+
+  for (const fileB of touchesB.slice(0, 5)) {
+    const { blastRadius, graphAvailable, cliPresent } = queryBlastRadius(projectDir, fileB);
+    if (!cliPresent) {
+      if (!graphAvailableConfirmed) {
+        return { verdict: "no-cli" };
+      }
+      continue; // Transient: A's queries confirmed the CLI; skip B
+    }
+    if (!graphAvailable) {
+      if (!graphAvailableConfirmed) {
+        // CLI present but index missing/broken → FAIL LOUD.
+        return { verdict: "graph-unavailable", reason: "GRAPH_UNAVAILABLE" };
+      }
+      continue; // Transient error on B after A confirmed available — skip
+    }
+    graphAvailableConfirmed = true;
+    const setAtouch = new Set(touchesA);
+    const overlap = blastRadius.filter((f) => setAtouch.has(f));
+    if (overlap.length > 0) {
+      return {
+        verdict: "non-disjoint",
+        reason: "graph-overlap",
+        overlap,
+        detail: `"${fileB}" has transitive dependents in domain A: ${overlap.slice(0, 3).join(", ")}`,
+      };
+    }
+  }
+
+  return { verdict: "disjoint" };
+}
+
+/**
+ * M94-D11: Graph-aware group partitioner.
+ *
+ * On graph-unavailable:
+ *   - fallbackToTouchesOnly=true → ANNOUNCED WARNING + literal-Touches fallback
+ *     (bootstrap escape hatch for fresh repo / parser regression).
+ *   - fallbackToTouchesOnly=false → returns { graphUnavailable:true } immediately
+ *     so the caller can FAIL LOUD and HALT.
+ *
+ * The escape hatch NEVER applies to a graph-says-non-disjoint verdict — real blocks
+ * stay absolute.
+ *
+ * [RULE] execute-disjointness-fail-loud-halts-never-grep-guess
+ * [RULE] disjointness-bootstrap-escape-not-a-no-recourse-brick
+ */
+function groupByOverlapGraphAware(items, projectDir, fallbackToTouchesOnly) {
+  const n = items.length;
+  if (n === 0) return { parallel: [], sequential: [], graphUnavailable: false };
+
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (i) => {
+    while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+    return i;
+  };
+  const union = (i, j) => { const a = find(i), b = find(j); if (a !== b) parent[a] = b; };
+
+  let graphUnavailable = false;
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const result = graphAwareDisjointCheck(projectDir, items[i].touches, items[j].touches);
+      if (result.verdict === "no-cli") {
+        // No local graph CLI in this project → skip graph check for all pairs.
+        // Fall through to Touches-only for this pair (NOT FAIL LOUD — this is "no graph").
+        if (haveOverlap(items[i].touches, items[j].touches)) {
+          union(i, j);
+        }
+      } else if (result.verdict === "graph-unavailable") {
+        graphUnavailable = true;
+        if (fallbackToTouchesOnly) {
+          // Bootstrap escape hatch: ANNOUNCED WARNING, degrade to literal-Touches.
+          // NEVER silent. NEVER applied to graph-says-non-disjoint verdicts.
+          process.stderr.write(
+            `[gsd-t disjointness] WARNING: graph unavailable — falling back to ` +
+            `literal-Touches-only check (--disjointness-fallback=touches-only). ` +
+            `Transitive dependency overlaps will NOT be detected. ` +
+            `Fix the graph index (gsd-t graph build) before the next parallel execute.\n`
+          );
+          if (haveOverlap(items[i].touches, items[j].touches)) {
+            union(i, j);
+          }
+        } else {
+          // No escape hatch: FAIL LOUD — return the unavailable signal.
+          // The caller (proveDisjointness) surfaces this and HALTS fan-out.
+          return { parallel: [], sequential: [], graphUnavailable: true };
+        }
+      } else if (result.verdict === "non-disjoint") {
+        // Real non-disjoint (literal OR graph-says-non-disjoint) — ABSOLUTE, not escapable.
+        union(i, j);
+      }
+      // verdict === "disjoint" → no union (safe to parallel)
+    }
+  }
+
+  const groups = new Map();
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(items[i].task);
+  }
+
+  const parallel = [];
+  const sequential = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) parallel.push(group);
+    else sequential.push(group);
+  }
+
+  return { parallel, sequential, graphUnavailable: false };
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────
 
 /**
  * Prove pairwise file-disjointness across a candidate parallel set.
  *
- * @param {{tasks: object[], projectDir: string}} opts
- * @returns {{parallel: object[][], sequential: object[][], unprovable: object[]}}
+ * M94-D11: Graph-aware when `bin/gsd-t-graph-query-cli.cjs` is present in projectDir.
+ *   - No local CLI → auto-detects via `no-cli` verdict → Touches-only (backward-compat).
+ *   - Local CLI present but graph index missing/broken → FAIL LOUD (graphUnavailable=true).
+ *   - Local CLI present and graph available → transitive-overlap check via blast-radius.
  *
- * Never throws. Appends a `disjointness_fallback` event to
- * `.gsd-t/events/YYYY-MM-DD.jsonl` for every task routed sequential
- * (including unprovable tasks).
+ * @param {{
+ *   tasks: object[],
+ *   projectDir: string,
+ *   disjointnessFallback?: "touches-only",  // bootstrap escape hatch: graph-unavailable → Touches-only
+ *   skipGraphCheck?: boolean,               // test-only: isolate Touches-only verdict (consumption-proof delta)
+ * }} opts
+ *
+ * @returns {{
+ *   parallel: object[][],
+ *   sequential: object[][],
+ *   unprovable: object[],
+ *   graphUnavailable?: boolean,  // true when CLI present but graph broken + no escape hatch
+ *   haltReason?: string,         // "GRAPH_UNAVAILABLE"
+ *   haltMessage?: string,        // human-readable remediation message
+ * }}
+ *
+ * FAIL-LOUD invariant: when graphUnavailable=true, the CALLER must surface:
+ *   "graph unavailable — fix it (gsd-t graph status)" and HALT fan-out.
+ *   It MUST NOT proceed on a grep-reconstructed guess.
+ * [RULE] execute-disjointness-fail-loud-halts-never-grep-guess
+ *
+ * Bootstrap escape hatch (opts.disjointnessFallback === "touches-only"):
+ *   On CLI-present-but-graph-unavailable, falls back to literal-Touches with ANNOUNCED WARNING.
+ *   Applies ONLY to graph-unavailable — graph-says-non-disjoint is absolute and un-escapable.
+ * [RULE] disjointness-bootstrap-escape-not-a-no-recourse-brick
+ *
+ * Never throws.
  */
 function proveDisjointness(opts) {
   const tasks = (opts && Array.isArray(opts.tasks)) ? opts.tasks : [];
   const projectDir = (opts && opts.projectDir) || process.cwd();
+  const fallbackToTouchesOnly = (opts && opts.disjointnessFallback) === "touches-only";
+  // skipGraphCheck=true forces Touches-only even if a local CLI is present.
+  // Used by the consumption-proof test to isolate the Touches-only verdict for comparison.
+  const skipGraphCheck = !!(opts && opts.skipGraphCheck);
 
   const parallel = [];
   const sequential = [];
@@ -193,7 +470,6 @@ function proveDisjointness(opts) {
     const { touches, source } = resolveTouches(t, projectDir);
     if (source === "none") {
       unprovable.push(t);
-      // Unprovable → always sequential (singleton group). Safe-default.
       sequential.push([t]);
       appendFallbackEvent(projectDir, t.id, "unprovable");
     } else {
@@ -201,7 +477,40 @@ function proveDisjointness(opts) {
     }
   }
 
-  // Group provable tasks by overlap. Singletons → parallel. Multi → sequential.
+  if (provable.length === 0) {
+    return { parallel, sequential, unprovable };
+  }
+
+  // M94-D11: Graph-aware path — auto-activated when the local graph CLI is present.
+  // When no local CLI is found, graphAwareDisjointCheck returns verdict="no-cli" and
+  // groupByOverlapGraphAware degrades to literal-Touches seamlessly (no FAIL LOUD).
+  if (!skipGraphCheck) {
+    const graphResult = groupByOverlapGraphAware(provable, projectDir, fallbackToTouchesOnly);
+    if (graphResult.graphUnavailable) {
+      // FAIL LOUD: local CLI is present but graph index is broken/missing.
+      // Caller must surface this and HALT fan-out.
+      return {
+        parallel: [],
+        sequential: [],
+        unprovable,
+        graphUnavailable: true,
+        haltReason: "GRAPH_UNAVAILABLE",
+        haltMessage: "graph unavailable — fix it (gsd-t graph status). " +
+          "Parallel execution requires the graph index for dependency-overlap detection. " +
+          "To bypass temporarily (fresh-repo bootstrap only), pass --disjointness-fallback=touches-only " +
+          "(ANNOUNCED WARNING — transitive overlaps will NOT be detected).",
+      };
+    }
+    // Graph check succeeded (or no-cli → Touches-only used silently).
+    for (const group of graphResult.parallel) { parallel.push(group); }
+    for (const group of graphResult.sequential) {
+      sequential.push(group);
+      for (const t of group) { appendFallbackEvent(projectDir, t.id, "write-target-overlap"); }
+    }
+    return { parallel, sequential, unprovable };
+  }
+
+  // skipGraphCheck=true: Touches-only path (for consumption-proof delta test).
   const groups = groupByOverlap(provable);
   for (const group of groups) {
     if (group.length === 1) {
@@ -222,6 +531,9 @@ module.exports = {
   // Internals exposed for unit tests:
   _haveOverlap: haveOverlap,
   _groupByOverlap: groupByOverlap,
+  _groupByOverlapGraphAware: groupByOverlapGraphAware,
+  _graphAwareDisjointCheck: graphAwareDisjointCheck,
+  _queryBlastRadius: queryBlastRadius,
   _resolveTouches: resolveTouches,
   _gitHistoryTouches: gitHistoryTouches,
 };
