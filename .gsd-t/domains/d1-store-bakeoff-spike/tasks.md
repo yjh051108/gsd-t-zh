@@ -6,7 +6,7 @@ When all tasks complete: a measured store choice (or KILL/re-scope verdict) reco
 ## Wave 1
 
 ### M94-D1-T1 — Synthetic ~1.5M-node graph generator
-- **Status**: [ ] pending
+- **Status**: [x] complete
 - **Files**: `bin/gsd-t-graph-synthetic-gen.cjs`
 - **Touches**: `bin/gsd-t-graph-synthetic-gen.cjs`
 - **ImplPath**: `bin/gsd-t-graph-synthetic-gen.cjs` — seeded generator emitting a node/edge set at configurable scale (default ~1.5M, Atos scale)
@@ -21,7 +21,7 @@ When all tasks complete: a measured store choice (or KILL/re-scope verdict) reco
   - Emits a JSON envelope `{ ok, nodes, edges, seed, scale }` (bin/<tool>.cjs convention)
 
 ### M94-D1-T2 — Store bake-off harness (K1 kill-criterion measurement)
-- **Status**: [ ] pending
+- **Status**: [x] complete
 - **Headline**: true
 - **Files**: `bin/gsd-t-graph-store-bakeoff.cjs`, `test/m94-k1-store-bakeoff.test.js`
 - **Touches**: `bin/gsd-t-graph-store-bakeoff.cjs`, `test/m94-k1-store-bakeoff.test.js`
@@ -42,7 +42,7 @@ When all tasks complete: a measured store choice (or KILL/re-scope verdict) reco
   - Store-driver candidates installed dev/spike-only — NEVER added to the shipped installer `dependencies` (zero-dep invariant)
 
 ### M94-D1-T3 — Store-schema contract + K1 result doc
-- **Status**: [ ] pending
+- **Status**: [x] complete
 - **Files**: `.gsd-t/contracts/graph-store-schema-contract.md`, `.gsd-t/spikes/k1-store-bakeoff-results.md`
 - **Touches**: `.gsd-t/contracts/graph-store-schema-contract.md`, `.gsd-t/spikes/k1-store-bakeoff-results.md`
 - **ImplPath**: `.gsd-t/contracts/graph-store-schema-contract.md` — the node/edge/tier/content-hash record shape + picked store engine the Wave-2 trio builds against
