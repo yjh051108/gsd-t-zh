@@ -2,6 +2,38 @@
 
 > **Why this file exists (RE-PLAN Fix-2):** the integrate workflow reads `.gsd-t/contracts/${milestone.toLowerCase()}-integration-points.md` (`templates/workflows/gsd-t-integrate.workflow.js` line 81), i.e. `m94-integration-points.md` — NOT the generic `integration-points.md`. The full M94 narrative + wave diagram lives in the generic `.gsd-t/contracts/integration-points.md`; THIS file is the canonical integrate-stage entry point so the seam-test spec + wave groupings + the AC-descope-record location are FINDABLE at integrate time.
 
+## EXPANDED BACK-HALF (RE-PLAN 2026-06-26 — user decision: wire ALL ~19 code-reading commands, not just /scan)
+> The Central Tenet ("graph = MANDATORY structural-knowledge layer for EVERY code-reading step") is delivered by wiring all code-reading commands in 3 LAYERS, grouped into new waves A/B/C after the (complete) Wave-1+2 build. The original Wave-3 (`/scan` only, d6) + INTEGRATE (d7) STAY; the expanded wiring is additive new domains d8–d11.
+
+- **LAYER 1 — Shared wiring contract** (d8): ONE `graph-consumer-wiring-contract.md` = READER pattern (assess → graph query, not structural-grep) + WRITER pattern (reader + re-index touched files after edits) + FAIL-LOUD invariant (structural-grep REMOVED from the assessment path; graph-unavailable on a structural question fails loud, never silent grep) + the TEXT-search-grep carve-out + the `/scan` announced-fallback carve-out + the consumer manifest (the wired-file register).
+- **LAYER 2 — Anti-grep lint** (d8): deterministic build gate (`bin/gsd-t-graph-anti-grep-lint.cjs` + `test/m94-d8-anti-grep-lint.test.js`) — FAILS the build if any wired command has a `try graph → catch → structural grep` fallback; manifest-driven (no hardcoded list); written BEFORE wiring so nothing regresses. Extends the d5 AC-5 structural-grep-for-absence idea from the query CLI to the consumer commands.
+- **LAYER 3 — Query-CLI extensions** (d9, additive to `bin/gsd-t-graph-query-cli.cjs`, NOT separate contracts): `cluster` (tightly-coupled file groups — partition/project), `dead-code`/`orphan` + `dangling` (absence — qa/verify), `test-impl` (test→impl coverage — test-sync). **CONFIRMED this plan pass:** test→impl needs NO new d3 edge type — call-site edges are already funcId-keyed `file#function` at both ends, so the verb filters them by test-path source.
+
+### Expanded wave groupings
+- **WAVE A (foundation — parallel, file-disjoint):** `d8 wiring-contract-and-lint` ∥ `d9 query-cli-extensions`. Written FIRST so consumer wiring lands against a settled contract + lint + verbs.
+- **WAVE B (READER commands — parallel after Wave A):** `d10 reader-command-wiring` — impact (blast-radius, the user's CORE use case) · plan · partition+project (cluster) · feature · gap-analysis · populate · promote-debt · prd · qa+verify (orphan/dangling) · integrate. The shared `gsd-t-phase.workflow.js` injection seam (d10-T0) feeds the generic-runner readers uniformly. `/scan` reader wiring stays in d6 (excluded from d10).
+- **WAVE C (WRITER commands — parallel after Wave B):** `d11 writer-command-wiring` — execute+wave (SAFETY-CRITICAL disjointness, fail-loud-halts paramount) · debug (BOTH reader+writer) · quick · test-sync (test-impl) · design-build. Each writer = reader pattern + re-index touched files after edits.
+- **EXCLUDED (no code-structure assessment):** all backlog-* · status/resume/pause/log/metrics/health/complete-milestone/milestone · init/init-scan-setup/setup/version-update*/help/Claude-md · branch/checkin/cpua/triage-and-merge/gsd · design-audit/design-review/design-decompose · doc-ripple/global-change.
+
+### Expanded-scope seams (NO shared-file edits across domains)
+| Seam | Producer | Consumer(s) | Surface |
+|------|----------|-------------|---------|
+| Shared wiring contract + manifest | d8 (D8-T1) | d10 readers, d11 writers, d6 scan (manifest row) | `graph-consumer-wiring-contract.md` READER/WRITER/FAIL-LOUD + consumer table |
+| Anti-grep lint | d8 (D8-T2/T3) | build/verify gate | `bin/gsd-t-graph-anti-grep-lint.cjs` + `test/m94-d8-anti-grep-lint.test.js` (manifest-driven) |
+| New query verbs | d9 (D9-T1/T2/T3) | d10 (cluster→partition/project, orphan→qa/verify), d11 (test-impl→test-sync) | `bin/gsd-t-graph-query-cli.cjs` (additive) + `graph-query-cli-contract.md` |
+| Phase-workflow injection seam | d10 (D10-T0, sole owner) | generic-runner readers + the generic-runner writers (test-sync/design-build inherit the reader half) | `templates/workflows/gsd-t-phase.workflow.js` |
+| Disjointness graph-awareness (SAFETY-CRITICAL) | d11 (D11-T1, sole owner) | execute/wave fan-out | `bin/gsd-t-file-disjointness.cjs` (graph-aware dependency-overlap, fail-loud-halts) |
+
+### Expanded-scope file-disjointness verdict (re-validated this RE-PLAN)
+- d8 owns: `graph-consumer-wiring-contract.md`, `bin/gsd-t-graph-anti-grep-lint.cjs`, `test/m94-d8-anti-grep-lint.test.js`.
+- d9 owns: `bin/gsd-t-graph-query-cli.cjs` + `graph-query-cli-contract.md` (sole back-half editor — d5's Wave-2 tasks are COMPLETE; d6 only READS the envelope, d8's lint only READS the contract) + 3 new test files.
+- d10 owns: `gsd-t-phase.workflow.js` (T0 sole) + 10 reader command `.md`s + `gsd-t-integrate.workflow.js` + `gsd-t-verify.workflow.js` + `test/m94-d10-reader-wiring.test.js` (T0-owned, manifest-driven). EXCLUDES scan files (d6).
+- d11 owns: 4 writer workflow `.js`s (execute/wave/debug/quick) + 6 writer command `.md`s + `bin/gsd-t-file-disjointness.cjs` (T1 sole) + `test/m94-d11-writer-wiring.test.js` (T0-owned).
+- **Zero cross-domain write collision.** Critical disjointness checks: `bin/gsd-t.js` (d7 ONLY) ≠ `bin/gsd-t-graph-query-cli.cjs` (d9 ONLY) ≠ `bin/gsd-t-file-disjointness.cjs` (d11-T1 ONLY); scan files (d6 ONLY, excluded from d10/d11); each command `.md` + each workflow `.js` has exactly one owning task; the shared test files are manifest-driven + single-owned by their domain's T0.
+- **Manifest-driven tests** (d8 lint, d10 reader test, d11 writer test) all read the d8 consumer-manifest rather than hardcoding a consumer list — so coverage auto-extends as commands are wired and no wired file can silently escape the gate (`feedback_coverage_check_structural_not_substring`).
+
+---
+
 ## Wave Groupings (the integration shape)
 - **WAVE 1 — PROVE-OR-KILL (parallel, file-disjoint, throwaway spike code; HARD GATE):** `d1 store-bakeoff-spike` (K1) ∥ `d2 treesitter-throughput-spike` (K2 = AC-1).
 - **WAVE-1 HARD GATE (machine-checkable — RE-PLAN Fix-4):** REQUIRE `k1Verdict == PICK` (store on evidence, ALL 4 sub-criteria: embedded · <50ms query · <1s incremental · concurrent-atomicity, + the Fix-6 footprint ceilings) AND `k2Verdict == PASS` (tree-sitter full-indexes REAL Atos < ~2 min, against a PINNED SHA, within the Fix-6 RSS ceiling AND the Fix-6 MEASURED-scale sanity check vs the bake-off). The verdict fields are written by D1-T3 (`k1Verdict`) + D2-T3 (`k2Verdict`); the gate is enforced by `test/m94-wave1-hard-gate.test.js` (D7-T2). Either fails its numbers → legitimate KILL/RE-SCOPE; **the KILL MUST record an explicit AC-descope (which ACs survive) HERE before any Wave-2 task** (`[RULE] kill-outcome-records-ac-descope`). A KILL with no descope record FAILS the gate; no Wave-2 build artifact may exist while a spike verdict is KILL without a descope.
