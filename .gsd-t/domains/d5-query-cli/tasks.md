@@ -6,7 +6,7 @@ When all tasks complete: a deterministic query CLI (who-imports / who-calls / bl
 ## Wave 2
 
 ### M94-D5-T1 — Query CLI (who-imports/who-calls/blast-radius + status) + envelope contract
-- **Status**: [ ] pending
+- **Status**: [x] complete — 2026-06-25 23:10 PDT
 - **Headline**: true
 - **Files**: `bin/gsd-t-graph-query-cli.cjs`, `.gsd-t/contracts/graph-query-cli-contract.md`, `test/m94-d5-query-cli.test.js`
 - **Touches**: `bin/gsd-t-graph-query-cli.cjs`, `.gsd-t/contracts/graph-query-cli-contract.md`, `test/m94-d5-query-cli.test.js`
@@ -26,7 +26,7 @@ When all tasks complete: a deterministic query CLI (who-imports / who-calls / bl
   - **Builds in the AC-5 keystone invariants** (proven by T2): NO directive-driven grep fallback path exists in any code path (`[RULE] query-cli-never-greps`); a genuine parser/store-load failure returns `{ok:false, reason:'graph-unavailable'}` FAIL-LOUD, never a partial edge (`[RULE] parser-fail-disables-loud-never-silent`)
 
 ### M94-D5-T2 — AC-5 keystone tests: no-grep-fallback (structural) + fault-injection fail-loud
-- **Status**: [ ] pending
+- **Status**: [x] complete — 2026-06-25 23:10 PDT
 - **Files**: `test/m94-d5-no-grep-fallback-structural.test.js`, `test/m94-d5-fault-injection-fail-loud.test.js`
 - **Touches**: `test/m94-d5-no-grep-fallback-structural.test.js`, `test/m94-d5-fault-injection-fail-loud.test.js`
 - **ImplPath**: `bin/gsd-t-graph-query-cli.cjs` (T1) — these tests are the structural + fault-injection proof of the keystone invariant on that implementation
@@ -41,7 +41,7 @@ When all tasks complete: a deterministic query CLI (who-imports / who-calls / bl
   - `[RULE] parser-fail-disables-loud-never-silent`: fault-injection forces a parser-load failure → asserts `{ok:false, reason:'graph-unavailable'}`, never a partial edge (commands then fall back to grep mode ANNOUNCED, in D6)
 
 ### M94-D5-T3 — Blast-radius union fixture test (#9 — both graphs unioned, neither over- nor under-broad)
-- **Status**: [ ] pending
+- **Status**: [x] complete — 2026-06-25 23:10 PDT
 - **Files**: `test/m94-d5-blast-radius-union.test.js`
 - **Touches**: `test/m94-d5-blast-radius-union.test.js`
 - **ImplPath**: `bin/gsd-t-graph-query-cli.cjs` (T1) — this test is the hand-checked proof of the blast-radius union semantics on that implementation
@@ -58,7 +58,7 @@ When all tasks complete: a deterministic query CLI (who-imports / who-calls / bl
   - **[Pre-mortem Fix-5 — sole Phase-1 liveness guarantee]** this union fixture test IS the sole Phase-1 liveness guarantee for `blast-radius` (its `/impact` + `/debug` consumers are DEFERRED). `blast-radius` is recorded as a SEQUENCED-follow-on deliverable (NOT Phase-1-consumed, NOT wired into `/scan`) in `graph-query-cli-contract.md` + `integration-points.md` — a declared foundation, not a silent dead deliverable — `[RULE] blast-radius-sequenced-follow-on-not-phase1-consumed`
 
 ### M94-D5-T4 — RE-PLAN Fix-3: who-calls function-identity disambiguation test
-- **Status**: [ ] pending
+- **Status**: [x] complete — 2026-06-25 23:10 PDT
 - **Files**: `test/m94-d5-who-calls-identity.test.js`
 - **Touches**: `test/m94-d5-who-calls-identity.test.js`
 - **ImplPath**: `bin/gsd-t-graph-query-cli.cjs` (T1 — `who-calls` resolution) + `bin/gsd-t-graph-edge-extract.cjs` (D3-T1 — the `funcId`-keyed call edges) — this test proves the `funcId` identity disambiguates same-named functions, so `who-calls` is provable on REAL data, not just unique-named toy fixtures

@@ -1,17 +1,90 @@
 # Contract: Graph Indexer Build/Put Surface
 
-**Status:** DRAFT — authored by D3 during Wave-2 build (after the K1+K2 hard gate).
+**Status:** STABLE — D3 build complete (M94-D3-T2).
 **Owner:** d3-indexer-core
 **Consumers:** d4-freshness (calls the per-file parse function to re-index a stale file), d5-query-cli (calls re-index inline before answering)
-**Version:** 0.2.0 (DRAFT — RE-PLAN Fix-2: FREEZE `parse_and_put`'s tier behavior as an invariant before D3/D4 execute. SCIP indexers are WHOLE-PROJECT BATCH tools; a per-file tree-sitter re-index MUST NOT silently relabel a previously compiler-accurate file as `tree-sitter-floor` — it either re-upgrades or honestly flags `tree-sitter-floor-STALE-SCIP`, never silently downgrades the AC-3 path.)
+**Version:** 1.0.0 (STABLE — RE-PLAN Fix-2 frozen and implemented: tier-preservation invariant enforced in `gsd-t-graph-index.cjs` + `gsd-t-graph-scip-upgrade.cjs`; tested by `test/m94-d3-tier-preserved-on-reindex.test.js`)
+**Updated:** 2026-06-26
 
 ## Purpose
 The function-level build/put surface D3 exposes so D4 and D5 re-index a file WITHOUT editing D3's source (keeps them file-disjoint). D4/D5 call this surface; they never edit `bin/gsd-t-graph-index.cjs`.
 
+## Import path
+
+```js
+const { build_index, parse_and_put, openStore, closeStore, putRecord, getRecord } =
+  require('./gsd-t-graph-index.cjs');
+const { tryScipUpgrade, detectScip } =
+  require('./gsd-t-graph-scip-upgrade.cjs');
+```
+
 ## Surface
-- `build_index(repo)` — full-repo build: per file → tree-sitter floor parse → optional SCIP upgrade → `store.put(file, content_hash, entities, edges, tier)`
-- `parse_and_put(file)` — per-file re-index (the function D4 calls on a stale file; D5 calls inline) → re-parses one file, writes its record, returns the new entities/edges
-- both honor the D1 store-schema and D2 taxonomy
+
+### `build_index(repoRoot, options)` — full-repo index
+
+```js
+// options:
+{
+  dbPath?: string,       // default: repoRoot/.gsd-t/graph.db
+  scip?: object,         // the gsd-t-graph-scip-upgrade.cjs module (or null = floor only)
+  onProgress?: Function, // ({ file, tier, fileCount, total })
+}
+// returns:
+{
+  fileCount: number,
+  entityCount: number,
+  edgeCount: number,
+  tier: { floor: number, upgraded: number },
+  errors: number,
+  durationMs: number,
+  dbPath: string,
+}
+```
+
+Full-repo tree-sitter floor index. Streams per-file (never loads whole graph into RAM — K1 OOM invariant from `.gsd-t/spikes/k1-store-bakeoff-results.md`). Calls the SCIP upgrader if provided.
+
+### `parse_and_put(absPath, relPath, options)` — per-file re-index (the D4/D5 surface)
+
+This is a **function-level surface**, NOT a shared file edit. D4 and D5 import `gsd-t-graph-index.cjs` and call this function; they do NOT edit the indexer file.
+
+```js
+// options:
+{
+  db: Database,            // better-sqlite3 Database instance (must be open)
+  scip?: object,           // the SCIP upgrader module (or null)
+  existingTier?: string,   // tier currently stored for this file (for STALE-SCIP detection)
+}
+// returns:
+{
+  entities: FuncEntity[],
+  edges: Edge[],
+  tier: TierEnum,
+  contentHash: string,
+  loc: number,
+}
+```
+
+### Store open/close lifecycle
+
+D4 and D5 are responsible for opening the store before calling `parse_and_put` and closing it after. `parse_and_put` does NOT open or close the database — it accepts an open `db` instance.
+
+```js
+const db = openStore(dbPath);
+const result = parse_and_put(absPath, relPath, { db, scip, existingTier });
+closeStore(db);
+```
+
+### Tier enum (`[RULE] accuracy-tier-labeled-never-silently-wrong`)
+
+```
+TierEnum = "compiler-accurate" | "tree-sitter-floor" | "tree-sitter-floor-STALE-SCIP"
+```
+
+- `compiler-accurate` — SCIP indexer present + ran OK; edges are compiler-derived (Phase-2 will replace tree-sitter edges with SCIP-derived ones; Phase-1 labels the tier)
+- `tree-sitter-floor` — no SCIP indexer for this language; edges are tree-sitter best-effort
+- `tree-sitter-floor-STALE-SCIP` — SCIP was present at last full index but is now absent or fails on re-index; the "was-accurate" signal is preserved; consumer treats these as floor edges
+
+Every file record in the store carries a `tier` field from this enum. No unlabeled record is written.
 
 ## Honesty invariants
 - `[RULE] accuracy-tier-labeled-never-silently-wrong` — every edge carries `tier` (compiler-accurate where SCIP present, tree-sitter-floor where absent); never an unlabeled mix
