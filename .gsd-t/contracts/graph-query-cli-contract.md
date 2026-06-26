@@ -11,8 +11,14 @@ The deterministic query interface the model cannot route around — the no-stale
 ## CLI surface (`gsd-t graph <verb>`)
 - `who-imports <file>` — file→file reverse import edges
 - `who-calls <function>` — function→function reverse call edges
-- `blast-radius <target>` — combined downstream impact set
+- `blast-radius <target>` — combined downstream impact set (see Blast-radius semantics below)
 - `status` — live queryable index state (`[RULE] graph-status-live` — the M20–M21 "no graph index found" is the anti-goal)
+
+## Blast-radius semantics (`[RULE] blast-radius-unions-both-graphs`)
+`blast-radius(target)` returns the downstream impact set computed as the **UNION of the import-graph reverse-reachable set AND the call-graph reverse-reachable set** from `target`:
+- **Graphs unioned:** both the file→file import graph and the function→function call graph. A node reachable via EITHER graph is in the blast radius; a node reachable via NEITHER is excluded.
+- **Hop-depth:** **transitive** (full reverse-reachable closure), NOT one-hop. (Contrast with D4 freshness re-validation, which is deliberately one-hop — blast-radius is the user-facing "everything downstream" query, freshness is the cheap incremental check.)
+- **Falsifiable:** the fixture test MUST include a node reachable ONLY via the call graph (NOT the import graph) — it MUST appear in the result (proves both graphs are unioned, not import-only) — AND an unrelated node reachable via neither — it MUST be excluded (proves the set is not over-broad). Over-broad OR under-broad fails the test.
 
 Each verb calls D4's `freshness_check_on_query` INLINE before answering.
 

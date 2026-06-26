@@ -9,7 +9,16 @@
 The on-disk record shape every Wave-2 domain builds against, plus the picked embedded store engine. The specific store is DEFERRED to the K1 spike — an OPEN decision, NOT asserted here.
 
 ## The decision K1 resolves
-Pick a store iff it is embedded / on-disk / no-server / no-paid-license AND clears the query-latency target AND does a single-file incremental update + one-hop edge re-validation sub-~1s — across KuzuDB-embedded / SQLite-recursive-CTE / JSONL / graphology. Else KILL_OR_RESCOPE (e.g. import-graph-only, cap repo size). `[RULE] K1: store-picked-on-evidence-or-rescope`
+Pick a store iff it clears ALL FOUR sub-criteria below — across KuzuDB-embedded / SQLite-recursive-CTE / JSONL / graphology. Else KILL_OR_RESCOPE (e.g. import-graph-only, cap repo size). `[RULE] K1: store-picked-on-evidence-or-rescope`
+
+| # | Sub-criterion | PASS condition |
+|---|---------------|----------------|
+| 1 | Embedded-eligibility | embedded / on-disk / no-server / no-paid-license |
+| 2 | Query latency (PRE-REGISTERED numeric target — `[RULE] k1-query-latency-target`) | `who-imports(X)` AND `who-calls(f)` each return in **< 50 ms** at the synthetic ~1.5M-node scale. This is the falsifiable ceiling; "fast" is NOT a number. An engineered-to-fail candidate that exceeds 50 ms on either query is NOT picked. |
+| 3 | Incremental update | single-file incremental put + one-hop direct-importer edge re-validation in **< 1 s** |
+| 4 | Concurrent-update atomicity (`[RULE] k1-atomic-single-file-update`) | while a single-file re-index WRITE for file F is in flight, a concurrent `who-imports(F)` read returns **fully-old OR fully-new edges, NEVER a torn/partial set** — proven by the store's stated atomicity guarantee (single-writer lock / atomic write+rename / transaction) under a concurrent read+write test. |
+
+The 50 ms query-latency target and the atomicity guarantee MUST be declared HERE before D1 executes — the bake-off measures against pre-registered numbers, never asserts a winner after the fact.
 
 ## Record shape (columns — finalized by the spike)
 | Field | Meaning |
@@ -21,10 +30,15 @@ Pick a store iff it is embedded / on-disk / no-server / no-paid-license AND clea
 | `tier` | `compiler-accurate` (SCIP present) or `tree-sitter-floor` (approximate) |
 
 ## Query surface the store must support (measured in the bake-off)
-- `who_imports(X)` — file→file reverse import edges
-- `who_calls(f)` — function→function reverse call edges
-- single-file incremental put + one-hop direct-importer edge re-validation
+- `who_imports(X)` — file→file reverse import edges (latency measured vs the < 50 ms target)
+- `who_calls(f)` — function→function reverse call edges (latency measured vs the < 50 ms target)
+- single-file incremental put + one-hop direct-importer edge re-validation (< 1 s)
+- atomic single-file update under a concurrent read (sub-criterion 4 — torn-read forbidden)
+
+## Atomicity guarantee (declared per picked store)
+Whichever store is picked MUST document the mechanism by which a concurrent `who-imports(F)` cannot observe a torn/partial edge set during F's re-index write — one of: single-writer file lock, atomic write-to-temp + rename, or a store-native transaction. D4's freshness re-index relies on this guarantee; D5's inline query depends on it returning a coherent set.
 
 ## Open until K1 resolves
 - The picked store engine (recorded in `.gsd-t/spikes/k1-store-bakeoff-results.md` + progress.md)
 - Exact column types / on-disk encoding (store-specific)
+- The concrete atomicity mechanism (which of the three the picked store provides)

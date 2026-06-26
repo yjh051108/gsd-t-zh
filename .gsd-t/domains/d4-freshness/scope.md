@@ -15,6 +15,7 @@ WAVE 2 BUILD (after the hard gate; runs concurrently with d3 and d5). Per-file C
 - `.gsd-t/contracts/graph-freshness-contract.md`
 - `test/m94-d4-freshness.test.js`
 - `test/m94-d4-uncommitted-edit-caught.test.js`
+- `.gsd-t/spikes/ac3-freshness-scale-budget-results.md`
 
 ## NOT Owned (do not modify)
 - `bin/gsd-t-graph-store-bakeoff.cjs`, `bin/gsd-t-graph-synthetic-gen.cjs`, `.gsd-t/contracts/graph-store-schema-contract.md` — owned by d1 (store-schema consumed read-only)

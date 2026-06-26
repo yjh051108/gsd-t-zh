@@ -28,6 +28,26 @@
 > present). On a genuine parser failure the CLI FAILS LOUD (graph-unavailable, commands fall back to
 > today's grep mode, announced) — it NEVER serves a stale or half-accurate edge.
 >
+> **CENTRAL TENET (the spine, David 2026-06-25 — reframe).** Dumb reach vs. smart reach into code.
+> DUMB reach = today: the LLM gets a pile of text and must assemble + figure out the structure before
+> it can reason. SMART reach = the graph: relationships are already organized and identified, so the
+> LLM does the one thing only it can — THINK — with all the facts in hand. The code graph is the
+> MANDATORY structural-knowledge layer for EVERY workflow step that reaches into code (structure /
+> downstream effects / debugging); no code-reading step reconstructs from raw text what the graph
+> already knows. Four wins on every code-reading consumer: (1) fewer tokens (compact graph ≪ raw
+> source); (2) skip relationship-tracing (call chains / imports / dependents / dead-code / cycles
+> PRE-COMPUTED, not reconstructed by reading); (3) pre-organized for reasoning — the LLM skips
+> comprehension, goes straight to judgment (less load = faster AND better); (4) better/accurate
+> structural insight. Only deep logic-bug reading INSIDE a function is not graph-replaceable (but the
+> LLM arrives oriented). **Scope discipline (avoids the M20–M21 "21-commands-at-once" death):** the
+> tenet is the PRINCIPLE + the shared query layer + the contract MANDATE that code-reading steps
+> consume the graph; Phase 1 WIRES `/scan` + the query CLI as the FIRST PROOF; the other consumers
+> (`/debug` `/quick` `/impact` `/execute` file-disjointness `/plan` partition M92-reflex) are
+> MANDATED, SEQUENCED follow-on wiring — in-scope by principle, sequenced by execution, NEVER dropped.
+> AC-4 (`/scan`) is the falsifiable PROOF of the tenet, on BOTH axes (faster AND better-insight),
+> bound to a real mechanism (the structural slice is INJECTED into the scanSlice deep-finders so they
+> read LESS) and measured against pre-registered numbers on a pinned Atos SHA — neither asserted.
+>
 > **The risk-first wave shape is the decision I signed off on.** The two existential unknowns the
 > research left genuinely OPEN — the embedded store choice, and whether tree-sitter can index Atos
 > in budget — are Wave-1 PROVE-OR-KILL spikes measured on the REAL Atos repo, with hard numeric
@@ -150,6 +170,18 @@ invariant prose carries the marker; RULE-IDs derived). These feed `bin/gsd-t-gua
 - `[RULE] rust-cross-crate-flagged-partial: Rust cross-crate edges are FLAGGED partial (rust-analyzer SCIP is "limited") — never returned as if complete.`
 - `[RULE] scan-run2-reads-index-not-source: /scan run-2 (index warm) answers from the index, not by re-reading the whole repo; both run wall-clocks reported.`
 - `[RULE] graph-status-live: gsd-t graph status returns a live queryable index on the Atos repo — the M20–M21 "no graph index found" state is the anti-goal.`
+
+### Reframe-required guards (the CENTRAL TENET binding — added 2026-06-26; the 9 reframe tests)
+- `[RULE] scan-run2-on-cost-critical-path` (#1): AC-4 run-2 deep-finder agents read materially FEWER files / spawn fewer-or-cheaper readers than **run-0 (the NO-GRAPH baseline)** — the graph DISPLACES real reading/reasoning, not merely sits beside it. A wall-clock delta ALONE is insufficient. (Compared vs run-0, NOT run-1, which is already graph-wired and understates the delta.)
+- `[RULE] scan-run2-speed-ceiling` (#2): run-2 (warm) wall-clock < 0.5× run-1 (cold build) on the SAME pinned Atos SHA — a PRE-REGISTERED numeric ceiling in graph-scan-consumer-contract.md, not "dramatically"; the result-doc check FAILS if exceeded.
+- `[RULE] ac4-three-distinct-runs`: AC-4 measures THREE runs — run-0 (no-graph baseline, grep mode), run-1 (cold-build graph-wired, the SPEED baseline), run-2 (warm, both axes). The insight + cost-critical-path baseline is run-0; the speed baseline is run-1. Conflating them (run-2-vs-run-1 for insight) shows ~zero delta and silently mis-passes — forbidden.
+- `[RULE] k1-query-latency-target` (#3): who-imports / who-calls each return < 50 ms at ~1.5M-node scale — a pre-registered number in graph-store-schema-contract.md BEFORE D1; an engineered-to-fail candidate fails on latency-over-target.
+- `[RULE] k1-atomic-single-file-update` + `[RULE] freshness-write-atomic-no-torn-read` (#4): while a single-file re-index WRITE is in flight, a concurrent who-imports(F) returns fully-old OR fully-new edges, NEVER torn/partial — the picked store's declared atomicity (single-writer lock / atomic write+rename / txn); K1's 4th measured sub-criterion.
+- `[RULE] kill-outcome-records-ac-descope` (#5): every Wave-1 KILL outcome records an explicit AC-descope (which ACs survive → which move to Phase-2, tests removed from THIS milestone's acceptance, never silently failed) in progress.md BEFORE any Wave-2 task runs.
+- `[RULE] ac3-timing-split` (#6): AC-3/K1 incremental timing is split — a deterministic CORRECTNESS test (content-hash mismatch detected, one-hop not transitive, NO timing assertion) gates the build; a SEPARATE scale-budget measurement records the sub-~1s number at 1.5M-node scale against a pre-committed ceiling. No flaky inline wall-clock on a toy fixture.
+- `[RULE] ac4-atos-sha-pinned` + `[RULE] k2-atos-sha-pinned` (#7): AC-4 (run-1 == run-2) AND K2 PIN the Atos commit SHA and fail LOUD on repo-not-found / commit-mismatch — a number is NEVER recorded against an unpinned/absent repo.
+- `[RULE] live-store-seam` (#8, integrate-owned): a real D3 index into a real D1 store, edited on disk, queried via D5 — the answer reflects the EDIT (proves D5→D4→D3→D1 fired live + the store mutated). Not mocked.
+- `[RULE] blast-radius-unions-both-graphs` (#9): blast-radius(target) returns the UNION of the import-graph AND call-graph reverse-reachable sets (transitive); a node reachable only via the call graph IS included, an unrelated node is EXCLUDED — neither over- nor under-broad. Semantics declared in graph-query-cli-contract.md.
 
 ---
 

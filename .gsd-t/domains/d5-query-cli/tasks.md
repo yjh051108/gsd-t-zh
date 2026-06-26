@@ -17,6 +17,7 @@ When all tasks complete: a deterministic query CLI (who-imports / who-calls / bl
 - **Acceptance criteria**:
   - (AC-2 who-imports/who-calls correctness + the keystone freshness seam)
   - Answers who-imports / who-calls / blast-radius from the store (AC-2, hand-checked fixtures)
+  - **[#9 blast-radius semantics]** `blast-radius(target)` returns the **UNION of the import-graph AND call-graph reverse-reachable sets**, transitive closure (NOT one-hop) — `[RULE] blast-radius-unions-both-graphs`; the semantics (which graphs, hop-depth) are DECLARED in `graph-query-cli-contract.md` (authored here, before D5-T3's fixture test)
   - Calls D4's freshness check INLINE before answering — `[RULE] stale-file-reindexed-before-answer`
   - `gsd-t graph status` returns a live queryable index — `[RULE] graph-status-live`
   - Authors `graph-query-cli-contract.md` (the JSON envelope D6 reads)
@@ -38,9 +39,25 @@ When all tasks complete: a deterministic query CLI (who-imports / who-calls / bl
   - `[RULE] query-cli-never-greps`: structural grep-for-absence — parses the CLI's code paths and asserts NO directive-driven grep fallback exists (not a substring scan)
   - `[RULE] parser-fail-disables-loud-never-silent`: fault-injection forces a parser-load failure → asserts `{ok:false, reason:'graph-unavailable'}`, never a partial edge (commands then fall back to grep mode ANNOUNCED, in D6)
 
+### M94-D5-T3 — Blast-radius union fixture test (#9 — both graphs unioned, neither over- nor under-broad)
+- **Status**: [ ] pending
+- **Files**: `test/m94-d5-blast-radius-union.test.js`
+- **Touches**: `test/m94-d5-blast-radius-union.test.js`
+- **ImplPath**: `bin/gsd-t-graph-query-cli.cjs` (T1) — this test is the hand-checked proof of the blast-radius union semantics on that implementation
+- **Test**: `test/m94-d5-blast-radius-union.test.js` — a hand-checked fixture graph where one downstream node is reachable from `target` ONLY via the call graph (NOT the import graph) and an unrelated node is reachable via NEITHER. Asserts `blast-radius(target)`:
+  - INCLUDES the call-graph-only node (proves both graphs are UNIONED, not import-only) — fails if it's missing (under-broad)
+  - EXCLUDES the unrelated node — fails if it's present (over-broad)
+- **Contract refs**: graph-query-cli-contract (T1 — the blast-radius semantics section)
+- **Dependencies**: M94-D5-T1
+- **Acceptance criteria**:
+  - (`[RULE] blast-radius-unions-both-graphs` — the hand-checked union proof)
+  - The call-graph-only downstream node IS in the result (both graphs unioned)
+  - The unrelated node is NOT in the result (set is not over-broad)
+  - Hop-depth is transitive: the fixture includes a 2-hop downstream node that MUST appear (blast-radius is full reverse-reachable closure, distinct from D4's deliberate one-hop freshness)
+
 ## Execution Estimate
-- Total tasks: 2
+- Total tasks: 3
 - Independent tasks (no cross-domain blockers): 0 (gated on the Wave-1 HARD GATE + D4's freshness surface)
 - Blocked tasks (waiting on other domains): T1 (on d4's freshness contract; on d1's store-schema)
-- Intra-domain serial chain: T1 → T2
+- Intra-domain serial chain: T1 → T2, T1 → T3
 - Estimated checkpoints: 1 (Wave-2 integration with d3 + d4 over the shared on-disk store)

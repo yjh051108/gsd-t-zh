@@ -14,7 +14,12 @@ The freshness surface the query CLI calls inline so a stale touched file is re-i
 ## Invariants
 - `[RULE] freshness-content-hash-not-git-sha` — dirty-detection hashes file CONTENT; an uncommitted working-tree edit (git-SHA unchanged) MUST be caught (the AC-3 killing test)
 - `[RULE] one-hop-revalidation-not-transitive` — a stale file re-indexes itself + re-checks DIRECT importers only — never the transitive closure
-- sub-~1s per edit (AC-3 budget)
+- sub-~1s per edit (AC-3 scale-budget — measured separately at 1.5M-node scale, NOT asserted inline on a toy fixture; see the AC-3 timing split below)
+- `[RULE] freshness-write-atomic-no-torn-read` — the re-index WRITE of file F relies on the store's atomicity guarantee (graph-store-schema-contract.md sub-criterion 4): a concurrent `who-imports(F)` during the re-index returns fully-old OR fully-new edges, NEVER a torn set. D4 does not implement its own locking — it uses the store's declared mechanism (single-writer lock / atomic write+rename / txn).
+
+## AC-3 timing split (correctness gates the build; timing is a separate scale measurement)
+- **Correctness test (gates the build):** content-hash mismatch IS detected; re-validation is one-hop NOT transitive; the uncommitted-edit case IS caught. **NO timing assertion** — deterministic, runs on a toy fixture, cannot flake.
+- **Scale-budget measurement (separate, recorded not gated-inline):** the sub-~1s-per-edit number is measured at ~1.5M-node scale and recorded in the result doc against the pre-committed < 1 s ceiling. Never a flaky inline wall-clock assert on a toy fixture.
 
 ## Consumed (frozen)
 - `graph-store-schema-contract.md` (D1) — the stored content-hash column

@@ -1,6 +1,6 @@
 # Integration Points
 
-## Current State: M94 — Persistent Code Graph Index (Phase 1, backlog #44b) — PLANNED 2026-06-26. RISK-FIRST: 6 file-disjoint domains across 3 waves, 16 atomic tasks (Shape D), zero write-target collisions (file-disjointness PROVEN over all 16). Wave 1 is a PROVE-OR-KILL HARD GATE — no Wave-2 body build until both spikes PASS.
+## Current State: M94 — Persistent Code Graph Index (Phase 1, backlog #44b) — RE-PLANNED 2026-06-26 around the CENTRAL TENET (dumb-reach vs smart-reach). RISK-FIRST: 6 file-disjoint domains across 3 waves, 19 atomic tasks (Shape D) + 1 integrate-owned seam test, zero write-target collisions (file-disjointness PROVEN over all 19). Wave 1 is a PROVE-OR-KILL HARD GATE — no Wave-2 body build until both spikes PASS. The graph is the MANDATORY structural-knowledge layer; the shared query layer (D5) + the contract mandate that code-reading steps consume the graph are Phase-1 deliverables so the follow-on consumers (/debug /quick /impact /execute /plan partition M92-reflex) are wiring, not redesign. Phase 1 WIRES only /scan as the first proof; the others are the MANDATED SEQUENCED roadmap (below), never dropped. 9 reframe-required tests/rules added (see the table below).
 
 ### M94 Wave Groupings (the integration shape)
 
@@ -14,9 +14,12 @@ WAVE 1 — PROVE-OR-KILL (parallel, file-disjoint, throwaway spike code). HARD G
        │  (node/edge/tier/content-hash columns)       │  (entity/edge taxonomy + parse harness)
        ▼                                              ▼
   ┌──────────────────────────────────────────────────────────────────────────────┐
-  │ WAVE-1 HARD GATE: REQUIRE K1 == PICK (store on evidence) AND K2 == PASS        │
-  │ (tree-sitter full-indexes REAL Atos < ~2 min). Either fails its numbers →      │
-  │ legitimate KILL/RE-SCOPE — Wave 2 does NOT start. [RULE] wave1-hard-gate       │
+  │ WAVE-1 HARD GATE: REQUIRE K1 == PICK (store on evidence, ALL 4 sub-criteria:    │
+  │ embedded · <50ms query · <1s incremental · concurrent-atomicity) AND K2 == PASS │
+  │ (tree-sitter full-indexes REAL Atos < ~2 min, against a PINNED SHA). Either     │
+  │ fails its numbers → legitimate KILL/RE-SCOPE; the KILL MUST record an explicit  │
+  │ AC-descope (which ACs survive) before any Wave-2 task. Wave 2 does NOT start.   │
+  │ [RULE] wave1-hard-gate  [RULE] kill-outcome-records-ac-descope (#5)             │
   └──────────────────────────────────────────────────────────────────────────────┘
        │
 WAVE 2 — BUILD (parallel, file-disjoint over a SHARED on-disk store; D3 writes, D4 mutates, D5 reads):
@@ -24,25 +27,30 @@ WAVE 2 — BUILD (parallel, file-disjoint over a SHARED on-disk store; D3 writes
   d3 indexer-core             ║  d4 freshness               ║  d5 query-cli (the keystone)
     M94-D3-T1 edge-extract        M94-D4-T1 content-hash         M94-D5-T1 query CLI + envelope [Headline]
     M94-D3-T2 build_index            checker + contract            (who-imports/who-calls/blast-radius/status)
-       +parse_and_put [Headline]  M94-D4-T2 AC-3 uncommitted-     M94-D5-T2 AC-5 keystone tests [Headline]
-    M94-D3-T3 SCIP + tiers (AC-6)     edit killing test            (no-grep structural + fault-injection)
-       │  delivers: graph-       [Headline]                       │  delivers: graph-query-cli-contract.md
-       │  indexer-build-contract  │  delivers: graph-             │
-       │  (build_index +          │  freshness-contract.md        │
-       │   parse_and_put surface) │  (freshness_check_on_query)   │
+       +parse_and_put [Headline]     (atomicity-reliant) [Headline] M94-D5-T2 AC-5 keystone tests
+    M94-D3-T3 SCIP + tiers (AC-6)  M94-D4-T2 AC-3 uncommitted-       (no-grep structural + fault-injection)
+       │  delivers: graph-           edit killing test (no timing)  M94-D5-T3 blast-radius union fixture (#9)
+       │  indexer-build-contract  M94-D4-T3 AC-3 scale-budget        │  delivers: graph-query-cli-contract.md
+       │  (build_index +             measurement (#6 timing split)   │  (blast-radius unions both graphs)
+       │   parse_and_put surface) │  delivers: graph-               │
+       │                          │  freshness-contract.md          │
        └── D4 calls D3's parse_and_put (function call, NOT a file edit) ───┘
        └── D5 calls D4's freshness_check_on_query INLINE before answering ─┘
-       ▼  GATE: AC-2 (who-imports/calls correct) + AC-3 (sub-~1s, uncommitted edit caught) +
+       ▼  GATE: AC-2 (who-imports/calls correct) + AC-3 (correctness deterministic + scale-budget <1s) +
        │       AC-5 (no grep path structurally + fail-loud on injection) + AC-6 (tiers honest) green.
+       │       INTEGRATE-owned seam test (#8): real D3 index → real D1 store → edit a file → D5 query
+       │       reflects the EDIT (proves D5→D4→D3→D1 fired live + the store mutated).
        │
-WAVE 3 — CONSUMER WIRING (the falsifiable payoff; extend-class on EXISTING scan files):
+WAVE 3 — CONSUMER WIRING (the falsifiable SMART-REACH payoff; extend-class on EXISTING scan files):
        ▼
   d6 scan-wiring
-    M94-D6-T1 scan-consumer contract (consumes graph-query-cli-contract.md)
-    M94-D6-T2 wire commands/gsd-t-scan.md + templates/workflows/gsd-t-scan.workflow.js (M81 runtime-native)
-    M94-D6-T3 AC-4 measure run-1 build + run-2 warm wall-clocks [Headline] → progress.md + CHANGELOG
-       │  run-1 builds the index; run-2 reads-once-queries-after via D5's CLI (NOT a whole-repo re-read).
-       │  Falls back to grep mode ANNOUNCED only on graph-unavailable. [RULE] scan-run2-reads-index-not-source
+    M94-D6-T1 scan-consumer contract (consumes graph-query-cli-contract.md; pre-registered thresholds + SHA pin)
+    M94-D6-T2 wire scan.md + scan.workflow.js — INJECT the pre-computed structural slice into scanSlice agents
+    M94-D6-T3 AC-4 measure run-1/run-2 [Headline] — SPEED ceiling (#2) + SHA pin (#7) + INSIGHT gate
+    M94-D6-T4 AC-4 cost-critical-path proof (#1) — run-2 reads materially fewer files / cheaper readers
+       │  run-1 builds; run-2 INJECTS the graph's structural slice (dependents/dead-code/cycles) into the
+       │  deep-finders so they read LESS (smart-reach). Falls back to grep mode ANNOUNCED on graph-unavailable.
+       │  [RULE] scan-run2-reads-index-not-source · scan-run2-on-cost-critical-path · scan-run2-speed-ceiling
 ```
 
 ### M94 Cross-domain seams (function-level / contract-level — NO shared file edits)
@@ -54,22 +62,39 @@ WAVE 3 — CONSUMER WIRING (the falsifiable payoff; extend-class on EXISTING sca
 | Freshness check | d4 (M94-D4-T1) | d5 (inline before answer) | `graph-freshness-contract.md` `freshness_check_on_query` | NO — function call |
 | Query envelope | d5 (M94-D5-T1) | d6 (scan reads it) | `graph-query-cli-contract.md` JSON envelope | NO — contract |
 | Scan wiring | d6 (M94-D6-T2) | none (terminal) | extend-class edits to existing scan files | d6 SOLE owner of both scan files |
+| **Live store seam (#8, INTEGRATE-owned)** | integrate (not a domain) | n/a | `test/m94-integrate-live-store-seam.test.js` — real D3 index → real D1 store → edit file → D5 query reflects edit | NO — net-new test file, owned at integrate |
 
-### M94 Disjointness verdict (validated this plan phase)
-- 16 tasks parsed (parser-canonical `### M94-Dx-Ty —` Shape D), **0 warnings**, every task carries an explicit `**Touches**` list (source: declared, never git-fallback).
-- `proveDisjointness` over ALL 16 tasks: **0 sequential (write-target-overlap) groups, 0 unprovable** — no two tasks anywhere in the milestone write the same path.
+### M94 Reframe-required rules (the 9 added 2026-06-26 — the CENTRAL TENET binding)
+| # | Sev | Rule / test | Owner | `[RULE]` |
+|---|-----|-------------|-------|----------|
+| 1 | CRITICAL | AC-4 cost-critical-path: run-2 reads materially fewer files / spawns fewer-or-cheaper readers than **run-0 (no-graph baseline)** (index ON the path, not merely invoked) | D6-T4 | `scan-run2-on-cost-critical-path` |
+| 2 | CRITICAL | Pre-registered numeric SPEED threshold (run-2 < 0.5× run-1 cold-build) in graph-scan-consumer-contract.md; result-doc check FAILS if exceeded | D6-T1 (contract) + D6-T3 (check) | `scan-run2-speed-ceiling` |
+| 3 | HIGH | Numeric query-latency target (<50ms who-imports/who-calls) in graph-store-schema-contract.md BEFORE D1; engineered-to-fail candidate fails on latency | D1-T2/T3 + contract | `k1-query-latency-target` |
+| 4 | HIGH | Store concurrency/atomicity: concurrent who-imports during re-index returns fully-old OR fully-new, never torn; K1 4th sub-criterion | D1-T2 (K1) + D4-T1 (reliance) + store-schema contract | `k1-atomic-single-file-update` · `freshness-write-atomic-no-torn-read` |
+| 5 | HIGH | Per Wave-1 KILL outcome, an explicit AC-descope tied to which ACs survive, recorded before any Wave-2 task | D1-T3 / D2-T3 + this file's gate | `kill-outcome-records-ac-descope` |
+| 6 | MEDIUM | AC-3/K1 timing split: deterministic CORRECTNESS test (no timing) gates the build; separate SCALE-BUDGET measurement records the <1s number | D4-T2 (correctness) + D4-T3 (scale) | (timing-split) |
+| 7 | MEDIUM | Atos commit-SHA pin for AC-4 (run-1==run-2) AND K2; fail-loud on repo-not-found/commit-mismatch | D6-T3 + D2-T2 + both contracts | `ac4-atos-sha-pinned` · `k2-atos-sha-pinned` |
+| 8 | MEDIUM | Wave-2 integration seam test (integrate-owned, not mocked): real index→store→edit→query reflects the edit + store mutated | INTEGRATE | (live-store-seam) |
+| 9 | LOW | Blast-radius semantics (which graphs, hop-depth) in graph-query-cli-contract.md + fixture test: union of import+call graphs, neither over- nor under-broad | D5-T1 (contract) + D5-T3 (test) | `blast-radius-unions-both-graphs` |
+
+### M94 Mandated SEQUENCED follow-on consumers (in-scope by principle, sequenced by execution — NEVER dropped)
+The Central Tenet makes the graph the structural-knowledge layer for EVERY code-reading step. Phase 1 WIRES only `/scan` (the first proof). The shared query layer (D5 CLI) + the contract mandate are Phase-1 deliverables so each follow-on is WIRING, not redesign. The mandated roadmap (each a later sequenced wiring milestone): `/debug` · `/quick` · `/impact` · `/execute` file-disjointness · `/plan` · partition · M92 simplicity-reflex. Each consumes the same `graph-query-cli-contract.md` envelope; none re-derives structure from raw text.
+
+### M94 Disjointness verdict (validated this RE-plan phase)
+- 19 tasks parsed (parser-canonical `### M94-Dx-Ty —` Shape D), **0 warnings**, every task carries an explicit `**Touches**` list (source: declared, never git-fallback). New tasks since the prior plan: D4-T3 (scale-budget result doc), D5-T3 (blast-radius test), D6-T4 (cost-critical-path test). New net-new paths only — no existing task's touch list changed targets.
+- `proveDisjointness` over ALL 19 tasks: **0 sequential (write-target-overlap) groups, 0 unprovable** — no two tasks anywhere in the milestone write the same path. The #8 integrate seam test (`test/m94-integrate-live-store-seam.test.js`) is integrate-owned, a 20th net-new path disjoint from all domain tasks.
 - Per-wave concurrent sets (Wave 1 d1∥d2, Wave 2 d3∥d4∥d5, Wave 3 d6) all fully parallel-provable.
 - Intra-domain order is enforced by `**Dependencies**` (same-owner serial chain), NOT by file overlap.
 - The dead M20–M21 `bin/graph-*.js` use the bare `graph-` prefix — disjoint from the new `gsd-t-graph-*` prefix; read for lessons only, never edited.
 
 ### M94 Plan-hardening (M83) status
 - Every behavioral task declares **Files + Test + ImplPath**; the milestone's headline capabilities are each tagged **Headline:** true with a real impl path AND an end-to-end killing test:
-  - K1 store pick (D1-T2) — kill-criterion test: a candidate failing one sub-criterion is NOT picked.
-  - K2 = AC-1 Atos throughput (D2-T2) — over-budget → KILL; `repo-not-found` fail-loud.
-  - AC-3 freshness (D4-T2) — edits a working-tree file WITHOUT committing; content-hash catches it (fails if git-SHA used).
-  - AC-5 keystone (D5-T2) — structural grep-for-absence (no grep-fallback path EXISTS) + fault-injection (corrupt store → `graph-unavailable`, never silent-wrong).
+  - K1 store pick (D1-T2) — kill-criterion test: a candidate failing one of the FOUR sub-criteria (incl. <50ms latency #3 + atomicity #4) is NOT picked.
+  - K2 = AC-1 Atos throughput (D2-T2) — over-budget → KILL; `repo-not-found` + unpinned-SHA (#7) fail-loud.
+  - AC-3 freshness (D4-T1 impl, atomicity-reliant #4) — content-hash catches an uncommitted edit (D4-T2, no inline timing #6); scale-budget <1s measured separately (D4-T3 #6).
+  - AC-5 keystone (D5-T1 impl) — structural grep-for-absence (D5-T2) + fault-injection (D5-T2); blast-radius union (D5-T3 #9).
   - AC-6 tiers (D3-T3) — compiler-accurate vs tree-sitter-floor labeled; Rust cross-crate flagged partial.
-  - AC-4 payoff (D6-T3) — both run wall-clocks measured on the REAL Atos repo, reported.
+  - AC-4 payoff (D6-T3 impl, both axes) — SPEED ceiling #2 + SHA pin #7 + INSIGHT gate; cost-critical-path proof D6-T4 #1.
 - Store choice / SCIP invocation / edge taxonomy stay **DEFERRED to Wave-1 spike evidence** — never asserted in the plan.
 
 ---

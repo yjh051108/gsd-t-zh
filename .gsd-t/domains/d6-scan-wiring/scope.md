@@ -17,6 +17,7 @@ WAVE 3 CONSUMER WIRING (after the Wave-2 build trio integrates; the falsifiable 
 - `templates/workflows/gsd-t-scan.workflow.js`
 - `.gsd-t/spikes/ac4-scan-run2-speedup-results.md`
 - `test/m94-d6-scan-consumer.test.js`
+- `test/m94-d6-cost-critical-path.test.js`
 
 ## NOT Owned (do not modify)
 - All `bin/gsd-t-graph-*.cjs` — owned by the Wave-1 spikes (d1, d2) and the Wave-2 build trio (d3, d4, d5). D6 CONSUMES the D5 query-cli contract; it edits no graph bin file.

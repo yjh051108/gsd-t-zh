@@ -11,6 +11,9 @@ The tree-sitter floor parse harness + the entity/edge taxonomy D3 builds its fre
 ## The decision K2 resolves
 Full tree-sitter floor index of the REAL Atos repo (`/Users/david/projects/HiloAviation/hilo-figma-atos`, ~1.5M LOC) builds under ~2 min → PASS (AC-1); else KILL/re-scope budget/parallelism. Measured on the real repo. `[RULE] K2: treesitter-atos-build-under-budget-or-rescope`
 
+## Atos commit-SHA pin (`[RULE] k2-atos-sha-pinned` — no number against an unpinned/absent repo)
+The K2 throughput measurement MUST PIN and RECORD the Atos commit SHA it ran against (`git -C <atos> rev-parse HEAD`). The probe **fails LOUD on repo-not-found** (the Atos repo absent at run time) — it NEVER fabricates or records a wall-clock against an unpinned or absent repo. The recorded SHA is the same pin AC-4 (D6) must match for its run-1/run-2 comparison to be commensurable.
+
 ## Edge/entity taxonomy (the WHAT — salvaged as LESSONS from bin/graph-parsers.js, NOT lifted)
 | Kind | Edge / entity |
 |------|---------------|
