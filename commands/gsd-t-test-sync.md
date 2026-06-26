@@ -32,6 +32,16 @@ Identify:
 - Naming conventions
 - Test run commands (from package.json scripts, Makefile, or CI config)
 
+## Graph-Enhanced Test Alignment — WRITER Pattern (M94-D11)
+
+Test-sync applies the **WRITER pattern** from `graph-consumer-wiring-contract.md`:
+
+**READER half (test-impl verb):** Use `gsd-t graph test-impl` to identify which impl functions a test exercises (from call-site edges) and `gsd-t graph test-impl --inverse` (untested-impl mode) to find impl functions with no test-file caller. This replaces grep/filesystem discovery (`find tests/ -name "*{module_name}*"`) for the structural test↔impl mapping question. The test-impl slice is injected into the test-sync agent's context for alignment decisions. `[RULE] test-sync-uses-test-impl-verb`.
+
+**WRITER half:** After writing or updating tests, trigger a re-index of the edited test files (`freshness_check_on_query` from `graph-freshness-contract.md` D4 surface) so the next `test-impl` query sees the updated call-site edges from the new test code. `[RULE] test-sync-uses-test-impl-verb`.
+
+**FAIL-LOUD on graph-unavailable:** On `{ok:false, reason:"graph-unavailable"}`, the test-impl query surfaces `"graph unavailable — fix it (gsd-t graph status)"` and the agent proceeds with filesystem discovery as announced fallback — it does NOT silently treat a missing graph as "no coverage". `[RULE] consumer-structural-grep-removed`.
+
 ## Step 1.5: Graph-Enhanced Test Discovery
 
 ```bash

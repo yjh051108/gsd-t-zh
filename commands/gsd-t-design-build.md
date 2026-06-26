@@ -2,6 +2,16 @@
 
 This command delegates to the **JavaScript orchestrator** for ironclad flow control. Do NOT attempt to run the build pipeline inline — the orchestrator handles Claude spawning, measurement, review gates, and feedback processing deterministically.
 
+## Graph-Enhanced Design Build — WRITER Pattern (M94-D11)
+
+Design-build applies the **WRITER pattern** from `graph-consumer-wiring-contract.md`:
+
+**READER half (who-imports / cluster):** Before generating code, the build pipeline queries `gsd-t graph who-imports` on the target design-contract files to discover which existing components import the target (impact of the generated code on existing consumers), and `gsd-t graph cluster` to surface tightly-coupled file groups relevant to the component's context. This replaces grep/raw-read for the dependency structure question. The structural slice is injected into the code-generation agent's context. `[RULE] design-build-writer-pattern`.
+
+**WRITER half:** After each tier (elements → widgets → pages) generates files, the pipeline triggers a re-index of the generated files (`freshness_check_on_query` from `graph-freshness-contract.md` D4 surface) so the next tier's `who-imports` / `cluster` query sees the new edges from the generated components. `[RULE] design-build-writer-pattern`.
+
+**FAIL-LOUD on graph-unavailable:** On `{ok:false, reason:"graph-unavailable"}`, the structural query surfaces `"graph unavailable — fix it (gsd-t graph status)"` — the pipeline does NOT fall back to grep for the structural question. `[RULE] consumer-structural-grep-removed`.
+
 ## Step 1: Launch the Orchestrator
 
 ```bash
