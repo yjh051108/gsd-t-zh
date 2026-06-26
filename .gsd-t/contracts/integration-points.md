@@ -1,6 +1,6 @@
 # Integration Points
 
-## Current State: M94 — Persistent Code Graph Index (Phase 1, backlog #44b) — RE-PLANNED 2026-06-26 (AC-4 RESCOPED to INSIGHT-delta-only per user decision 2026-06-25) around the CENTRAL TENET (dumb-reach vs smart-reach). RISK-FIRST: 6 file-disjoint domains across 3 waves, **18 atomic tasks (Shape D)** + 1 integrate-owned seam test, zero write-target collisions (file-disjointness PROVEN over all 18). Wave 1 is a PROVE-OR-KILL HARD GATE — no Wave-2 body build until both spikes PASS. The graph is the MANDATORY structural-knowledge layer; the shared query layer (D5) + the contract mandate that code-reading steps consume the graph are Phase-1 deliverables so the follow-on consumers (/debug /quick /impact /execute /plan partition M92-reflex) are wiring, not redesign. Phase 1 WIRES only /scan as the first proof (ADDITIVELY — current scan kept FULLY INTACT); the others are the MANDATED SEQUENCED roadmap (below), never dropped. **AC-4 = INSIGHT delta only** (graph-wired scan surfaces ≥ the no-graph run's structural findings PLUS ≥1 it missed/got wrong, on a pinned Atos SHA); the SPEED / file-count / cost-critical-path axis is DROPPED from M94 (deferred to a separate "re-think /scan from the graph up" milestone) — D6-T4 (cost-critical-path) removed, D6-T1/T2/T3 reframed insight-only. 7 reframe-required rules remain (the 2 speed/cost-path rules retired — see the table below).
+## Current State: M94 — Persistent Code Graph Index (Phase 1, backlog #44b) — RE-PLANNED 2026-06-26 (AC-4 RESCOPED to INSIGHT-delta-only per user decision 2026-06-25) around the CENTRAL TENET (dumb-reach vs smart-reach). RISK-FIRST: 6 file-disjoint domains across 3 waves, **21 atomic tasks (Shape D)** + 1 integrate-owned seam test, zero write-target collisions (file-disjointness PROVEN over all 21). RE-PLANNED 2026-06-26 (2): +3 pre-mortem-fix test tasks (D3-T4 real-Atos spotcheck, D4-T4 touched-set derivation, D4-T5 add/delete/rename) + 2 contract clarifications (freshness touched-set derivation + add/del/rename) + Fix-3 toggle assertion folded into D6-T2 + Fix-5/Fix-6 contract markings — NO scope change, all net-new test files, disjointness preserved. Wave 1 is a PROVE-OR-KILL HARD GATE — no Wave-2 body build until both spikes PASS. The graph is the MANDATORY structural-knowledge layer; the shared query layer (D5) + the contract mandate that code-reading steps consume the graph are Phase-1 deliverables so the follow-on consumers (/debug /quick /impact /execute /plan partition M92-reflex) are wiring, not redesign. Phase 1 WIRES only /scan as the first proof (ADDITIVELY — current scan kept FULLY INTACT); the others are the MANDATED SEQUENCED roadmap (below), never dropped. **AC-4 = INSIGHT delta only** (graph-wired scan surfaces ≥ the no-graph run's structural findings PLUS ≥1 it missed/got wrong, on a pinned Atos SHA); the SPEED / file-count / cost-critical-path axis is DROPPED from M94 (deferred to a separate "re-think /scan from the graph up" milestone) — D6-T4 (cost-critical-path) removed, D6-T1/T2/T3 reframed insight-only. 7 reframe-required rules remain (the 2 speed/cost-path rules retired — see the table below).
 
 ### M94 Wave Groupings (the integration shape)
 
@@ -27,13 +27,19 @@ WAVE 2 — BUILD (parallel, file-disjoint over a SHARED on-disk store; D3 writes
   d3 indexer-core             ║  d4 freshness               ║  d5 query-cli (the keystone)
     M94-D3-T1 edge-extract        M94-D4-T1 content-hash         M94-D5-T1 query CLI + envelope [Headline]
     M94-D3-T2 build_index            checker + contract            (who-imports/who-calls/blast-radius/status)
-       +parse_and_put [Headline]     (atomicity-reliant) [Headline] M94-D5-T2 AC-5 keystone tests
-    M94-D3-T3 SCIP + tiers (AC-6)  M94-D4-T2 AC-3 uncommitted-       (no-grep structural + fault-injection)
-       │  delivers: graph-           edit killing test (no timing)  M94-D5-T3 blast-radius union fixture (#9)
-       │  indexer-build-contract  M94-D4-T3 AC-3 scale-budget        │  delivers: graph-query-cli-contract.md
-       │  (build_index +             measurement (#6 timing split)   │  (blast-radius unions both graphs)
-       │   parse_and_put surface) │  delivers: graph-               │
+       +parse_and_put [Headline]     (+compute_touched_files,      M94-D5-T2 AC-5 keystone tests
+    M94-D3-T3 SCIP + tiers (AC-6)     atomicity-reliant) [Headline]   (no-grep structural + fault-injection)
+    M94-D3-T4 real-Atos edge       M94-D4-T2 AC-3 uncommitted-     M94-D5-T3 blast-radius union fixture (#9,
+       spotcheck (Fix-4)             edit killing test (no timing)    + Fix-5 sole liveness guarantee)
+       │  delivers: graph-        M94-D4-T3 AC-3 scale-budget        │  delivers: graph-query-cli-contract.md
+       │  indexer-build-contract     measurement (#6 timing split)   │  (blast-radius unions both graphs;
+       │  (build_index +          M94-D4-T4 Fix-1 touched-set         │   blast-radius = sequenced follow-on)
+       │   parse_and_put surface)     derivation killing test        │
+       │                          M94-D4-T5 Fix-2 add/delete/        │
+       │                             rename freshness test           │
+       │                          │  delivers: graph-               │
        │                          │  freshness-contract.md          │
+       │                          │  (+touched-set + add/del/rename)│
        └── D4 calls D3's parse_and_put (function call, NOT a file edit) ───┘
        └── D5 calls D4's freshness_check_on_query INLINE before answering ─┘
        ▼  GATE: AC-2 (who-imports/calls correct) + AC-3 (correctness deterministic + scale-budget <1s) +
@@ -50,7 +56,8 @@ WAVE 3 — CONSUMER WIRING (the falsifiable SMART-REACH payoff; ADDITIVE extend-
        │  build-if-absent; query INJECTS the graph's structural slice (dependents/dead-code/cycles) into the
        │  deep-finders so findings are ACCURATE (graph-derived, not LLM-reconstructed) — additive, scan kept intact.
        │  Falls back to grep mode ANNOUNCED on graph-unavailable. NO wall-clock measured (speed axis out of M94).
-       │  [RULE] scan-injects-structural-slice · scan-insight-gate · ac4-atos-sha-pinned
+       │  Fix-3: toggle-integrity asserted — baseline graph-query call-count == 0 (genuinely graph-free), graph-wired > 0.
+       │  [RULE] scan-injects-structural-slice · scan-insight-gate · ac4-atos-sha-pinned · no-graph-baseline-proven-graph-free
 ```
 
 ### M94 Cross-domain seams (function-level / contract-level — NO shared file edits)
@@ -78,12 +85,28 @@ WAVE 3 — CONSUMER WIRING (the falsifiable SMART-REACH payoff; ADDITIVE extend-
 | 8 | MEDIUM | Wave-2 integration seam test (integrate-owned, not mocked): real index→store→edit→query reflects the edit + store mutated | INTEGRATE | (live-store-seam) |
 | 9 | LOW | Blast-radius semantics (which graphs, hop-depth) in graph-query-cli-contract.md + fixture test: union of import+call graphs, neither over- nor under-broad | D5-T1 (contract) + D5-T3 (test) | `blast-radius-unions-both-graphs` |
 
+### M94 Pre-mortem Fixes (RE-PLAN 2026-06-26 — 6 gaps, NO scope change: missing tests + 2 freshness-contract clarifications)
+| Fix | Sev | Rule / test | Owner | `[RULE]` |
+|-----|-----|-------------|-------|----------|
+| 1 | CRITICAL | `touched_files` derivation DEFINED in graph-freshness-contract.md = whole-tree content-hash dirty set (ALL indexed files), NEVER the query target; 3-file A→B→C test: edit B's content, query who-imports(C), assert B's NEW state reflected (edited non-target not served stale) | D4-T1 (contract `compute_touched_files`) + D4-T4 (test) | `touched-set-is-whole-tree-dirty-not-query-target` |
+| 1b | HIGH (Fix-1 follow-on, found this re-plan) | The whole-tree dirty-scan Fix-1 introduces is a NEW per-query cost (scan ALL indexed files every query) — at 1.5M-node Atos scale it could blow the sub-1s AC-3 budget. D4-T3 scale-budget ALSO measures `compute_touched_files()` per-query cost (mtime-prefilter → content-hash) against the < 1 s ceiling; over budget → kill/re-scope (git-status-bounded candidate set) as an AC-descope | D4-T3 (scale measurement) + freshness contract | `touched-set-dirty-scan-under-budget` |
+| 2 | CRITICAL | Add/delete/rename freshness declared in graph-freshness-contract.md (dirty-set enumerates adds + deletes, rename = delete+add); test: delete→dangling edge removed, add→new importer surfaces, rename→old gone+new present | D4-T1 (contract) + D4-T5 (test) | `freshness-detects-add-delete-rename` |
+| 3 | HIGH | No-graph toggle proven OFF: spy/mock runCli, assert graph-query call-count == 0 in baseline mode, > 0 graph-wired — baseline genuinely graph-free so AC-4's recorded baseline set is not bogus | D6-T2 (toggle-integrity assertion) | `no-graph-baseline-proven-graph-free` |
+| 4 | HIGH | AC-2 correctness bound to REAL Atos (not toy fixtures): build_index over real Atos at pinned SHA, ≥3 hand-picked known real edges appear + total edge count > floor (>10k); fail-loud-skip if Atos absent (K2 pattern) | D3-T4 (test) | `real-atos-edge-spotcheck-or-loud-skip` |
+| 5 | MEDIUM | blast-radius marked SEQUENCED-follow-on (NOT Phase-1-consumed, /impact + /debug deferred, NOT wired into /scan) in graph-query-cli-contract.md + this file; D5-T3 union fixture = sole Phase-1 liveness — declared foundation, not silent dead deliverable | D5-T1 (contract marking) + D5-T3 (liveness) | `blast-radius-sequenced-follow-on-not-phase1-consumed` |
+| 6 | MEDIUM | Build footprint ceiling: K2 (D2-T2/T3) records peak build RSS; K1 (D1-T2/T3) records peak load RSS + on-disk index size against PRE-REGISTERED ceilings (peak-RSS bound + index-size-vs-source multiple) in store-schema contract; over ceiling → KILL/not-picked (prove-or-kill peer to latency/throughput) | D2-T2/T3 + D1-T2/T3 + store-schema contract | `k2-build-footprint-ceiling` · `k1-footprint-ceiling` |
+
 ### M94 Mandated SEQUENCED follow-on consumers (in-scope by principle, sequenced by execution — NEVER dropped)
 The Central Tenet makes the graph the structural-knowledge layer for EVERY code-reading step. Phase 1 WIRES only `/scan` (the first proof). The shared query layer (D5 CLI) + the contract mandate are Phase-1 deliverables so each follow-on is WIRING, not redesign. The mandated roadmap (each a later sequenced wiring milestone): `/debug` · `/quick` · `/impact` · `/execute` file-disjointness · `/plan` · partition · M92 simplicity-reflex. Each consumes the same `graph-query-cli-contract.md` envelope; none re-derives structure from raw text.
 
-### M94 Disjointness verdict (re-validated this AC-4-rescope RE-plan phase)
-- **18 tasks** parsed (parser-canonical `### M94-Dx-Ty —` Shape D), **0 warnings**, every task carries an explicit `**Touches**` list (source: declared, never git-fallback). AC-4-rescope delta: **D6-T4 (cost-critical-path test) REMOVED** (its `test/m94-d6-cost-critical-path.test.js` path retired), D6's result-doc path renamed (`ac4-scan-run2-speedup-results.md` → `ac4-scan-insight-delta-results.md`). No write-target overlap introduced or removed elsewhere; D6 still SOLE owner of both scan files + its own test/result paths.
-- `proveDisjointness` over ALL 18 tasks: **0 sequential (write-target-overlap) groups, 0 unprovable** — no two tasks anywhere in the milestone write the same path. The #8 integrate seam test (`test/m94-integrate-live-store-seam.test.js`) is integrate-owned, a 19th net-new path disjoint from all domain tasks.
+### M94 Disjointness verdict (re-validated this pre-mortem-fix RE-plan phase 2026-06-26)
+- **21 tasks** parsed (parser-canonical `### M94-Dx-Ty —` Shape D), **0 warnings**, every task carries an explicit `**Touches**` list (source: declared, never git-fallback). Pre-mortem-fix delta (+3 test tasks, all net-new single-file write targets, zero overlap):
+  - **D3-T4** → `test/m94-d3-real-atos-edge-spotcheck.test.js` (net-new)
+  - **D4-T4** → `test/m94-d4-touched-set-derivation.test.js` (net-new)
+  - **D4-T5** → `test/m94-d4-add-delete-rename-freshness.test.js` (net-new)
+  - Fix-3 (toggle) folded into **D6-T2**'s existing `test/m94-d6-scan-consumer.test.js` write target (no new task, no new file).
+  - Fix-1/Fix-2/Fix-5/Fix-6 are CONTRACT edits to files each already SOLE-owned by their domain's contract-authoring task (`graph-freshness-contract.md` ← D4-T1; `graph-query-cli-contract.md` ← D5-T1; `graph-store-schema-contract.md` ← D1-T3) — no new write target, no overlap.
+- `proveDisjointness` over ALL 21 tasks: **0 sequential (write-target-overlap) groups, 0 unprovable** — no two tasks anywhere in the milestone write the same path (re-validated this phase via `gsd-t parallel --dry-run`: Wave-1-ready tasks disjoint, exit 0; downstream tasks correctly dep-blocked). Each new test file is uniquely owned by exactly one task; the 3 edited contracts stay sole-owned by their original authoring task. The #8 integrate seam test (`test/m94-integrate-live-store-seam.test.js`) is integrate-owned, a 22nd net-new path disjoint from all domain tasks.
 - Per-wave concurrent sets (Wave 1 d1∥d2, Wave 2 d3∥d4∥d5, Wave 3 d6) all fully parallel-provable.
 - Intra-domain order is enforced by `**Dependencies**` (same-owner serial chain), NOT by file overlap.
 - The dead M20–M21 `bin/graph-*.js` use the bare `graph-` prefix — disjoint from the new `gsd-t-graph-*` prefix; read for lessons only, never edited.
@@ -92,9 +115,12 @@ The Central Tenet makes the graph the structural-knowledge layer for EVERY code-
 - Every behavioral task declares **Files + Test + ImplPath**; the milestone's headline capabilities are each tagged **Headline:** true with a real impl path AND an end-to-end killing test:
   - K1 store pick (D1-T2) — kill-criterion test: a candidate failing one of the FOUR sub-criteria (incl. <50ms latency #3 + atomicity #4) is NOT picked.
   - K2 = AC-1 Atos throughput (D2-T2) — over-budget → KILL; `repo-not-found` + unpinned-SHA (#7) fail-loud.
-  - AC-3 freshness (D4-T1 impl, atomicity-reliant #4) — content-hash catches an uncommitted edit (D4-T2, no inline timing #6); scale-budget <1s measured separately (D4-T3 #6).
-  - AC-5 keystone (D5-T1 impl) — structural grep-for-absence (D5-T2) + fault-injection (D5-T2); blast-radius union (D5-T3 #9).
+  - AC-3 freshness (D4-T1 impl, atomicity-reliant #4) — content-hash catches an uncommitted edit (D4-T2, no inline timing #6); scale-budget <1s measured separately (D4-T3 #6); **Fix-1** touched-set derivation killing test (D4-T4 — edited non-target not served stale); **Fix-2** add/delete/rename freshness test (D4-T5).
+  - AC-5 keystone (D5-T1 impl) — structural grep-for-absence (D5-T2) + fault-injection (D5-T2); blast-radius union (D5-T3 #9, also Fix-5 sole Phase-1 liveness for the sequenced-follow-on blast-radius).
   - AC-6 tiers (D3-T3) — compiler-accurate vs tree-sitter-floor labeled; Rust cross-crate flagged partial.
+  - **Fix-4** real-Atos edge spotcheck (D3-T4) — binds AC-2 correctness to REAL Atos at the pinned SHA (≥3 known real edges + >10k edge floor; fail-loud-skip if Atos absent), so green is not achievable on near-zero/garbage real-world extraction.
+  - **Fix-3** no-graph toggle proven OFF (D6-T2) — baseline graph-query call-count == 0, graph-wired > 0, so the AC-4 INSIGHT baseline is genuinely graph-free (not a bogus graph-fed baseline that mis-passes the insight gate).
+  - **Fix-6** build footprint ceilings (D1-T2/T3 peak load RSS + on-disk index size; D2-T2/T3 peak build RSS) measured against PRE-REGISTERED ceilings in the store-schema contract — prove-or-kill peer to latency/throughput.
   - AC-4 payoff (D6-T3 impl, INSIGHT delta only — scan kept intact) — INSIGHT gate (`scan-insight-gate`) + SHA pin #7. The SPEED ceiling + cost-critical-path axis is DROPPED from M94 (rules #1/#2 retired, D6-T4 removed); deferred to a separate scan-redesign milestone.
 - Store choice / SCIP invocation / edge taxonomy stay **DEFERRED to Wave-1 spike evidence** — never asserted in the plan.
 

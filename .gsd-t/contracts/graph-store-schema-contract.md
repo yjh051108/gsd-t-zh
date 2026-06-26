@@ -17,8 +17,9 @@ Pick a store iff it clears ALL FOUR sub-criteria below — across KuzuDB-embedde
 | 2 | Query latency (PRE-REGISTERED numeric target — `[RULE] k1-query-latency-target`) | `who-imports(X)` AND `who-calls(f)` each return in **< 50 ms** at the synthetic ~1.5M-node scale. This is the falsifiable ceiling; "fast" is NOT a number. An engineered-to-fail candidate that exceeds 50 ms on either query is NOT picked. |
 | 3 | Incremental update | single-file incremental put + one-hop direct-importer edge re-validation in **< 1 s** |
 | 4 | Concurrent-update atomicity (`[RULE] k1-atomic-single-file-update`) | while a single-file re-index WRITE for file F is in flight, a concurrent `who-imports(F)` read returns **fully-old OR fully-new edges, NEVER a torn/partial set** — proven by the store's stated atomicity guarantee (single-writer lock / atomic write+rename / transaction) under a concurrent read+write test. |
+| 5 | Footprint ceiling (PRE-REGISTERED — `[RULE] k1-footprint-ceiling`, pre-mortem Fix-6) | at the synthetic ~1.5M-node scale: **peak RSS during load ≤ the pre-registered ceiling** (defensible laptop-local bound, e.g. ≤ 4 GB) AND **on-disk index size ≤ the pre-registered multiple of indexed source bytes** (e.g. ≤ Nx source). An 8 GB-RSS or 5 GB-index store is a real laptop failure even when fast — footprint is a peer existential unknown, not a soft metric. A candidate exceeding either ceiling is NOT picked. |
 
-The 50 ms query-latency target and the atomicity guarantee MUST be declared HERE before D1 executes — the bake-off measures against pre-registered numbers, never asserts a winner after the fact.
+The 50 ms query-latency target, the atomicity guarantee, AND the Fix-6 footprint ceilings (peak-RSS bound + index-size-vs-source multiple — state concrete defensible numbers) MUST be declared HERE before D1 executes — the bake-off measures against pre-registered numbers, never asserts a winner after the fact.
 
 ## Record shape (columns — finalized by the spike)
 | Field | Meaning |

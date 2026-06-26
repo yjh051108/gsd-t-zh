@@ -49,9 +49,23 @@ When all tasks complete: a fresh `build_index` that parses every source file via
   - `[RULE] rust-cross-crate-flagged-partial`: Rust cross-crate edges flagged `partial` (rust-analyzer SCIP is officially "limited"); within-crate resolves (test asserts the flag)
   - SCIP indexers + tree-sitter grammars are local one-shot child-process tools — NEVER added to shipped installer `dependencies`
 
+### M94-D3-T4 — Pre-mortem Fix-4: real-Atos edge spotcheck (binds AC-2 correctness to real data)
+- **Status**: [ ] pending
+- **Files**: `test/m94-d3-real-atos-edge-spotcheck.test.js`
+- **Touches**: `test/m94-d3-real-atos-edge-spotcheck.test.js`
+- **ImplPath**: `bin/gsd-t-graph-index.cjs` (T2 — `build_index`) + `bin/gsd-t-graph-edge-extract.cjs` (T1) — this test runs the real `build_index` over the REAL Atos repo at the pinned SHA and spot-checks that hand-picked known real edges appear, so AC-2 correctness is not confined to toy fixtures (which could pass on near-zero/garbage real-world extraction)
+- **Test**: `test/m94-d3-real-atos-edge-spotcheck.test.js` — **gated on the Atos repo being present at `/Users/david/projects/HiloAviation/hilo-figma-atos`**; if absent, FAIL-LOUD-SKIP (mark skipped with an explicit `atos-repo-not-found` reason — mirrors K2's `repo-not-found` pattern, never a silent green). When present: `build_index` over real Atos at the pinned SHA, then assert (a) ≥3 HAND-PICKED known real imports/calls (named in the test) appear correctly in `who-imports`/`who-calls`, AND (b) total edge count exceeds a floor (e.g. > 10k edges) — proving the extractor is not emitting ~0/garbage edges on real TS/Python at scale (tsconfig path-aliases, monorepo resolution). Records/asserts the pinned Atos SHA (`git -C <atos> rev-parse HEAD`) so the spotcheck is bound to a known tree.
+- **Contract refs**: graph-indexer-build-contract (T2), graph-parser-floor-contract (D2)
+- **Dependencies**: M94-D3-T2 (build_index), M94-D3-T1 (edge-extract)
+- **Acceptance criteria**:
+  - (Pre-mortem Fix-4 — AC-2 correctness bound to REAL Atos data, not only hand-checked fixtures)
+  - Gated on Atos present; FAIL-LOUD-SKIP with `atos-repo-not-found` when absent (mirrors K2's fail-loud-skip — never a silent pass) — `[RULE] real-atos-edge-spotcheck-or-loud-skip`
+  - With Atos present: ≥3 hand-picked known real imports/calls appear correctly in who-imports/who-calls AND total edge count > the pre-registered floor (e.g. > 10k) — FAILS if real extraction is near-zero/garbage
+  - Binds to the pinned Atos SHA (same pin family as K2 #7 / AC-4 #7); the spotcheck is rejected if recorded against an unpinned tree
+
 ## Execution Estimate
-- Total tasks: 3
+- Total tasks: 4
 - Independent tasks (no cross-domain blockers): 0 (all gated on the Wave-1 HARD GATE contracts)
 - Blocked tasks (waiting on other domains): T1 (on d1 store-schema + d2 parser-floor contracts, via the gate)
-- Intra-domain serial chain: T1 → T2 → T3
+- Intra-domain serial chain: T1 → T2 → T3, T1 → T2 → T4
 - Estimated checkpoints: 1 (Wave-2 integration with d4 + d5 over the shared on-disk store)

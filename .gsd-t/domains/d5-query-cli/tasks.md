@@ -20,7 +20,7 @@ When all tasks complete: a deterministic query CLI (who-imports / who-calls / bl
   - **[#9 blast-radius semantics]** `blast-radius(target)` returns the **UNION of the import-graph AND call-graph reverse-reachable sets**, transitive closure (NOT one-hop) — `[RULE] blast-radius-unions-both-graphs`; the semantics (which graphs, hop-depth) are DECLARED in `graph-query-cli-contract.md` (authored here, before D5-T3's fixture test)
   - Calls D4's freshness check INLINE before answering — `[RULE] stale-file-reindexed-before-answer`
   - `gsd-t graph status` returns a live queryable index — `[RULE] graph-status-live`
-  - Authors `graph-query-cli-contract.md` (the JSON envelope D6 reads)
+  - Authors `graph-query-cli-contract.md` (the JSON envelope D6 reads) — INCLUDING the **[Pre-mortem Fix-5]** blast-radius-status section: `blast-radius` is a SEQUENCED-follow-on deliverable, NOT Phase-1-consumed, NOT wired into `/scan`, with D5-T3's union fixture as its sole Phase-1 liveness guarantee — `[RULE] blast-radius-sequenced-follow-on-not-phase1-consumed`
   - READS the store only — re-index is triggered via D4's function, never a direct store write here
   - **Builds in the AC-5 keystone invariants** (proven by T2): NO directive-driven grep fallback path exists in any code path (`[RULE] query-cli-never-greps`); a genuine parser/store-load failure returns `{ok:false, reason:'graph-unavailable'}` FAIL-LOUD, never a partial edge (`[RULE] parser-fail-disables-loud-never-silent`)
 
@@ -54,6 +54,7 @@ When all tasks complete: a deterministic query CLI (who-imports / who-calls / bl
   - The call-graph-only downstream node IS in the result (both graphs unioned)
   - The unrelated node is NOT in the result (set is not over-broad)
   - Hop-depth is transitive: the fixture includes a 2-hop downstream node that MUST appear (blast-radius is full reverse-reachable closure, distinct from D4's deliberate one-hop freshness)
+  - **[Pre-mortem Fix-5 — sole Phase-1 liveness guarantee]** this union fixture test IS the sole Phase-1 liveness guarantee for `blast-radius` (its `/impact` + `/debug` consumers are DEFERRED). `blast-radius` is recorded as a SEQUENCED-follow-on deliverable (NOT Phase-1-consumed, NOT wired into `/scan`) in `graph-query-cli-contract.md` + `integration-points.md` — a declared foundation, not a silent dead deliverable — `[RULE] blast-radius-sequenced-follow-on-not-phase1-consumed`
 
 ## Execution Estimate
 - Total tasks: 3

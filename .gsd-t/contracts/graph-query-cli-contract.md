@@ -14,6 +14,9 @@ The deterministic query interface the model cannot route around — the no-stale
 - `blast-radius <target>` — combined downstream impact set (see Blast-radius semantics below)
 - `status` — live queryable index state (`[RULE] graph-status-live` — the M20–M21 "no graph index found" is the anti-goal)
 
+## Blast-radius Phase-1 status (`[RULE] blast-radius-sequenced-follow-on-not-phase1-consumed`)
+`blast-radius` is BUILT and TESTED in Phase 1 (the `D5-T1` verb + the `D5-T3` union fixture) but has **ZERO Phase-1 consumer** — its consumers `/impact` and `/debug` are DEFERRED to the mandated sequenced-follow-on roadmap (see `integration-points.md` § Mandated SEQUENCED follow-on consumers). It is a DECLARED foundation deliverable, not a silent dead deliverable. Its sole liveness guarantee in Phase 1 is the `D5-T3` blast-radius union fixture test (which exercises the verb end-to-end). It is **NOT wired into `/scan`** — wiring it there would be scope creep (scan consumes the dependents/dead-code/cycles slice, not blast-radius). This is the option-(b) honest marking matching the deferral, NOT a removal.
+
 ## Blast-radius semantics (`[RULE] blast-radius-unions-both-graphs`)
 `blast-radius(target)` returns the downstream impact set computed as the **UNION of the import-graph reverse-reachable set AND the call-graph reverse-reachable set** from `target`:
 - **Graphs unioned:** both the file→file import graph and the function→function call graph. A node reachable via EITHER graph is in the blast radius; a node reachable via NEITHER is excluded.

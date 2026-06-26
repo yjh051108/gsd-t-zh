@@ -31,6 +31,7 @@ When all tasks complete: a measured Atos full-index build wall-clock (PASS under
   - (K2 = `[RULE] K2: treesitter-atos-build-under-budget-or-rescope`)
   - Full tree-sitter floor parse of the REAL Atos repo, wall-clock measured, parallelism strategy applied
   - **PASS iff build under ~2 min**; else a `KILL`/re-scope verdict (adjust budget/parallelism) — measured on the real repo, never assumed
+  - **[Pre-mortem Fix-6 — footprint ceiling]** during the full Atos build, RECORD peak process RSS (`process.memoryUsage().rss` sampled, or `/usr/bin/time -l` peak) in the envelope, against a pre-registered defensible **peak-RSS ceiling** (state the bound, e.g. ≤ 4 GB RSS for a laptop-local embedded build). Peak RSS over the ceiling → KILL/re-scope (footprint is a peer existential unknown — an 8 GB-RSS build is a real laptop failure even under 2 min). The envelope MUST carry the `peakRssBytes` field — `[RULE] k2-build-footprint-ceiling`
   - **FAILS LOUD with `repo-not-found`** if the Atos repo is absent at run time — never fakes a PASS
   - **[#7 Atos SHA pin]** PINS and records the Atos commit SHA (`git -C <atos> rev-parse HEAD`) in the envelope (`[RULE] k2-atos-sha-pinned`); fails LOUD on repo-not-found — NEVER records a wall-clock against an unpinned/absent repo. This SHA is the pin AC-4 (D6) must match.
   - **Killing test**: a synthetic over-budget measurement yields KILL (the test fails if the probe rubber-stamps PASS); the `repo-not-found` path is asserted (the probe cannot fabricate a number); the unpinned/absent-SHA path is asserted (no number without a pin)
@@ -45,8 +46,8 @@ When all tasks complete: a measured Atos full-index build wall-clock (PASS under
 - **Contract refs**: NONE
 - **Dependencies**: M94-D2-T2
 - **Acceptance criteria**:
-  - Records the real-repo build wall-clock + PASS/KILL verdict + the pinned Atos commit SHA with a LIVE-CLOCK timestamp
-  - progress.md updated with the build wall-clock (AC-1) + the pinned SHA
+  - Records the real-repo build wall-clock + PASS/KILL verdict + the pinned Atos commit SHA + **[Fix-6]** the measured peak build RSS against the pre-registered ceiling with a LIVE-CLOCK timestamp
+  - progress.md updated with the build wall-clock (AC-1) + **[Fix-6]** the peak build RSS + the pinned SHA
   - **[#5 kill-path descope]** If K2's verdict is KILL/re-scope, record the explicit AC-descope per the Wave-1 kill-path rule in `integration-points.md` (`[RULE] kill-outcome-records-ac-descope`): e.g. K2 kill → cap repo size / narrow language set → the affected AC-1 build-coverage formally re-scoped, recorded in progress.md, never silently failed. A recorded KILL with no AC-descope record blocks any Wave-2 task.
 
 ## Execution Estimate
