@@ -1,5 +1,24 @@
 # K2 Spike Result — Tree-sitter Atos Throughput
 
+## ✅ RECONCILED 2026-06-26 — k2Verdict: PASS · scaleMismatch: false
+
+**The original `KILL` (below) is SUPERSEDED.** The KILL was triggered SOLELY by `scaleMismatch:true` — K2 measured the real Atos scale (869,511 LOC / 4,418 files) and found it 0.58× the OLD 1.5M synthetic assumption the K1 bake-off had used, so K2 refused to bless K1's store evidence at a mismatched scale. **Both of K2's substantive criteria PASSED outright:** wall-clock **9.6 s** (≪ ~2 min AC-1 budget) and peak build RSS **2.95 GB** (< 4 GB ceiling). The mismatch is now RESOLVED: **K1 was re-run at the corrected 870K scale and flipped to PICK=SQLite** (see `k1-store-bakeoff-results.md` RESOLVED section). With K1 and K2 now measured at the SAME reconciled ~870K Atos scale:
+
+| Field | Value |
+|---|---|
+| **k2Verdict** | **PASS** |
+| **scaleMismatch** | **false** (reconciled — K1 re-run @870K) |
+| Build wall-clock | 9.6 s (AC-1 PASS, budget ~2 min) |
+| Peak build RSS | 2.95 GB (PASS, ceiling 4 GB) |
+| Measured Atos scale | 4,418 files / 869,511 LOC |
+| Reconciled with K1 | yes — both @ ~870K |
+
+**Wave-1 hard gate: both spikes PASS at a reconciled scale** (K1=PICK SQLite @870K, K2=PASS @870K). AC-1 (build under budget) is SATISFIED outright (9.6 s), not descoped.
+
+---
+
+## Original spike result (SUPERSEDED — retained for audit trail)
+
 **Date:** 2026-06-26 03:05 UTC
 **Rule:** `[RULE] K2: treesitter-atos-build-under-budget-or-rescope`
 **Probe:** `bin/gsd-t-graph-ts-throughput.cjs`

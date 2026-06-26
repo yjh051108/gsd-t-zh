@@ -364,6 +364,7 @@ function build_index(repoRoot, options) {
   let tierFloor = 0;
   let tierUpgraded = 0;
   let errors = 0;
+  const skippedFiles = [];
 
   // Stream: parse + put each file one at a time (never accumulate the full set)
   for (const { absPath, relPath } of files) {
@@ -379,9 +380,31 @@ function build_index(repoRoot, options) {
       }
     } catch (err) {
       errors++;
+      skippedFiles.push({ file: relPath, reason: err.message });
       warn(`Failed to index ${relPath}: ${err.message}`);
     }
   }
+
+  // Record the skipped set + parse-success-rate so a query whose edges live in a
+  // skipped file can return a coverage flag ('result may be incomplete — N files
+  // unparsed') instead of a bare empty set that reads as authoritative truth.
+  // A silently-missing edge is a WRONG answer (the no-wrong invariant).
+  const totalEnumerated = files.length;
+  const parseSuccessRate = totalEnumerated > 0 ? (totalEnumerated - errors) / totalEnumerated : 1;
+  const PARSE_RATE_FLOOR = 0.95;
+  const knownLimitation = parseSuccessRate < PARSE_RATE_FLOOR
+    ? `parse-success-rate ${(parseSuccessRate * 100).toFixed(1)}% is below the ${PARSE_RATE_FLOOR * 100}% floor — ${errors} of ${totalEnumerated} files unparsed; queries touching those files surface a coverage-incomplete flag`
+    : null;
+  // Persist the skipped set into the store so queries can consult it (best-effort;
+  // a meta table keyed by file).
+  try {
+    const meta = openStore(dbPath);
+    meta.exec('CREATE TABLE IF NOT EXISTS skipped_files (file TEXT PRIMARY KEY, reason TEXT)');
+    const insSkip = meta.prepare('INSERT OR REPLACE INTO skipped_files (file, reason) VALUES (?, ?)');
+    const tx = meta.transaction((rows) => { for (const r of rows) insSkip.run(r.file, r.reason); });
+    tx(skippedFiles);
+    closeStore(meta);
+  } catch { /* meta is best-effort; the result envelope still carries the set */ }
 
   closeStore(db);
 
@@ -409,6 +432,9 @@ function build_index(repoRoot, options) {
     scipAvailable,
     scipNotice,
     errors,
+    skippedFiles,
+    parseSuccessRate,
+    knownLimitation,
     durationMs,
     dbPath,
   };
