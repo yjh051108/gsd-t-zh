@@ -154,14 +154,10 @@
 - **Remediation:** Either (a) adopt the persistent process pattern: start cgcProcess once (startCgcServer already exists but is never called), use sendRequest (the async stdio approach) for all queries, and shut down on process exit; or (b) add a 'cgc query' one-shot CLI subcommand that accepts a tool name and JSON args and exits, so execFileSync can get a real exit code. Remove the dead sendRequestSync/startCgcServer functions.
 - **Found in slice:** code-graph-engine
 
-### TD-129 - Non-atomic multi-file write in graph-store - partial writes leave index silently corrupted
+### TD-129 - Non-atomic multi-file write in graph-store - RESOLVED (M20–M21 dead engine deleted)
 - **Area:** Data integrity
 - **Severity:** HIGH
-- **Status:** OPEN
-- **Location:** /Users/david/projects/GSD-T/bin/graph-store.js, /Users/david/projects/GSD-T/bin/graph-indexer.js
-- **Description:** indexProject writes 8 separate files sequentially (index.json, calls.json, imports.json, contracts.json, requirements.json, tests.json, surfaces.json, meta.json) with plain writeFileSync calls (graph-store.js:41-45). If the process is killed between any two writes (OOM, SIGINT, timeout), the store is left in a partially-updated state. The most dangerous scenario: meta.json is the last file written. If process dies after writing index.json but before meta.json, the next run sees no meta -> marks stale -> re-indexes. But if meta.json is written and then index.json write is truncated (e.g., disk full mid-write), readMeta() reports entityCount>0 so nativeAvailable() returns true, but readIndex() gets a JSON parse error and returns {entities:[]} - all native queries silently return empty results with no error propagation.
-- **Impact:** Silent data corruption: queries return empty results without any error, misleading downstream workflows about dead code, call chains, domain violations, etc.
-- **Remediation:** Write each file to a .tmp sibling then rename (atomic on POSIX). Treat meta.json as the commit marker: write it last, rename it last. On startup, if any peer file is missing/unreadable while meta.json exists, delete meta.json to force re-index. component-registry.js already uses this pattern (atomicWriteJsonl at line 242) - apply the same to graph-store.
+- **Status:** RESOLVED — 2026-06-26 10:46 PDT (M94 D7-T1). The entire M20–M21 dead engine deleted; the new M94 D3 SQLite store uses WAL + transactional putRecord (atomic per-file). See ✅ Resolved section.
 - **Found in slice:** code-graph-engine
 ### TD-130 - isStale() misses deleted files - stale index never detected after file deletion
 - **Area:** Correctness / Staleness detection
@@ -1726,6 +1722,12 @@ This means the brief omits contract status for contracts listed under `**Contrac
 ## ✅ Resolved
 
 > Items confirmed resolved and moved here from the open register. Full original text preserved.
+
+### TD-129 - Non-atomic multi-file write in graph-store (M20–M21 dead engine retired)
+- **Area:** Graph engine
+- **Severity:** HIGH
+- **Status:** RESOLVED
+- **Resolved:** 2026-06-26 10:46 PDT — M94 D7-T1 (d7-integrate-rewire). The entire M20–M21 dead engine (`bin/graph-{store,cgc,indexer,overlay,parsers,query}.js`) was DELETED (USER-APPROVED, requirer-verified). The atomicity concern is moot — the new M94 D3 SQLite store uses WAL mode + `better-sqlite3` transactions (atomic per-file putRecord). Dispatch rewired in `bin/gsd-t.js` to the new D5 CLI (`bin/gsd-t-graph-query-cli.cjs`). Dead test files (`test/graph-{indexer,store,query}.test.js`) also deleted. `[RULE] graph-status-live`.
 
 ### TD-113 - Six 'native Workflow' scripts use Node.js require() / fs / process - ReferenceError in sandbox
 - **Area:** Sandbox contract violation

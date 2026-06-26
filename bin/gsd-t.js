@@ -3506,68 +3506,111 @@ function doChangelog() {
 }
 
 // ─── Graph ──────────────────────────────────────────────────────────────────
+// M94 Fix-1: the M20–M21 dead engine (graph-indexer / graph-store / graph-query)
+// is REMOVED. All entity-graph verbs (status / who-imports / who-calls / blast-radius
+// / index / query) now delegate to the M94 D5 query CLI
+// (bin/gsd-t-graph-query-cli.cjs). [RULE] graph-status-live
+// [RULE] graph-rewire-no-dangling-export
+//
+// Preserved intact: `gsd-t graph --output json|table` and `gsd-t graph tasks`
+// which print the M44 task-DAG (bin/gsd-t-task-graph.cjs) — a SEPARATE working
+// feature unrelated to the codebase entity graph. (Destructive Action Guard.)
 
+/**
+ * Delegate a verb to the D5 graph query CLI.
+ * Returns the JSON envelope (already parsed) or { ok: false, reason: '...' }.
+ * Prints human-readable output when interactive=true (the default).
+ *
+ * [RULE] graph-status-live — NEVER hits the dead M20–M21 "No graph index found" path.
+ */
+function _graphQueryCli(verbAndArgs) {
+  const { spawnSync } = require("child_process");
+  const cliPath = require("path").join(__dirname, "gsd-t-graph-query-cli.cjs");
+  const result = spawnSync(process.execPath, [cliPath].concat(verbAndArgs), {
+    encoding: "utf8",
+    cwd: process.cwd(),
+    timeout: 30000,
+  });
+  if (result.error) {
+    return { ok: false, reason: "graph-unavailable", detail: result.error.message };
+  }
+  const stdout = (result.stdout || "").trim();
+  if (!stdout) {
+    return { ok: false, reason: "graph-unavailable", detail: result.stderr || "no output" };
+  }
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    return { ok: false, reason: "graph-unavailable", detail: stdout };
+  }
+}
+
+/**
+ * gsd-t graph index
+ * Builds the codebase entity graph via D3 (bin/gsd-t-graph-index.cjs).
+ * [RULE] graph-rewire-no-dangling-export
+ */
 function doGraphIndex() {
   heading("GSD-T Graph — Index");
-  const root = process.cwd();
-  const gq = require("./graph-indexer");
-  const result = gq.indexProject(root, { force: true });
-  if (result.success) {
-    success(`Indexed ${result.entityCount} entities, ${result.relationshipCount} relationships`);
-    info(`Files processed: ${result.filesProcessed}, skipped: ${result.filesSkipped}`);
-    info(`Duration: ${result.duration}ms`);
-    if (result.errors.length > 0) {
-      warn(`Parse errors: ${result.errors.length}`);
-      result.errors.forEach(e => log(`  ${DIM}${e}${RESET}`));
-    }
-  } else {
-    error("Indexing failed");
+  const { spawnSync } = require("child_process");
+  const idxPath = require("path").join(__dirname, "gsd-t-graph-index.cjs");
+  const result = spawnSync(process.execPath, [idxPath, "build", "--repo", process.cwd()], {
+    encoding: "utf8",
+    cwd: process.cwd(),
+    stdio: ["ignore", "inherit", "inherit"],
+    timeout: 300000,
+  });
+  if (result.status !== 0 && result.status !== null) {
+    error("Graph index build failed — see output above");
   }
 }
 
+/**
+ * gsd-t graph status
+ * Queries live index state via D5 CLI.
+ * [RULE] graph-status-live — NEVER returns "No graph index found" from the dead path.
+ * [RULE] graph-rewire-no-dangling-export
+ */
 function doGraphStatus() {
   heading("GSD-T Graph — Status");
-  const root = process.cwd();
-  const store = require("./graph-store");
-  const meta = store.readMeta(root);
-  if (!meta) {
-    warn("No graph index found. Run: gsd-t graph index");
+  const envelope = _graphQueryCli(["status"]);
+  if (!envelope.ok) {
+    warn(`Graph index unavailable: ${envelope.reason || "graph-unavailable"}`);
+    info("Run: gsd-t graph index");
     return;
   }
-  success(`Provider: ${meta.provider}`);
-  info(`Entities: ${meta.entityCount}`);
-  info(`Relationships: ${meta.relationshipCount}`);
-  info(`Last indexed: ${meta.lastIndexed}`);
-  info(`Duration: ${meta.duration}ms`);
-  const fileCount = Object.keys(meta.fileHashes || {}).length;
-  info(`Files tracked: ${fileCount}`);
+  // envelope from D5 CLI: { ok, verb:"status", indexed, storeSize, fileCount, tier, ... }
+  if (envelope.indexed === false) {
+    warn("No graph index found.");
+    info("Run: gsd-t graph index");
+    return;
+  }
+  success(`Graph index: ${envelope.fileCount || 0} files`);
+  if (envelope.tier) info(`Tier: ${envelope.tier}`);
+  if (envelope.storeSize !== undefined) info(`Store size: ${envelope.storeSize} bytes`);
+  if (envelope.detail) log(JSON.stringify(envelope, null, 2));
 }
 
+/**
+ * gsd-t graph query <verb> [args...]
+ * Delegates the verb directly to the D5 CLI.
+ * [RULE] graph-rewire-no-dangling-export
+ */
 function doGraphQuery(args) {
-  const root = process.cwd();
-  const gq = require("./graph-query");
-  const type = args[0];
-  if (!type) {
-    error("Usage: gsd-t graph query <type> [params...]");
-    info("Types: getEntity, getEntities, getCallers, getCallees,");
-    info("       findDeadCode, findDuplicates, findCircularDeps,");
-    info("       getDomainBoundaryViolations, getIndexStatus");
+  const verb = args[0];
+  if (!verb) {
+    error("Usage: gsd-t graph query <verb> [target]");
+    info("Verbs: status, who-imports, who-calls, blast-radius, cluster, dead-code, orphan, dangling, test-impl");
     return;
   }
-  const params = {};
-  for (let i = 1; i < args.length; i++) {
-    const [k, v] = args[i].split("=");
-    if (k && v) params[k] = v;
-  }
-  const result = gq.query(type, params, root);
-  log(JSON.stringify(result, null, 2));
+  const envelope = _graphQueryCli([verb].concat(args.slice(1)));
+  log(JSON.stringify(envelope, null, 2));
 }
 
 function doGraph(args) {
   // M44 D1-T4: `gsd-t graph --output json|table` prints the task-graph DAG
-  // (parsed from .gsd-t/domains/*/tasks.md) for debugging. The pre-existing
-  // `index|status|query` subcommands are the codebase entity graph (graph-
-  // indexer) and remain unchanged.
+  // (parsed from .gsd-t/domains/*/tasks.md). This is a SEPARATE working feature
+  // (Destructive Action Guard — preserved intact). [RULE] graph-rewire-no-dangling-export
   const outIdx = args.indexOf("--output");
   if (outIdx !== -1) {
     const fmt = args[outIdx + 1] || "json";
@@ -3575,13 +3618,16 @@ function doGraph(args) {
   }
   const sub = args[0] || "status";
   switch (sub) {
-    case "index":  doGraphIndex(); break;
-    case "status": doGraphStatus(); break;
-    case "query":  doGraphQuery(args.slice(1)); break;
-    case "tasks":  doGraphTaskOutput(args[1] || "table"); break;
+    case "index":         doGraphIndex(); break;
+    case "status":        doGraphStatus(); break;
+    case "query":         doGraphQuery(args.slice(1)); break;
+    case "who-imports":   { const e = _graphQueryCli(["who-imports", args[1] || ""]); log(JSON.stringify(e, null, 2)); break; }
+    case "who-calls":     { const e = _graphQueryCli(["who-calls",   args[1] || ""]); log(JSON.stringify(e, null, 2)); break; }
+    case "blast-radius":  { const e = _graphQueryCli(["blast-radius", args[1] || ""]); log(JSON.stringify(e, null, 2)); break; }
+    case "tasks":         doGraphTaskOutput(args[1] || "table"); break;
     default:
       error(`Unknown graph subcommand: ${sub}`);
-      info("Usage: gsd-t graph [index|status|query|tasks]");
+      info("Usage: gsd-t graph [index|status|query|who-imports|who-calls|blast-radius|tasks]");
       info("       gsd-t graph --output json|table   (task DAG)");
   }
 }

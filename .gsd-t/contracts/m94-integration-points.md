@@ -47,8 +47,8 @@ D1 (K1 store bake-off) and D2 (K2 throughput + Atos-scale measurement) run CONCU
 ## AC-descope record (Wave-1 KILL outcomes — `[RULE] kill-outcome-records-ac-descope`)
 > If K1 or K2 KILLs, record the explicit AC-descope HERE (which ACs survive, which move to Phase-2) BEFORE any Wave-2 task. The D7-T2 hard-gate test reads this section.
 
-- **K1 verdict:** _(recorded at Wave-1 close: `PICK` + picked store + 4 sub-metrics, OR `KILL_OR_RESCOPE` + per-candidate per-criterion breakdown + the surviving-AC descope)_
-- **K2 verdict:** _(recorded at Wave-1 close: `PASS` + Atos build wall-clock + MEASURED scale + pinned SHA, OR `KILL` + the surviving-AC descope)_
+- **K1 verdict:** `PICK` — store: SQLite (better-sqlite3), measured @870K nodes (reconciled Atos scale). All 6 sub-criteria PASS: who-imports latency 0.0016ms, who-calls latency 0.012ms, incremental update 0.0005s, WAL atomicity ✅, peak RSS 192MB, index size 649MB/26.3× (both ≤2GB/35× ceiling). Re-run superseded the original KILL_OR_RESCOPE (environment missing devDependencies). Pinned to `k1-store-bakeoff-results.md` RESOLVED section. `[RULE] k2-verdict-reconciled-at-corrected-scale`
+- **K2 verdict:** `PASS` — tree-sitter full index of real Atos repo (SHA: `b062c80129c0c8e5b82ee3a4eaf9dcc4255c43b5`): wall-clock 9.6s (≪ 2min budget), peak RSS 2.95GB (< 4GB ceiling). Scale: 4,418 files / 869,511 LOC. Original KILL (scale-mismatch-only, 0.58× vs old 1.5M assumption) SUPERSEDED — K1 re-run at corrected 870K scale resolves the mismatch. `scaleMismatch: false`. Reconciled 2026-06-26 10:46 PDT by D7-T4. `[RULE] k2-verdict-reconciled-at-corrected-scale` `[RULE] wave1-gate-asserts-real-reconciled-envelopes`
 
 ## Cross-domain seams (function-level / contract-level — NO shared file edits)
 | Seam | Producer | Consumer(s) | Surface |

@@ -121,12 +121,14 @@ D3's production indexer should use `worker_threads` with the same `Math.max(2, M
 
 ---
 
-## Full Probe Envelope (recorded at run time)
+## Full Probe Envelope (RECONCILED at Wave-1-close — 2026-06-26 10:46 PDT)
+
+> **Re-stamp note (D7-T4 — Wave-1-close reconciliation):** The original probe envelope is retained in the Original spike result section above (audit trail). This reconciled envelope updates `k2Verdict`, `scaleMismatch`, `scaleMismatchReason`, and `killReason` to reflect that K1 was re-run at the correct 870K scale (see `k1-store-bakeoff-results.md` RESOLVED section). Both substantive criteria (wall-clock + footprint) were always PASS. The KILL was scale-mismatch-only; with K1 re-PICKed at 870K, the mismatch is resolved. `[RULE] k2-verdict-reconciled-at-corrected-scale`
 
 ```json
 {
-  "verdict": "KILL",
-  "k2Verdict": "KILL",
+  "verdict": "PASS",
+  "k2Verdict": "PASS",
   "atosSha": "b062c80129c0c8e5b82ee3a4eaf9dcc4255c43b5",
   "wallClockMs": 9598,
   "budgetMs": 120000,
@@ -149,14 +151,17 @@ D3's production indexer should use `worker_threads` with the same `Math.max(2, M
     "bakeoffAssumedLoc": 1500000,
     "measuredLoc": 869511,
     "ratio": 0.58,
-    "scaleMismatch": true,
-    "scaleMismatchReason": "Measured 869,511 LOC vs bakeoff assumption 1,500,000 (ratio 0.58×) — K1 store evidence validated at wrong scale"
+    "scaleMismatch": false,
+    "scaleMismatchReason": "RESOLVED — K1 re-run at the corrected 870K scale (atosTotalLoc=869511); K1 evidence now validated at the matching scale. Original mismatch (0.58×) was between measured 869,511 LOC and OLD 1,500,000 synthetic assumption — that assumption is superseded."
   },
-  "scaleMismatch": true,
+  "scaleMismatch": false,
   "parseErrors": 773,
   "workerCount": 13,
   "filesPerWorker": 340,
-  "killReason": "scale-mismatch (0.58× vs bakeoff — K1 evidence at wrong scale)",
+  "killReason": null,
+  "reconciliationNote": "KILL superseded — scale-mismatch resolved at Wave-1-close; K1=PICK(SQLite)@870K, K2=PASS@870K. AC-1 timing (9.6s) and footprint (2.95GB) were always PASS.",
+  "reconciledAt": "2026-06-26T17:46:11.000Z",
+  "reconciledBy": "D7-T4 (d7-integrate-rewire, Wave-1-close)",
   "generatedAt": "2026-06-26T03:05:17.972Z"
 }
 ```
