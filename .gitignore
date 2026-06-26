@@ -44,6 +44,10 @@ node_modules/
 
 # GSD-T graph index (auto-generated, project-specific)
 .gsd-t/graph/
+# M94 SQLite graph store (D1/D3 store path; WAL/SHM siblings)
+.gsd-t/graph.db
+.gsd-t/graph.db-wal
+.gsd-t/graph.db-shm
 
 # GSD-T context meter (session-specific runtime state)
 .gsd-t/.context-meter-state.json
