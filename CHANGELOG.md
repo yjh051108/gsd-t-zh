@@ -2,6 +2,15 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.9.14] - 2026-06-25 (workflow runCli retry — reliability patch)
+
+### Fixed — transient helper-call flakes no longer false-block workflows
+
+`runCli` (the inline helper every `*.workflow.js` uses to run a GSD-T CLI command) delegates the call to a haiku helper agent, not a subprocess — so a return can transiently come back missing its parsed result, surfacing later as a cryptic `classify failed: no envelope` or a fail-closed gate block even though the CLI itself succeeded. Caught live during the M94 plan phase: the traceability gate passed when run directly (exit 0) but the workflow's confirm-call came back unparsed and failed closed.
+
+- `runCli` now **retries once** when JSON was expected but no parsed result returned (covers both the throw path and a malformed return the loose schema let through). A real CLI failure that returned valid JSON (`ok:false` with a present envelope) is **not** retried — a true result, not a transient miss.
+- Hardens every phase/wave/integrate/debug workflow's CLI calls (preflight, verify-gate, traceability, brief, build-coverage, test-data).
+
 ## [4.9.13] - 2026-06-25 (M93 — Reader Contract every turn, retire the selective gate — patch)
 
 ### Changed — concise output is now enforced on EVERY reply, not by pattern-matching

@@ -102,7 +102,21 @@ async function runCli(projectDir, subcmd, argv, localBin, label, parseJson = tru
   ].join("\n");
   const opts = { label, schema: _CLI_ENVELOPE_SCHEMA, model: "haiku" };
   if (phaseNameOpt) opts.phase = phaseNameOpt;
-  const r = await agent(prompt, opts).catch((e) => ({ ok: false, exitCode: -1, envelope: null, stderr: String(e && e.message), via: "error" }));
+  // The CLI is run by a haiku helper agent, not a subprocess, so a return can transiently
+  // come back missing its parsed result. Retry ONCE on a missing/unparsed result before
+  // giving up — a genuine CLI failure fails both attempts (real error survives the retry),
+  // while a transient helper miss is recovered. Only retry when JSON was expected (parseJson)
+  // and the parsed result is absent; never retry on a clean exit that simply returned no JSON.
+  const runOnce = () => agent(prompt, opts).catch((e) => ({ ok: false, exitCode: -1, envelope: null, stderr: String(e && e.message), via: "error" }));
+  let r = await runOnce();
+  // Retry once when JSON was expected but no parsed result came back — covers both the
+  // throw path (via="error") and a malformed return the loose schema let through (ok=false
+  // with the result absent). A real CLI failure that returned valid JSON (envelope present,
+  // ok=false) is NOT retried — that is a true result, not a transient miss.
+  const missingResult = (x) => !x || (parseJson && (x.envelope === undefined || x.envelope === null) && x.ok !== true);
+  if (missingResult(r)) {
+    r = await runOnce();
+  }
   return r || { ok: false, exitCode: -1, envelope: null, via: "error" };
 }
 async function runPreflight(projectDir, label = "preflight", phaseNameOpt) { return runCli(projectDir, "preflight", ["--json"], "cli-preflight.cjs", label, true, phaseNameOpt); }
