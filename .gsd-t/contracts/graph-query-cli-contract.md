@@ -46,6 +46,110 @@ Each verb calls D4's `freshness_check_on_query` INLINE before answering.
 - `[RULE] stale-file-reindexed-before-answer` — re-index any stale touched file inline BEFORE returning
 - `[RULE] who-calls-function-identity-disambiguated` — `who-calls` keys on a `file#function` identity; a bare name matching multiple `funcId`s returns `{ok:false, reason:"ambiguous-function", candidates:[...]}` (or per-candidate grouped results), NEVER a flat merged caller set across same-named functions
 
+## D9 Additions (Wave A — `bin/gsd-t-graph-query-cli.cjs` extensions)
+
+**Owner:** d9-query-cli-extensions  
+**Status:** STABLE (M94-D9, Wave A)
+
+### New verbs
+
+#### `cluster` — tightly-coupled file groups
+```
+gsd-t graph cluster
+```
+Returns tightly-coupled file groups computed by a **DETERMINISTIC** shared-neighbour coupling metric (Jaccard over import neighbourhood, threshold = `COUPLING_THRESHOLD = 0.2`). NOT an LLM judgment. Same input → same output.
+
+`[RULE] cluster-verb-deterministic-coupling` — declared metric, reproducible grouping.
+
+```json
+{ "ok": true, "verb": "cluster", "results": [{"files":["a.ts","b.ts"], "couplingScore": 0.65}], "tier": "..." }
+```
+
+Consumers: `/partition` (domain-boundary suggestion), `/project` (milestone decomposition).
+
+#### `dead-code` (alias `orphan`) — nodes with no inbound edges
+```
+gsd-t graph dead-code
+gsd-t graph orphan
+```
+Returns function entities with no inbound call or file-import edges, MINUS declared exclusions.
+
+`[RULE] dead-code-verb-excludes-entrypoints-and-exports` — exclusions:
+- Entry-point files: `bin/`, `main.*`, `index.*`, `cli.*`, `app.*`, `server.*`
+- Test files (matched by test-path patterns)
+- Functions whose name starts with an uppercase letter (exported public API)
+- Functions matching module.exports patterns
+
+`[RULE] orphan-tier-labeled-candidate-not-certainty` — tree-sitter-floor-tier orphans labeled `"CANDIDATE"` (a missed unresolved call could explain absence); compiler-accurate orphans have `candidateLabel: null`.
+
+```json
+{ "ok": true, "verb": "dead-code", "results": [{"funcId":"...", "file":"...", "tier":"...", "candidateLabel":"CANDIDATE"|null}], "tier": "..." }
+```
+
+Consumers: `/qa`, `/verify` (dead-code detection).
+
+#### `dangling` — edges to missing nodes
+```
+gsd-t graph dangling
+```
+Returns CALL and IMPORT edges whose `dst` is not in the indexed node set (delete/rename residue). UNRESOLVED# sentinels are NOT reported (they are expected floor-tier unknowns, not deleted nodes).
+
+`[RULE] dangling-verb-surfaces-missing-dst` — CALL edges to non-indexed funcIds + IMPORT edges to non-indexed files; never UNRESOLVED# sentinels.
+
+```json
+{ "ok": true, "verb": "dangling", "results": [{"src":"...", "dst":"...", "kind":"CALL|IMPORT", "note":"..."}], "tier": "..." }
+```
+
+Consumers: `/qa`, `/verify` (dangling-ref detection).
+
+#### `test-impl` — test→impl coverage from call-site edges
+```
+gsd-t graph test-impl
+gsd-t graph test-impl --inverse
+```
+Filters existing call-site edges where `src` file matches test-path patterns. Forward mode: per test function, lists the impl funcIds it calls. Inverse (`--inverse`): impl funcs with no test-file caller (`untested-impl`).
+
+`[RULE] test-impl-verb-from-call-site-edges-no-new-type` — derived from existing CALL edges filtered by test-path source. NO new edge type in the extractor.
+
+`[RULE] test-impl-no-new-edge-type-needed` — the `call-site` edges already cover test→impl (confirmed at plan time, recorded as a test invariant).
+
+`[RULE] test-impl-never-presents-unresolved-as-coverage` — UNRESOLVED# targets are NEVER included in `implFuncs`. An unresolved target is not coverage.
+
+Test-path patterns (default, configurable via `GSD_T_TEST_PATTERNS` env): `*.test.*`, `*.spec.*`, `e2e/**`, `__tests__/**`, `tests?/**`.
+
+```json
+{ "ok": true, "verb": "test-impl", "mode": "forward", "results": [{"testFunc":"...", "implFuncs":["..."]}], "tier": "..." }
+{ "ok": true, "verb": "test-impl", "mode": "untested-impl", "results": [{"funcId":"...", "file":"..."}], "tier": "..." }
+```
+
+Consumer: `/test-sync` (align tests with impl via coverage edges).
+
+### Coverage envelope (D9-T5 — Fix-7 query-layer half)
+
+`[RULE] query-surfaces-incompleteness-never-silent-empty` — `who-imports`, `who-calls`, and `blast-radius` now attach a `coverage` field:
+
+```json
+{ "ok": true, ..., "coverage": { "complete": true } }
+{ "ok": true, ..., "coverage": { "complete": false, "unparsedContributors": 3, "note": "result may be incomplete — 3 file(s) unparsed" } }
+```
+
+When the D3-T6 skipped-file set (stored in the SQLite `skipped_files` table) is non-empty, `coverage.complete:false` is returned — never a bare empty result that reads as "no importers". A fully-parsed graph returns `coverage.complete:true`.
+
+**The killing test (`D9-T5.2`)**: one importer in a deliberately-skipped file → `who-imports` MUST surface `coverage.complete:false`, NEVER `{results:[], coverage:{complete:true}}`.
+
+### UNRESOLVED# sentinel taxonomy (RE-PLAN Fix-3)
+The edge extractor emits `UNRESOLVED#<name>` when a call target cannot be resolved at the tree-sitter floor. These sentinels:
+- Are NOT reported as dangling edges (they are expected unknowns, not deleted nodes)
+- Are NOT included in `test-impl` implFuncs (they are not coverage — an unresolved guess is not a covered impl function)
+- DO appear in the raw call-graph but are filtered by the query verbs per their rules
+
+### Real-data correctness (D9-T4)
+All three new verb families are proven against REAL Atos extractor output at a pinned SHA (via `GSDT_SLOW_TESTS=1 node --test test/m94-d9-real-atos-verb-spotcheck.test.js`). The spotcheck asserts:
+- (a) test-impl: ZERO `UNRESOLVED#` in implFuncs; all results are `file#function@LINE` shaped
+- (b) dead-code: count ≤ 80% of total functions (no floor-tier flood); all floor-tier results labeled `CANDIDATE`
+- (c) cluster: two runs at the same SHA produce identical grouping (deterministic metric confirmed)
+
 ## Consumed (frozen)
 - `graph-store-schema-contract.md` (D1) — the store it reads
 - `graph-freshness-contract.md` (D4) — the inline `freshness_check_on_query`
+- `graph-indexer-build-contract.md` (D3-T6) — the `skipped_files` table the coverage field reads
