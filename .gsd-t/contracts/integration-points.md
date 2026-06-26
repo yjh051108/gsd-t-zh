@@ -1,6 +1,80 @@
 # Integration Points
 
-## Current State: M90 — The Unproven-Assumption Doctrine (PLANNED 2026-06-22 — risk-first, 4 file-disjoint domains, 3 waves). Plan hardened: traceability-gate GREEN (exit 0, 0 violations, 24 behavioral, 7 headline). Supersedes/absorbs M89 (its factual slice = D3/R-FACT). M87 resumes after M90's relevant slices land.
+## Current State: M94 — Persistent Code Graph Index (Phase 1, backlog #44b) — PLANNED 2026-06-26. RISK-FIRST: 6 file-disjoint domains across 3 waves, 16 atomic tasks (Shape D), zero write-target collisions (file-disjointness PROVEN over all 16). Wave 1 is a PROVE-OR-KILL HARD GATE — no Wave-2 body build until both spikes PASS.
+
+### M94 Wave Groupings (the integration shape)
+
+```
+WAVE 1 — PROVE-OR-KILL (parallel, file-disjoint, throwaway spike code). HARD GATE blocks Wave 2.
+  d1 store-bakeoff-spike (K1)            ║  d2 treesitter-throughput-spike (K2 = AC-1)
+    M94-D1-T1 synthetic-gen                 M94-D2-T1 parser-floor contract (taxonomy from lessons)
+    M94-D1-T2 store bake-off [Headline]     M94-D2-T2 ts-throughput probe [Headline]
+    M94-D1-T3 store-schema contract+result  M94-D2-T3 K2 result doc + progress.md (AC-1)
+       │  delivers: graph-store-schema-contract.md    │  delivers: graph-parser-floor-contract.md
+       │  (node/edge/tier/content-hash columns)       │  (entity/edge taxonomy + parse harness)
+       ▼                                              ▼
+  ┌──────────────────────────────────────────────────────────────────────────────┐
+  │ WAVE-1 HARD GATE: REQUIRE K1 == PICK (store on evidence) AND K2 == PASS        │
+  │ (tree-sitter full-indexes REAL Atos < ~2 min). Either fails its numbers →      │
+  │ legitimate KILL/RE-SCOPE — Wave 2 does NOT start. [RULE] wave1-hard-gate       │
+  └──────────────────────────────────────────────────────────────────────────────┘
+       │
+WAVE 2 — BUILD (parallel, file-disjoint over a SHARED on-disk store; D3 writes, D4 mutates, D5 reads):
+       ▼
+  d3 indexer-core             ║  d4 freshness               ║  d5 query-cli (the keystone)
+    M94-D3-T1 edge-extract        M94-D4-T1 content-hash         M94-D5-T1 query CLI + envelope [Headline]
+    M94-D3-T2 build_index            checker + contract            (who-imports/who-calls/blast-radius/status)
+       +parse_and_put [Headline]  M94-D4-T2 AC-3 uncommitted-     M94-D5-T2 AC-5 keystone tests [Headline]
+    M94-D3-T3 SCIP + tiers (AC-6)     edit killing test            (no-grep structural + fault-injection)
+       │  delivers: graph-       [Headline]                       │  delivers: graph-query-cli-contract.md
+       │  indexer-build-contract  │  delivers: graph-             │
+       │  (build_index +          │  freshness-contract.md        │
+       │   parse_and_put surface) │  (freshness_check_on_query)   │
+       └── D4 calls D3's parse_and_put (function call, NOT a file edit) ───┘
+       └── D5 calls D4's freshness_check_on_query INLINE before answering ─┘
+       ▼  GATE: AC-2 (who-imports/calls correct) + AC-3 (sub-~1s, uncommitted edit caught) +
+       │       AC-5 (no grep path structurally + fail-loud on injection) + AC-6 (tiers honest) green.
+       │
+WAVE 3 — CONSUMER WIRING (the falsifiable payoff; extend-class on EXISTING scan files):
+       ▼
+  d6 scan-wiring
+    M94-D6-T1 scan-consumer contract (consumes graph-query-cli-contract.md)
+    M94-D6-T2 wire commands/gsd-t-scan.md + templates/workflows/gsd-t-scan.workflow.js (M81 runtime-native)
+    M94-D6-T3 AC-4 measure run-1 build + run-2 warm wall-clocks [Headline] → progress.md + CHANGELOG
+       │  run-1 builds the index; run-2 reads-once-queries-after via D5's CLI (NOT a whole-repo re-read).
+       │  Falls back to grep mode ANNOUNCED only on graph-unavailable. [RULE] scan-run2-reads-index-not-source
+```
+
+### M94 Cross-domain seams (function-level / contract-level — NO shared file edits)
+| Seam | Producer | Consumer(s) | Surface | Shared file? |
+|------|----------|-------------|---------|--------------|
+| Store schema | d1 (M94-D1-T3) | d3 (write), d4 (read hash), d5 (read) | `graph-store-schema-contract.md` columns | NO — contract, frozen at K1 PICK |
+| Parser-floor taxonomy | d2 (M94-D2-T1) | d3 (lifts WHAT) | `graph-parser-floor-contract.md` | NO — contract, frozen at K2 PASS |
+| Build/put surface | d3 (M94-D3-T2) | d4 (`parse_and_put`), d5 (re-index inline) | `graph-indexer-build-contract.md` function surface | NO — function call, not a file edit |
+| Freshness check | d4 (M94-D4-T1) | d5 (inline before answer) | `graph-freshness-contract.md` `freshness_check_on_query` | NO — function call |
+| Query envelope | d5 (M94-D5-T1) | d6 (scan reads it) | `graph-query-cli-contract.md` JSON envelope | NO — contract |
+| Scan wiring | d6 (M94-D6-T2) | none (terminal) | extend-class edits to existing scan files | d6 SOLE owner of both scan files |
+
+### M94 Disjointness verdict (validated this plan phase)
+- 16 tasks parsed (parser-canonical `### M94-Dx-Ty —` Shape D), **0 warnings**, every task carries an explicit `**Touches**` list (source: declared, never git-fallback).
+- `proveDisjointness` over ALL 16 tasks: **0 sequential (write-target-overlap) groups, 0 unprovable** — no two tasks anywhere in the milestone write the same path.
+- Per-wave concurrent sets (Wave 1 d1∥d2, Wave 2 d3∥d4∥d5, Wave 3 d6) all fully parallel-provable.
+- Intra-domain order is enforced by `**Dependencies**` (same-owner serial chain), NOT by file overlap.
+- The dead M20–M21 `bin/graph-*.js` use the bare `graph-` prefix — disjoint from the new `gsd-t-graph-*` prefix; read for lessons only, never edited.
+
+### M94 Plan-hardening (M83) status
+- Every behavioral task declares **Files + Test + ImplPath**; the milestone's headline capabilities are each tagged **Headline:** true with a real impl path AND an end-to-end killing test:
+  - K1 store pick (D1-T2) — kill-criterion test: a candidate failing one sub-criterion is NOT picked.
+  - K2 = AC-1 Atos throughput (D2-T2) — over-budget → KILL; `repo-not-found` fail-loud.
+  - AC-3 freshness (D4-T2) — edits a working-tree file WITHOUT committing; content-hash catches it (fails if git-SHA used).
+  - AC-5 keystone (D5-T2) — structural grep-for-absence (no grep-fallback path EXISTS) + fault-injection (corrupt store → `graph-unavailable`, never silent-wrong).
+  - AC-6 tiers (D3-T3) — compiler-accurate vs tree-sitter-floor labeled; Rust cross-crate flagged partial.
+  - AC-4 payoff (D6-T3) — both run wall-clocks measured on the REAL Atos repo, reported.
+- Store choice / SCIP invocation / edge taxonomy stay **DEFERRED to Wave-1 spike evidence** — never asserted in the plan.
+
+---
+
+## Prior: M90 — The Unproven-Assumption Doctrine (PLANNED 2026-06-22 — risk-first, 4 file-disjoint domains, 3 waves). Plan hardened: traceability-gate GREEN (exit 0, 0 violations, 24 behavioral, 7 headline). Supersedes/absorbs M89 (its factual slice = D3/R-FACT). M87 resumes after M90's relevant slices land.
 
 ### M90 Architecture (LOCKED at discuss — `.gsd-t/discuss/M90-approach-sourced.md`)
 **Externalize + force, never introspect.** The decisive sourced finding: a model cannot reliably self-grade its own assumption (verbalized confidence ≈ coin-flip; RLHF makes calibration ~10× worse; self-critique degrades plan quality) — which root-causes the binvoice + M87 + M89 saga. So the model NEVER grades itself: a DETERMINISTIC trigger fires an EXTERNAL response (blind-adversary plan-review on a separate context/`fable` model + executable spike), and research is FORCED by protocol (not confidence-gated) for the time-sensitive/external class. Extends M83 pre-mortem + Red-Team-on-fable; invents no new introspection. The architectural-DETECTION trigger ships EXPERIMENTAL/measured (the one piece with no published precedent — instrumented, never claimed).

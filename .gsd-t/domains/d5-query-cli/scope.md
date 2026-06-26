@@ -11,6 +11,13 @@ WAVE 2 BUILD (after the hard gate; runs concurrently with d3 and d4). The DETERM
 - `test/m94-d5-fault-injection-fail-loud.test.js` — AC-5: fault-injection forces a parser-load failure and asserts `{ok:false, reason:'graph-unavailable'}` — never a partial edge
 - `.gsd-t/domains/d5-query-cli/{scope,constraints,tasks}.md` — this domain's own GSD-T metadata
 
+## Files Owned
+- `bin/gsd-t-graph-query-cli.cjs`
+- `.gsd-t/contracts/graph-query-cli-contract.md`
+- `test/m94-d5-query-cli.test.js`
+- `test/m94-d5-no-grep-fallback-structural.test.js`
+- `test/m94-d5-fault-injection-fail-loud.test.js`
+
 ## NOT Owned (do not modify)
 - `bin/gsd-t-graph-store-bakeoff.cjs`, `bin/gsd-t-graph-synthetic-gen.cjs`, `.gsd-t/contracts/graph-store-schema-contract.md` — owned by d1 (store read-only)
 - `bin/gsd-t-graph-ts-throughput.cjs`, `.gsd-t/contracts/graph-parser-floor-contract.md` — owned by d2

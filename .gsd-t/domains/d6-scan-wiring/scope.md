@@ -11,6 +11,13 @@ WAVE 3 CONSUMER WIRING (after the Wave-2 build trio integrates; the falsifiable 
 - `test/m94-d6-scan-consumer.test.js` — scan wiring: queries the index when warm, falls back to grep mode (announced) on graph-unavailable
 - `.gsd-t/domains/d6-scan-wiring/{scope,constraints,tasks}.md` — this domain's own GSD-T metadata
 
+## Files Owned
+- `.gsd-t/contracts/graph-scan-consumer-contract.md`
+- `commands/gsd-t-scan.md`
+- `templates/workflows/gsd-t-scan.workflow.js`
+- `.gsd-t/spikes/ac4-scan-run2-speedup-results.md`
+- `test/m94-d6-scan-consumer.test.js`
+
 ## NOT Owned (do not modify)
 - All `bin/gsd-t-graph-*.cjs` — owned by the Wave-1 spikes (d1, d2) and the Wave-2 build trio (d3, d4, d5). D6 CONSUMES the D5 query-cli contract; it edits no graph bin file.
 - `.gsd-t/contracts/graph-store-schema-contract.md`, `graph-parser-floor-contract.md`, `graph-indexer-build-contract.md`, `graph-freshness-contract.md`, `graph-query-cli-contract.md` — owned by d1–d5 (consumed read-only)

@@ -10,6 +10,12 @@ WAVE 2 BUILD (after the hard gate; runs concurrently with d3 and d5). Per-file C
 - `test/m94-d4-uncommitted-edit-caught.test.js` — AC-3 killing test: an uncommitted working-tree edit (git-SHA unchanged) IS detected and re-indexed
 - `.gsd-t/domains/d4-freshness/{scope,constraints,tasks}.md` — this domain's own GSD-T metadata
 
+## Files Owned
+- `bin/gsd-t-graph-freshness.cjs`
+- `.gsd-t/contracts/graph-freshness-contract.md`
+- `test/m94-d4-freshness.test.js`
+- `test/m94-d4-uncommitted-edit-caught.test.js`
+
 ## NOT Owned (do not modify)
 - `bin/gsd-t-graph-store-bakeoff.cjs`, `bin/gsd-t-graph-synthetic-gen.cjs`, `.gsd-t/contracts/graph-store-schema-contract.md` — owned by d1 (store-schema consumed read-only)
 - `bin/gsd-t-graph-ts-throughput.cjs`, `.gsd-t/contracts/graph-parser-floor-contract.md` — owned by d2

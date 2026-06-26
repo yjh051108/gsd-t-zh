@@ -11,6 +11,13 @@ WAVE 1 PROVE-OR-KILL spike K1 — the store bake-off. Generate a synthetic ~1.5M
 - `test/m94-k1-store-bakeoff.test.js` — tests for the generator + bake-off harness (kill-criteria honored, envelope shape)
 - `.gsd-t/domains/d1-store-bakeoff-spike/{scope,constraints,tasks}.md` — this domain's own GSD-T metadata
 
+## Files Owned
+- `bin/gsd-t-graph-synthetic-gen.cjs`
+- `bin/gsd-t-graph-store-bakeoff.cjs`
+- `.gsd-t/contracts/graph-store-schema-contract.md`
+- `.gsd-t/spikes/k1-store-bakeoff-results.md`
+- `test/m94-k1-store-bakeoff.test.js`
+
 ## NOT Owned (do not modify)
 - `bin/gsd-t-graph-ts-throughput.cjs` and `.gsd-t/contracts/graph-parser-floor-contract.md` — owned by d2-treesitter-throughput-spike
 - `bin/gsd-t-graph-index.cjs`, `bin/gsd-t-graph-scip-upgrade.cjs`, `bin/gsd-t-graph-edge-extract.cjs` — owned by d3-indexer-core

@@ -10,6 +10,12 @@ WAVE 1 PROVE-OR-KILL spike K2 (= AC-1) — the tree-sitter throughput probe. Run
 - `test/m94-k2-treesitter-throughput.test.js` — tests for the probe (verdict logic, budget threshold, envelope shape) — runnable without the Atos repo present (uses a small fixture for harness correctness)
 - `.gsd-t/domains/d2-treesitter-throughput-spike/{scope,constraints,tasks}.md` — this domain's own GSD-T metadata
 
+## Files Owned
+- `.gsd-t/contracts/graph-parser-floor-contract.md`
+- `bin/gsd-t-graph-ts-throughput.cjs`
+- `.gsd-t/spikes/k2-treesitter-atos-throughput-results.md`
+- `test/m94-k2-treesitter-throughput.test.js`
+
 ## NOT Owned (do not modify)
 - `bin/gsd-t-graph-store-bakeoff.cjs`, `bin/gsd-t-graph-synthetic-gen.cjs`, `.gsd-t/contracts/graph-store-schema-contract.md` — owned by d1-store-bakeoff-spike
 - `bin/gsd-t-graph-index.cjs`, `bin/gsd-t-graph-scip-upgrade.cjs`, `bin/gsd-t-graph-edge-extract.cjs` — owned by d3-indexer-core (D3 LIFTS the taxonomy from this domain's contract; it does not edit this domain's files)

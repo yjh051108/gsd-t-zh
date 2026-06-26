@@ -12,6 +12,14 @@ WAVE 2 BUILD (starts only after the K1+K2 HARD GATE passes; runs concurrently wi
 - `test/m94-d3-accuracy-tiers.test.js` — AC-6 honesty: compiler-accurate vs tree-sitter-floor labeled, Rust cross-crate flagged partial, never an unlabeled mix
 - `.gsd-t/domains/d3-indexer-core/{scope,constraints,tasks}.md` — this domain's own GSD-T metadata
 
+## Files Owned
+- `bin/gsd-t-graph-edge-extract.cjs`
+- `bin/gsd-t-graph-index.cjs`
+- `bin/gsd-t-graph-scip-upgrade.cjs`
+- `.gsd-t/contracts/graph-indexer-build-contract.md`
+- `test/m94-d3-indexer-core.test.js`
+- `test/m94-d3-accuracy-tiers.test.js`
+
 ## NOT Owned (do not modify)
 - `bin/gsd-t-graph-store-bakeoff.cjs`, `bin/gsd-t-graph-synthetic-gen.cjs`, `.gsd-t/contracts/graph-store-schema-contract.md` — owned by d1 (consumed as frozen)
 - `bin/gsd-t-graph-ts-throughput.cjs`, `.gsd-t/contracts/graph-parser-floor-contract.md` — owned by d2 (taxonomy LIFTED from the contract, files not edited)
