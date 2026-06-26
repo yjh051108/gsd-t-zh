@@ -34,6 +34,15 @@ const { test } = require('node:test');
 const GRAPH_INDEX  = path.join(__dirname, '..', 'bin', 'gsd-t-graph-index.cjs');
 const os = require('os');
 
+// ── Slow-test gate ────────────────────────────────────────────────────────────
+// This test build_index()es the ENTIRE real Atos repo (~4,400 files, ~2 min) and
+// produces NO stdout while it runs. Workflow execute-agents run `npm test` and a
+// 3-min no-output watchdog kills them mid-run when slow real-repo builds stack up
+// (the root cause of the Wave-2 execute stalls). So this heavy test is OPT-IN:
+// it runs only when GSDT_SLOW_TESTS=1, and otherwise SKIPS LOUDLY (visible, never
+// silent green). Run it explicitly: `GSDT_SLOW_TESTS=1 node --test test/m94-d3-real-atos-edge-spotcheck.test.js`.
+const SLOW_TESTS_ENABLED = process.env.GSDT_SLOW_TESTS === '1';
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const ATOS_REPO = process.env.ATOS_REPO ||
@@ -50,7 +59,10 @@ const BUILD_TIMEOUT_MS = 180_000; // 3 minutes (within AC-1 budget)
 
 // ── FAIL-LOUD-SKIP if Atos not present ───────────────────────────────────────
 
-test('T4: [RULE] real-atos-edge-spotcheck-or-loud-skip — Atos repo present or FAIL-LOUD-SKIP', { timeout: BUILD_TIMEOUT_MS }, () => {
+test('T4: [RULE] real-atos-edge-spotcheck-or-loud-skip — Atos repo present or FAIL-LOUD-SKIP', {
+  timeout: BUILD_TIMEOUT_MS,
+  skip: SLOW_TESTS_ENABLED ? false : 'slow real-Atos build — run with GSDT_SLOW_TESTS=1 (skipped to keep `npm test` fast for workflow agents)',
+}, () => {
   if (!fs.existsSync(ATOS_REPO)) {
     // [RULE] real-atos-edge-spotcheck-or-loud-skip: FAIL-LOUD-SKIP — never silent green
     const skipMsg = `FAIL-LOUD-SKIP: Atos repo not found at ${ATOS_REPO} — set ATOS_REPO env or ensure the repo is cloned. reason=atos-repo-not-found`;
