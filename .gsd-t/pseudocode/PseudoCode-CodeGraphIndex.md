@@ -44,9 +44,13 @@
 > consume the graph; Phase 1 WIRES `/scan` + the query CLI as the FIRST PROOF; the other consumers
 > (`/debug` `/quick` `/impact` `/execute` file-disjointness `/plan` partition M92-reflex) are
 > MANDATED, SEQUENCED follow-on wiring — in-scope by principle, sequenced by execution, NEVER dropped.
-> AC-4 (`/scan`) is the falsifiable PROOF of the tenet, on BOTH axes (faster AND better-insight),
-> bound to a real mechanism (the structural slice is INJECTED into the scanSlice deep-finders so they
-> read LESS) and measured against pre-registered numbers on a pinned Atos SHA — neither asserted.
+> AC-4 (`/scan`) is the falsifiable PROOF of the tenet — RESCOPED (David, 2026-06-25) to **INSIGHT
+> delta only**: the current `/scan` is kept FULLY INTACT and the graph is wired ADDITIVELY (the
+> structural slice is INJECTED into the scanSlice deep-finders so its findings are ACCURATE, not
+> LLM-reconstructed). PROOF = a graph-wired scan surfaces ≥ the no-graph run's structural findings
+> PLUS ≥1 it missed/got wrong, on a pinned Atos SHA — neither asserted. The SPEED / file-count axis
+> is DROPPED from M94 (unbindable without redesigning scan's enumerate-EVERY-file logic-bug mandate)
+> and deferred to a SEPARATE "re-think /scan from the graph up" milestone.
 >
 > **The risk-first wave shape is the decision I signed off on.** The two existential unknowns the
 > research left genuinely OPEN — the embedded store choice, and whether tree-sitter can index Atos
@@ -134,11 +138,13 @@ PROCEDURE query(verb, target):            # Query CLI (D4) — deterministic, th
 # WAVE 3 — CONSUMER WIRING (the falsifiable payoff)
 # ============================================================
 
-PROCEDURE scan_consumer():                # /scan FIRST (D5) — narrow consumer set
-    IF NOT store.exists(): build_index(repo)        # run-1 builds the index
-    # run-2: read-once-query-after instead of re-reading the whole Atos repo
-    RETURN scan_using_index_queries()      # measured wall-clock, both runs reported (AC-4)
-                                          #  [RULE] scan-run2-reads-index-not-source   [RULE]
+PROCEDURE scan_consumer():                # /scan FIRST (D5) — narrow consumer set; ADDITIVE, scan kept INTACT
+    IF NOT store.exists(): build_index(repo)        # build the index if absent
+    # query the structural slice + INJECT it into the scanSlice deep-finders (additive)
+    slice = query_structural_slice()       # dependents/dead-code/cycles/coupling, pre-computed + accurate
+    RETURN scan_with_injected_slice(slice) # AC-4 = INSIGHT delta only (no wall-clock); scan's per-file
+                                          #  read pipeline is UNCHANGED — graph is additive
+                                          #  [RULE] scan-injects-structural-slice   [RULE]
 ```
 
 ---
@@ -147,7 +153,7 @@ PROCEDURE scan_consumer():                # /scan FIRST (D5) — narrow consumer
 
 | | |
 |---|---|
-| **One breath** | Build a codebase's structure ONCE into a local on-disk index (files, functions, imports/exports, import graph, call graph) parsed by tree-sitter as the always-bundled floor and upgraded to compiler-accurate SCIP per-language where present; keep it fresh by per-file content-hash dirty-detection (re-index the touched file + re-check its one-hop edges on query); query it through a deterministic CLI the model can't route around (fresh-or-reindex-inline, never a grep fallback, FAIL-LOUD on parser death); and wire `/scan` first so run-2 reads-once-queries-after instead of re-reading the whole Atos repo. |
+| **One breath** | Build a codebase's structure ONCE into a local on-disk index (files, functions, imports/exports, import graph, call graph) parsed by tree-sitter as the always-bundled floor and upgraded to compiler-accurate SCIP per-language where present; keep it fresh by per-file content-hash dirty-detection (re-index the touched file + re-check its one-hop edges on query); query it through a deterministic CLI the model can't route around (fresh-or-reindex-inline, never a grep fallback, FAIL-LOUD on parser death); and wire `/scan` first ADDITIVELY — inject the graph's pre-computed structural slice so scan's structural findings are accurate (the INSIGHT proof), keeping the current scan architecture fully intact. |
 | **Actors** | Indexer (tree-sitter floor + optional SCIP upgrade) · Store (embedded, on-disk — specific engine resolved by the K1 spike) · Freshness checker (content-hash + one-hop re-validation) · Query CLI (deterministic, no-grep-fallback, fail-loud) · Consumer (`/scan` first). |
 | **Risk-first** | Wave 1 = two PROVE-OR-KILL spikes (store-bakeoff K1 + tree-sitter-Atos-throughput K2) with hard numeric kill-criteria on the REAL Atos repo. No milestone-body build until both pass. |
 
@@ -168,18 +174,20 @@ invariant prose carries the marker; RULE-IDs derived). These feed `bin/gsd-t-gua
 - `[RULE] stale-file-reindexed-before-answer: a query re-indexes any stale touched file inline BEFORE returning — never serves a stale or wrong edge.`
 - `[RULE] accuracy-tier-labeled: edges carry their tier — compiler-accurate where SCIP present, tree-sitter-floor (approximate) where absent — never an unlabeled mix.`
 - `[RULE] rust-cross-crate-flagged-partial: Rust cross-crate edges are FLAGGED partial (rust-analyzer SCIP is "limited") — never returned as if complete.`
-- `[RULE] scan-run2-reads-index-not-source: /scan run-2 (index warm) answers from the index, not by re-reading the whole repo; both run wall-clocks reported.`
+- `[RULE] scan-injects-structural-slice: /scan (index warm) queries the index for the pre-computed structural slice (dependents/dead-code/cycles/coupling) and INJECTS it ADDITIVELY into the scanSlice deep-finders so those findings are accurate (graph-derived, not LLM-reconstructed); the current scan architecture (enumerate + per-file deep-read) is KEPT INTACT.`
 - `[RULE] graph-status-live: gsd-t graph status returns a live queryable index on the Atos repo — the M20–M21 "no graph index found" state is the anti-goal.`
 
-### Reframe-required guards (the CENTRAL TENET binding — added 2026-06-26; the 9 reframe tests)
-- `[RULE] scan-run2-on-cost-critical-path` (#1): AC-4 run-2 deep-finder agents read materially FEWER files / spawn fewer-or-cheaper readers than **run-0 (the NO-GRAPH baseline)** — the graph DISPLACES real reading/reasoning, not merely sits beside it. A wall-clock delta ALONE is insufficient. (Compared vs run-0, NOT run-1, which is already graph-wired and understates the delta.)
-- `[RULE] scan-run2-speed-ceiling` (#2): run-2 (warm) wall-clock < 0.5× run-1 (cold build) on the SAME pinned Atos SHA — a PRE-REGISTERED numeric ceiling in graph-scan-consumer-contract.md, not "dramatically"; the result-doc check FAILS if exceeded.
-- `[RULE] ac4-three-distinct-runs`: AC-4 measures THREE runs — run-0 (no-graph baseline, grep mode), run-1 (cold-build graph-wired, the SPEED baseline), run-2 (warm, both axes). The insight + cost-critical-path baseline is run-0; the speed baseline is run-1. Conflating them (run-2-vs-run-1 for insight) shows ~zero delta and silently mis-passes — forbidden.
+### Reframe-required guards (the CENTRAL TENET binding — AC-4 RESCOPED 2026-06-25: INSIGHT-delta only; the speed/cost-path/three-run guards RETIRED)
+- `[RULE] scan-insight-gate` (the SOLE AC-4 binding): a graph-wired `/scan` surfaces ≥ the NO-GRAPH baseline run's structural findings PLUS ≥1 concrete named structural finding (a real dead-code symbol / cycle / coupling / dependent) the no-graph run MISSED or got WRONG, on a pinned Atos SHA. The comparison is graph-wired-vs-no-graph (NOT graph-vs-graph, which would show ~zero delta and silently mis-pass). A pre-registered gate in graph-scan-consumer-contract.md.
+- `[RULE] scan-insight-delta-graph-attributed` (pre-mortem Finding A — anti-variance): since /scan deep-finders are stochastic LLM agents, the ≥1 missed/wrong delta finding MUST be traceable to the graph's deterministic query result (present in the injected slice, recorded in the result doc) — a delta that is mere LLM run-to-run variance with no graph contribution does NOT pass. This makes the insight gate falsifiable, not a variance artifact.
+- `[RULE] scan-slice-consumed` (pre-mortem Finding B — anti-dead-injection): the graph-wired run's output MUST contain ≥1 structural finding byte-traceable to the injected D5 query result (the same symbol/cycle/dependent the CLI returned) — proving the slice was CONSUMED by a finding, not merely passed into context the deep-finders never use.
+- `[RULE] ac4-two-distinct-runs`: AC-4 measures TWO runs on the SAME pinned Atos SHA — a NO-GRAPH baseline (graph wiring disabled, today's scan) and a GRAPH-WIRED run. The insight baseline is the no-graph run; comparing graph-vs-graph shows ~zero delta and is forbidden.
+- ~~`[RULE] scan-run2-on-cost-critical-path` / `[RULE] scan-run2-speed-ceiling` / `[RULE] ac4-three-distinct-runs`~~ — **RETIRED** by the user AC-4 rescope (2026-06-25): the SPEED / file-count / cost-critical-path axis is unbindable without redesigning scan's enumerate-EVERY-file logic-bug mandate; DROPPED from M94 and deferred to a separate "re-think /scan from the graph up" milestone. AC-4 measures NO wall-clock.
 - `[RULE] k1-query-latency-target` (#3): who-imports / who-calls each return < 50 ms at ~1.5M-node scale — a pre-registered number in graph-store-schema-contract.md BEFORE D1; an engineered-to-fail candidate fails on latency-over-target.
 - `[RULE] k1-atomic-single-file-update` + `[RULE] freshness-write-atomic-no-torn-read` (#4): while a single-file re-index WRITE is in flight, a concurrent who-imports(F) returns fully-old OR fully-new edges, NEVER torn/partial — the picked store's declared atomicity (single-writer lock / atomic write+rename / txn); K1's 4th measured sub-criterion.
 - `[RULE] kill-outcome-records-ac-descope` (#5): every Wave-1 KILL outcome records an explicit AC-descope (which ACs survive → which move to Phase-2, tests removed from THIS milestone's acceptance, never silently failed) in progress.md BEFORE any Wave-2 task runs.
 - `[RULE] ac3-timing-split` (#6): AC-3/K1 incremental timing is split — a deterministic CORRECTNESS test (content-hash mismatch detected, one-hop not transitive, NO timing assertion) gates the build; a SEPARATE scale-budget measurement records the sub-~1s number at 1.5M-node scale against a pre-committed ceiling. No flaky inline wall-clock on a toy fixture.
-- `[RULE] ac4-atos-sha-pinned` + `[RULE] k2-atos-sha-pinned` (#7): AC-4 (run-1 == run-2) AND K2 PIN the Atos commit SHA and fail LOUD on repo-not-found / commit-mismatch — a number is NEVER recorded against an unpinned/absent repo.
+- `[RULE] ac4-atos-sha-pinned` + `[RULE] k2-atos-sha-pinned` (#7): AC-4 (no-graph run == graph-wired run) AND K2 PIN the Atos commit SHA and fail LOUD on repo-not-found / commit-mismatch — a finding-set / number is NEVER recorded against an unpinned/absent repo.
 - `[RULE] live-store-seam` (#8, integrate-owned): a real D3 index into a real D1 store, edited on disk, queried via D5 — the answer reflects the EDIT (proves D5→D4→D3→D1 fired live + the store mutated). Not mocked.
 - `[RULE] blast-radius-unions-both-graphs` (#9): blast-radius(target) returns the UNION of the import-graph AND call-graph reverse-reachable sets (transitive); a node reachable only via the call graph IS included, an unrelated node is EXCLUDED — neither over- nor under-broad. Semantics declared in graph-query-cli-contract.md.
 
@@ -210,6 +218,6 @@ build_index(repo): per file -> treesitter floor parse; SCIP upgrade if present (
 freshness_check(touched): per f, if content_hash(f) != stored -> reparse + store.put + revalidate direct-importer edges (one-hop, NOT transitive)
 query(verb,target): freshness_check(touched_since_index); try store.answer; catch ParserLoadFailure -> {ok:false, reason:"graph-unavailable"} (fail loud, no grep)
 
-# Wave 3 (WIRE):
-scan_consumer(): run-1 build_index; run-2 scan_using_index_queries (read-once-query-after); report both wall-clocks
+# Wave 3 (WIRE — additive, scan kept intact):
+scan_consumer(): build_index if absent; query structural slice; INJECT into scanSlice deep-finders (additive); AC-4 = INSIGHT delta only (graph-wired vs no-graph baseline, pinned SHA), NO wall-clock
 ```
