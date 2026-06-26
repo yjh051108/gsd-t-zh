@@ -123,8 +123,14 @@ function scorePartition(candidate, projectDir) {
 
   // Run the real oracle when available; otherwise fall back to a self-contained
   // overlap check so the judge still works if the lib isn't co-located.
+  // fallbackToTouchesOnly: the judge SCORES partition shapes — it is not gating a
+  // live parallel fan-out — so when the graph index is absent (M94: the query CLI
+  // exists but no index is built, e.g. on a tiny synthetic candidate), it must
+  // degrade to the literal-Touches disjointness count, NOT return empty groups
+  // (which would zero parallelGroups and break scoring). The FAIL-LOUD-HALT path
+  // is reserved for execute's real fan-out gate, which requires the graph.
   const res = proveDisjointness
-    ? proveDisjointness({ tasks, projectDir })
+    ? proveDisjointness({ tasks, projectDir, disjointnessFallback: "touches-only" })
     : _localDisjoint(tasks);
 
   const parallelGroups = (res.parallel || []).length;
