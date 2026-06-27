@@ -2674,6 +2674,14 @@ const PROJECT_BIN_TOOLS = [
   // M93 — jargon-gloss lint for written docs (the file surface the brevity-guard
   // Stop hook can't reach). Propagated so a project's doc checks can invoke it.
   "gsd-t-jargon-lint.cjs",
+  // M94/M95 — code-graph runtime. The wired consumers (execute/wave disjointness,
+  // debug, quick, impact, plan, scan) look for `bin/gsd-t-graph-query-cli.cjs` IN
+  // THE PROJECT and fall back to grep when it is absent. Propagating the query CLI
+  // plus its require-chain (indexer, freshness, edge-extract, SCIP upgrade + reader)
+  // is what actually makes a project graph-aware instead of grep-dependent.
+  // [[project_code_graph_universal_consumer]] [[feedback_graph_is_architectural_anchor]]
+  "gsd-t-graph-query-cli.cjs", "gsd-t-graph-index.cjs", "gsd-t-graph-freshness.cjs",
+  "gsd-t-graph-edge-extract.cjs", "gsd-t-graph-scip-upgrade.cjs", "gsd-t-scip-reader.cjs",
 ];
 
 // Files that older versions of this installer copied into project bin/ but
