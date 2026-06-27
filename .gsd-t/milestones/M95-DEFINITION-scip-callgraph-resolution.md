@@ -1,6 +1,25 @@
 # M95 — Build Real SCIP Call-Graph Resolution (finish M94's stubbed precise tier)
 
-**Status: BUILDING 2026-06-26 — core resolution SHIPPED, heavy Atos verify in progress.**
+**Status: COMPLETE 2026-06-26 — real SCIP call-graph resolution shipped + verified on real Atos.**
+
+## ✅ DONE — all acceptance criteria met
+- **AC-1** ✅ fixture `.spec.ts` → `src/calc.ts#computeTotal` resolves (was UNRESOLVED).
+- **AC-2** ✅ real Atos (pinned SHA `b062c80…`): d9 `test-impl` returns **164 resolved test→impl edges** (was 0); d3 edge-spotcheck **594,986 edges, 3/3 patterns**. Both heavy tests PASS.
+- **AC-3** ✅ tier honesty — a file with only unresolvable calls stays `tree-sitter-floor`; negative test in `test/m95-scip-call-resolution.test.js`.
+- **AC-4** ✅ `gsd-t install` auto-installs scip-typescript + scip-python; `gsd-t doctor` reports presence (✓/⚠ + install cmd).
+- **AC-5** ✅ memory/perf — heavy tests gated `GSDT_SLOW_TESTS=1`, run sequentially. Atos build 197–209s (SCIP +~35s over floor). The query-phase hang was a test-loader O(files×edges) `LIKE` scan — fixed to bulk-load (one query/table). SCIP build peaks ~10GB — gate `--test-concurrency=1`.
+- **Full suite:** 2502 pass / 0 fail / 4 skip. No regressions.
+- **Bonus fix:** `openDb` used a wrong store path (`.gsd-t/graph/graph.db` vs canonical `.gsd-t/graph.db`) — the OOM guard exposed it; fixed.
+
+Commits: `a221e35` (core), `e6ecb17` (bulk-load + zero-dep reframe), `efe4b61` (doctor), `cf79204` (openDb path).
+
+## Remaining follow-ons (NOT blocking M95)
+- Python resolution via scip-python (reader is language-agnostic; wire the python branch in buildScipResolver).
+- Optimize in-memory query over 594K-edge indices (loadStore/buildIndexFromRecords) — works but heavy.
+
+---
+
+(historical) **Status: BUILDING 2026-06-26 — core resolution SHIPPED, heavy Atos verify in progress.**
 
 ## Build progress (2026-06-26 21:xx PDT)
 - ✅ **SCIP reader** (`bin/gsd-t-scip-reader.cjs`) — decodes `index.scip` via scip-typescript's bundled protobuf decoder; builds symbol→funcId + per-file reference maps. Located across install layouts, fail-loud if absent.
