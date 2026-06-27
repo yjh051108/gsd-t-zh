@@ -1501,6 +1501,41 @@ function installCgc() {
   }
 }
 
+// M95: install the SCIP indexers that give the code graph compiler-accurate
+// call-edge resolution. These are a GSD-T requirement (not "optional only to get
+// better") — the precise call graph (who-calls / test-impl / blast-radius across
+// imports) depends on them. Node-only npm packages (Apache-2.0 / MIT). Fail-loud
+// but non-blocking: if the global install needs sudo, warn with the manual
+// command rather than aborting the whole GSD-T install.
+function installScipIndexers() {
+  const indexers = [
+    { bin: "scip-typescript", pkg: "@sourcegraph/scip-typescript", langs: "TS/JS" },
+    { bin: "scip-python", pkg: "@sourcegraph/scip-python", langs: "Python" },
+  ];
+  for (const { bin, pkg, langs } of indexers) {
+    let present = false;
+    try {
+      execFileSync("which", [bin], { encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"] });
+      present = true;
+    } catch { /* not present */ }
+
+    if (present) {
+      info(`${bin} present (${langs} compiler-accurate edges)`);
+      continue;
+    }
+    info(`Installing ${bin} (${langs} compiler-accurate code graph)...`);
+    try {
+      execFileSync("npm", ["install", "-g", pkg], {
+        encoding: "utf8", timeout: 180000, stdio: ["pipe", "pipe", "pipe"],
+      });
+      success(`${bin} installed`);
+    } catch (e) {
+      warn(`${bin} install failed — code graph will use tree-sitter floor (approximate) for ${langs}`);
+      info(`To enable compiler-accurate ${langs} edges: npm install -g ${pkg}`);
+    }
+  }
+}
+
 // ─── Commands ────────────────────────────────────────────────────────────────
 
 // Shared templates that slash-command prompts reference by predictable path.
@@ -1688,6 +1723,9 @@ async function doInstall(opts = {}) {
 
   heading("Graph Engine (CGC)");
   installCgc();
+
+  heading("SCIP Indexers (Compiler-Accurate Code Graph — M95)");
+  installScipIndexers();
 
   saveInstalledVersion();
 

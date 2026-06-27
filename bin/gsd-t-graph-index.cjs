@@ -268,7 +268,8 @@ function parse_and_put(absPath, relPath, options) {
   if (typeof tryScipUpgrade === 'function') {
     const upgraded = tryScipUpgrade(absPath, relPath, entities, edges, {
       prevTier: existingTier,
-      projectRoot: require('path').dirname(absPath),
+      projectRoot: scip.projectRoot || require('path').dirname(absPath),
+      resolver: scip.resolver || null,
     });
     if (upgraded) {
       // ALWAYS use the tier returned by the upgrader — it encodes the full
@@ -357,6 +358,27 @@ function build_index(repoRoot, options) {
   const db = openStore(dbPath);
   const files = enumerateFiles(repoRoot);
 
+  // M95: build the repo-level SCIP resolver ONCE (run scip-typescript over the
+  // whole repo, read index.scip, build the symbol→funcId resolution maps). Each
+  // file's parse_and_put then resolves its call edges against this shared map.
+  // If the caller passed a `scip` object explicitly (tests inject mocks), respect
+  // it; otherwise auto-build from the upgrader.
+  let scipCtx = scip;
+  if (!scipCtx) {
+    const upg = require('./gsd-t-graph-scip-upgrade.cjs');
+    const resolver = upg.buildScipResolver(repoRoot);
+    scipCtx = {
+      tryScipUpgrade: upg.tryScipUpgrade,
+      resolver: resolver.ok ? resolver : null,
+      projectRoot: repoRoot,
+    };
+    if (resolver.ok) {
+      info(`SCIP resolver active (${resolver.scipPath}) — call edges will be resolved compiler-accurate.`);
+    } else {
+      info(`SCIP resolver unavailable (${resolver.reason}) — tree-sitter floor (approximate). Install scip-typescript for compiler-accurate call edges.`);
+    }
+  }
+
   const t0 = Date.now();
   let fileCount = 0;
   let entityCount = 0;
@@ -369,7 +391,7 @@ function build_index(repoRoot, options) {
   // Stream: parse + put each file one at a time (never accumulate the full set)
   for (const { absPath, relPath } of files) {
     try {
-      const result = parse_and_put(absPath, relPath, { db, scip });
+      const result = parse_and_put(absPath, relPath, { db, scip: scipCtx });
       fileCount++;
       entityCount += result.entities.length;
       edgeCount += result.edges.length;
@@ -414,9 +436,10 @@ function build_index(repoRoot, options) {
   // provided/available, EVERY file stays tree-sitter-floor (approximate edges) —
   // that is correct (the graph never depends on SCIP to function), but it must be
   // SURFACED LOUDLY, never a silent 0-upgrade that reads like full accuracy.
-  const scipAvailable = !!scip;
+  // SCIP is active when the resolver built successfully (auto-built or injected).
+  const scipActive = !!(scipCtx && scipCtx.resolver && scipCtx.resolver.ok);
   let scipNotice = null;
-  if (!scipAvailable || tierUpgraded === 0) {
+  if (!scipActive && tierUpgraded === 0) {
     scipNotice =
       'SCIP indexer not available — all edges are tree-sitter-floor (approximate, not compiler-accurate). ' +
       'This is a working graph; for compiler-accurate TS/JS/Python edges, install a SCIP indexer ' +
@@ -429,7 +452,7 @@ function build_index(repoRoot, options) {
     entityCount,
     edgeCount,
     tier: { floor: tierFloor, upgraded: tierUpgraded },
-    scipAvailable,
+    scipAvailable: scipActive,
     scipNotice,
     errors,
     skippedFiles,

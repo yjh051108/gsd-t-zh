@@ -80,7 +80,7 @@ closeStore(db);
 TierEnum = "compiler-accurate" | "tree-sitter-floor" | "tree-sitter-floor-STALE-SCIP"
 ```
 
-- `compiler-accurate` — SCIP indexer present + ran OK; edges are compiler-derived (Phase-2 will replace tree-sitter edges with SCIP-derived ones; Phase-1 labels the tier)
+- `compiler-accurate` — SCIP indexer present + ran OK; call edges are SCIP-RESOLVED (M95): `build_index` runs scip-typescript once over the repo, reads `index.scip`, and rewrites each file's `UNRESOLVED#<name>` call targets to real cross-file funcIds. A file is labeled `compiler-accurate` ONLY when SCIP actually resolved ≥1 of its call edges (or it has no call edges to resolve); a file whose calls all stay unresolvable is `tree-sitter-floor`, never relabeled. (M95 superseded the Phase-1 "tier labelling only" stub that relabeled tree-sitter edges without reading SCIP output. Reader: `bin/gsd-t-scip-reader.cjs`; resolver: `buildScipResolver` in `bin/gsd-t-graph-scip-upgrade.cjs`.)
 - `tree-sitter-floor` — no SCIP indexer for this language; edges are tree-sitter best-effort
 - `tree-sitter-floor-STALE-SCIP` — SCIP was present at last full index but is now absent or fails on re-index; the "was-accurate" signal is preserved; consumer treats these as floor edges
 

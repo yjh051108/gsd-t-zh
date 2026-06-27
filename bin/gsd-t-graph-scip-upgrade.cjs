@@ -130,13 +130,16 @@ function _resetScipCache(override) {
  * is confirmed present and invocable. Phase-2 will replace the edges with
  * SCIP-derived ones. This is the documented UPGRADE FLOOR behavior.
  */
-function runScipTypescript(projectRoot) {
-  const scip = spawnSync('scip-typescript', ['index', '--output', '/dev/null', '.'], {
+function runScipTypescript(projectRoot, outPath) {
+  // M95: emit to a REAL file (outPath) so the index can be READ and call edges
+  // resolved — not /dev/null. The old /dev/null path only proved invocability.
+  const out = outPath || path.join(projectRoot, '.gsd-t', 'index.scip');
+  const scip = spawnSync('scip-typescript', ['index', '--output', out, '.'], {
     cwd: projectRoot,
     encoding: 'utf8',
     timeout: 120_000,
   });
-  if (scip.status === 0) return { ok: true };
+  if (scip.status === 0) return { ok: true, scipPath: out };
   return { ok: false, error: scip.stderr || `exit code ${scip.status}` };
 }
 
@@ -191,15 +194,102 @@ function isRustCrossCrateEdge(edge, relPath) {
   return false;
 }
 
+// ── Repo-level SCIP resolver (M95) ────────────────────────────────────────────
+
+/**
+ * Build a repo-wide SCIP resolver ONCE: run scip-typescript over the whole repo,
+ * read the emitted index.scip, and return the resolution maps + a per-file
+ * call-edge resolver. This is the object passed as `scip` into parse_and_put so
+ * each file resolves its UNRESOLVED# call targets against real cross-file data.
+ *
+ * Running SCIP once per repo (not once per file) is the correctness AND
+ * performance fix — the old per-file run re-indexed the whole repo for every
+ * file and never read the output.
+ *
+ * @param {string} repoRoot
+ * @param {{ languages?: { typescript?: bool, python?: bool } }} [opts]
+ * @returns {{ ok: bool, reason?: string, scipPath?: string,
+ *             resolveFileEdges: (relPath, edges) => { edges, resolved: number } }}
+ */
+function buildScipResolver(repoRoot, opts = {}) {
+  const { readScipIndex } = require('./gsd-t-scip-reader.cjs');
+  const avail = detectScip();
+
+  // Phase-1 of M95: TypeScript/JavaScript only (scip-typescript). Python is a
+  // sequenced follow-on. If TS SCIP is absent, the resolver is a no-op (floor).
+  if (!avail.typescript) {
+    return { ok: false, reason: 'scip-typescript-absent', resolveFileEdges: passthroughResolver };
+  }
+
+  const scipPath = path.join(repoRoot, '.gsd-t', 'index.scip');
+  let run;
+  try {
+    run = runScipTypescript(repoRoot, scipPath);
+  } catch (e) {
+    return { ok: false, reason: `scip-run-threw: ${e.message}`, resolveFileEdges: passthroughResolver };
+  }
+  if (!run || !run.ok) {
+    return { ok: false, reason: run ? run.error : 'scip-run-failed', resolveFileEdges: passthroughResolver };
+  }
+
+  const read = readScipIndex(run.scipPath);
+  if (!read.ok) {
+    return { ok: false, reason: read.reason, resolveFileEdges: passthroughResolver };
+  }
+
+  // Build a fast per-file callee lookup: for a given test/impl file, the set of
+  // funcIds it references (resolved). Used to rewrite UNRESOLVED# call edges.
+  const fileRefs = read.fileRefs; // relPath → [{symbol, funcId, line}]
+
+  /**
+   * Resolve a single file's call edges. For each CALL edge whose dst is
+   * UNRESOLVED#<name>, if SCIP found a reference to <name> in this file that
+   * resolves to a real funcId, rewrite dst to that funcId.
+   */
+  function resolveFileEdges(relPath, edges) {
+    const refs = fileRefs.get(relPath);
+    if (!refs || !refs.length) return { edges, resolved: 0 };
+
+    // name → resolved funcId (last writer wins; SCIP refs in this file)
+    const nameToFuncId = new Map();
+    for (const r of refs) {
+      const name = r.funcId.includes('#') ? r.funcId.split('#')[1] : r.funcId;
+      nameToFuncId.set(name, r.funcId);
+    }
+
+    let resolved = 0;
+    const out = edges.map((edge) => {
+      const dst = edge.target || edge.dst || '';
+      const kind = edge.kind;
+      const isCall = kind === 'call-site' || kind === 'CALL';
+      if (!isCall || !dst.startsWith('UNRESOLVED#')) return edge;
+      const calleeName = dst.slice('UNRESOLVED#'.length);
+      const funcId = nameToFuncId.get(calleeName);
+      if (!funcId) return edge; // still unresolved → stays floor
+      resolved++;
+      // rewrite dst to the resolved funcId, mark scip-derived
+      return { ...edge, target: funcId, dst: funcId, scipResolved: true };
+    });
+    return { edges: out, resolved };
+  }
+
+  return { ok: true, scipPath: run.scipPath, resolveFileEdges };
+}
+
+/** No-op resolver used when SCIP is unavailable (floor mode). */
+function passthroughResolver(relPath, edges) {
+  return { edges, resolved: 0 };
+}
+
 // ── Main upgrade function ─────────────────────────────────────────────────────
 
 /**
  * Try to upgrade a file's entities + edges to compiler-accurate tier via SCIP.
  *
- * For Phase-1, "upgrade" means: confirm SCIP is present and invocable for
- * this file's language, then label the tier compiler-accurate. The edges are
- * those from the tree-sitter floor (not yet SCIP-derived in Phase-1 — that
- * is Phase-2 scope). Rust cross-crate edges are flagged partial regardless.
+ * M95: "upgrade" now RESOLVES call edges from real SCIP output. A file is labeled
+ * compiler-accurate only when SCIP data was actually applied (resolver present);
+ * edges that stay UNRESOLVED keep floor semantics. Rust cross-crate edges are
+ * flagged partial regardless.
  *
  * [RULE] reindex-tier-never-silently-downgraded:
  *   prevTier: the tier currently recorded in the store for this file.
@@ -243,45 +333,44 @@ function tryScipUpgrade(absPath, relPath, entities, edges, options) {
     return { upgraded: false, tier, entities, edges };
   }
 
-  // SCIP is present — attempt the upgrade
-  // Phase-1: run SCIP to confirm invocability; use tree-sitter edges + label compiler-accurate
-  // Phase-2 will replace edges with SCIP-derived ones
-  const root = projectRoot || path.dirname(absPath);
-
-  let scipOk = false;
-  try {
-    let result;
-    if (lang === 'typescript') result = runScipTypescript(root);
-    else if (lang === 'python') result = runScipPython(root);
-    else if (lang === 'rust')   result = runScipRust(root);
-    scipOk = result && result.ok;
-  } catch (e) {
-    warn(`SCIP run failed for ${relPath}: ${e.message}`);
-    scipOk = false;
-  }
-
-  if (!scipOk) {
-    // SCIP tool present but run failed — flag STALE if was previously accurate
+  // M95: resolve call edges from the REPO-LEVEL SCIP resolver built once by
+  // build_index and threaded through options.resolver. We NEVER re-run SCIP per
+  // file here (the old per-file run re-indexed the whole repo for every file and
+  // discarded the output). If no resolver was provided, we cannot resolve —
+  // stay floor (honest), never relabel.
+  const resolver = options.resolver || null;
+  if (!resolver || typeof resolver.resolveFileEdges !== 'function') {
     const tier = prevTier === 'compiler-accurate'
       ? 'tree-sitter-floor-STALE-SCIP'
       : 'tree-sitter-floor';
     return { upgraded: false, tier, entities, edges };
   }
 
-  // SCIP ran OK — label compiler-accurate; flag Rust cross-crate edges partial
+  // Resolve this file's UNRESOLVED# call edges against the SCIP index.
+  const { edges: resolvedEdges, resolved } = resolver.resolveFileEdges(relPath, edges);
+
+  // Rust cross-crate edges stay flagged partial.
   // [RULE] rust-cross-crate-flagged-partial
-  const upgradedEdges = edges.map(edge => {
+  const finalEdges = resolvedEdges.map(edge => {
     if (lang === 'rust' && isRustCrossCrateEdge(edge, relPath)) {
       return { ...edge, partial: true };
     }
     return edge;
   });
 
+  // [RULE] scip-tier-honest: label compiler-accurate ONLY when SCIP actually
+  // resolved ≥1 edge in this file OR the file has no call edges to resolve (a
+  // pure-definition file SCIP indexed cleanly). A file whose calls all stayed
+  // UNRESOLVED is NOT compiler-accurate — it's floor.
+  const hadCallEdges = edges.some(e => (e.kind === 'call-site' || e.kind === 'CALL'));
+  const isAccurate = !hadCallEdges || resolved > 0;
+  const tier = isAccurate ? 'compiler-accurate' : 'tree-sitter-floor';
+
   return {
-    upgraded: true,
-    tier: 'compiler-accurate',
+    upgraded: isAccurate,
+    tier,
     entities,
-    edges: upgradedEdges,
+    edges: finalEdges,
   };
 }
 
@@ -343,6 +432,7 @@ if (require.main === module) {
 
 module.exports = {
   tryScipUpgrade,
+  buildScipResolver,
   detectScip,
   _resetScipCache,
   isRustCrossCrateEdge,

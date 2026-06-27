@@ -1,5 +1,23 @@
 # M95 — Build Real SCIP Call-Graph Resolution (finish M94's stubbed precise tier)
 
+**Status: BUILDING 2026-06-26 — core resolution SHIPPED, heavy Atos verify in progress.**
+
+## Build progress (2026-06-26 21:xx PDT)
+- ✅ **SCIP reader** (`bin/gsd-t-scip-reader.cjs`) — decodes `index.scip` via scip-typescript's bundled protobuf decoder; builds symbol→funcId + per-file reference maps. Located across install layouts, fail-loud if absent.
+- ✅ **Repo-level resolver** (`buildScipResolver` in `gsd-t-graph-scip-upgrade.cjs`) — runs scip-typescript ONCE per repo (was: once per file, output discarded), reads it, resolves each file's `UNRESOLVED#<name>` call edges to real cross-file funcIds.
+- ✅ **`tryScipUpgrade` rewritten** — resolves edges from the repo resolver; labels `compiler-accurate` ONLY when ≥1 edge actually resolved (tier honesty); kills the relabel-lie.
+- ✅ **`build_index` wires it** — auto-builds the resolver once, threads it through `parse_and_put`.
+- ✅ **Fixture proof** — `e2e/calc.spec.ts → src/calc.ts#computeTotal` resolves; `test-impl` returns the impl (was `[]`).
+- ✅ **Tier honesty proof** — a file with only unresolvable calls stays `tree-sitter-floor`, not falsely `compiler-accurate`.
+- ✅ **M95 tests** — `test/m95-scip-call-resolution.test.js` 5/5 (resolution, tier honesty, fail-loud, passthrough).
+- ✅ **No regressions** — D3/D4/D5/D9 non-heavy suites green.
+- ✅ **Contract updated** — `graph-indexer-build-contract.md` tier definition now describes real SCIP resolution.
+- ⏳ **Heavy Atos d9 verify** — running (scip-typescript over 4,418 files is slow; SCIP adds meaningful time → AC-5 budget impact to record).
+- ⬜ **Auto-install wiring** — `gsd-t install` runs `npm i -g @sourcegraph/scip-typescript` (NEXT, after Atos verify passes).
+- ⬜ **Python** — scip-python (follow-on).
+
+---
+
 **Status: DEFINED 2026-06-26 21:01 PDT — awaiting partition.**
 **Origin:** discovered during M94 close-out (heavy real-Atos test run). Not a bug fix — a milestone-scope GAP: the precise call-graph resolution M94 advertised was never built.
 
