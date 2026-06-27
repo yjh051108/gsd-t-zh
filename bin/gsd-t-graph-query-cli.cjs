@@ -506,7 +506,10 @@ function runFreshnessCheck(storePath) {
     const projectRoot = storePath.endsWith(".db")
       ? path.dirname(path.dirname(storePath))   // .gsd-t/graph.db → repo root
       : path.dirname(path.dirname(storePath));   // .gsd-t/graph-index → repo root
-    const db = freshnessModule.openDb(projectRoot);
+    // Pass the exact storePath (canonical `.gsd-t/graph.db`) so openDb opens the
+    // real store, not a re-derived nested path. projectRoot is still used for the
+    // working-tree walk.
+    const db = freshnessModule.openDb(projectRoot, storePath.endsWith(".db") ? storePath : undefined);
     // No real store at this root → fail-loud BEFORE deriving a touched-set.
     // (Without this, a fake/non-existent storePath yields projectRoot="/" and
     //  compute_touched_files walks the entire filesystem → OOM. [RULE]

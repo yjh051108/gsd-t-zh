@@ -98,9 +98,12 @@ function walkTree(dir, results = []) {
 // and passes it in). This keeps D4 file-disjoint from D3/D5 while still sharing
 // a single open connection. If no db is passed, we open one from projectRoot.
 
-function openDb(projectRoot) {
+function openDb(projectRoot, explicitDbPath) {
   const Database = require('better-sqlite3');
-  const dbPath = path.join(projectRoot, '.gsd-t', 'graph', 'graph.db');
+  // Canonical store path is `.gsd-t/graph.db` (matches build_index's default,
+  // the query CLI, and .gitignore). Accept an explicit path when the caller
+  // already knows it (runFreshnessCheck passes the exact storePath).
+  const dbPath = explicitDbPath || path.join(projectRoot, '.gsd-t', 'graph.db');
   if (!fs.existsSync(dbPath)) return null;
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
