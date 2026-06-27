@@ -90,16 +90,33 @@ function buildAtosIndex() {
 
   process.stderr.write(`[D9-T4] Build done: ${buildResult.fileCount} files, ${buildResult.edgeCount} edges in ${Date.now() - t0}ms\n`);
 
-  // Read all records from the SQLite store to build the in-memory query index
+  // Read all records from the SQLite store to build the in-memory query index.
+  // BULK-LOAD: one query per table, then group in memory (O(n)). The old per-file
+  // `edges WHERE src LIKE ?` ran a full-table LIKE scan once per file —
+  // O(files × edges) ≈ billions of comparisons on Atos (594K edges × 4,418 files),
+  // which hung the query phase at ~10GB. Group by file id instead.
   const db = openStore(tmpDb);
   const allRecords = [];
   try {
     const fileRows = db.prepare("SELECT file, content_hash, tier FROM files").all();
+
+    // nodes grouped by file
+    const nodesByFile = new Map();
+    for (const n of db.prepare("SELECT id, name, kind, file, tier, func_id FROM nodes").all()) {
+      if (!nodesByFile.has(n.file)) nodesByFile.set(n.file, []);
+      nodesByFile.get(n.file).push(n);
+    }
+    // edges grouped by the src's file prefix (src is "file#func@line" or "file")
+    const edgesByFile = new Map();
+    for (const e of db.prepare("SELECT kind, src, dst FROM edges").all()) {
+      const srcFile = String(e.src).split("#")[0];
+      if (!edgesByFile.has(srcFile)) edgesByFile.set(srcFile, []);
+      edgesByFile.get(srcFile).push(e);
+    }
+
     for (const fileRow of fileRows) {
-      const nodes = db.prepare("SELECT id, name, kind, file, tier, func_id FROM nodes WHERE file = ?").all(fileRow.file);
-      const edges = db.prepare(
-        "SELECT kind, src, dst FROM edges WHERE src LIKE ? OR src LIKE ?"
-      ).all(fileRow.file + "#%", fileRow.file);
+      const nodes = nodesByFile.get(fileRow.file) || [];
+      const edges = edgesByFile.get(fileRow.file) || [];
       allRecords.push({
         file: fileRow.file,
         content_hash: fileRow.content_hash,

@@ -14,7 +14,7 @@ Contract-driven development methodology for Claude Code. npm package providing s
 
 ## Tech Stack
 
-- **Language**: JavaScript (Node.js >= 16), zero external runtime deps for the installer
+- **Language**: JavaScript (Node.js >= 16); prefer no external runtime deps in the installer (guiding principle, not absolute — see Don't section). M95 bundles the SCIP indexers (scip-typescript / scip-python) as a code-graph requirement.
 - **Distribution**: npm package `@tekyzinc/gsd-t`
 - **CLI**: `bin/gsd-t.js` (install, update, init, status, uninstall, doctor, graph, headless, …)
 - **Testing**: `npm test` (Node built-in test runner) + manual CLI testing
@@ -118,7 +118,7 @@ The global gate applies first (see `~/.claude/CLAUDE.md`). Additionally for this
 
 ## Don't
 
-- NEVER add external npm runtime dependencies to the installer — zero-dep invariant.
+- PREFER no external npm runtime dependencies in the installer — zero-dep is a GUIDING PRINCIPLE, not a hard rule. Take a dependency when it produces a materially better product (M95: SCIP indexers are now a GSD-T install requirement for compiler-accurate code-graph resolution). Don't add deps casually, but don't let zero-dep ship a crappy product either.
 - NEVER rename a command without updating all 4 reference files above.
 - NEVER modify wave phase sequence without updating wave, README, GSD-T-README in the same commit.
 - NEVER let installer's command count diverge from `commands/` directory reality.
