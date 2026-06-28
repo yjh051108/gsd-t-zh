@@ -70,6 +70,11 @@ const SKIP_DIRS = new Set([
   'node_modules', '.next', 'dist', 'build', '.git',
   '.cache', '__pycache__', 'coverage', '.nyc_output',
   'out', '.turbo',
+  // M96 follow-up: vendored / generated trees that aren't project source and
+  // explode the file count (bee-poc had 18K files from .venv + iOS build assets,
+  // hanging scip-typescript at 8.5GB). Exclude language vendor/build dirs.
+  '.venv', 'venv', 'env', '.dart_tool', 'Pods', 'vendor', '.gradle',
+  '.idea', '.vscode', 'tmp', '.tmp', 'site-packages',
 ]);
 
 // ── Content hash ──────────────────────────────────────────────────────────────
