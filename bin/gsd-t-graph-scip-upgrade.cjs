@@ -146,14 +146,51 @@ function runScipTypescript(projectRoot, outPath) {
   return { ok: false, error: scip.stderr || `exit code ${scip.status}` };
 }
 
-function runScipPython(projectRoot) {
-  const scip = spawnSync('scip-python', ['index', '.'], {
+function runScipPython(projectRoot, outPath) {
+  // Emit to a REAL file (separate from the TS index) so it can be READ + merged.
+  // --project-name is required-ish for stable symbols; derive from the dir name.
+  const out = outPath || path.join(projectRoot, '.gsd-t', 'index-python.scip');
+  const projName = path.basename(projectRoot).replace(/[^A-Za-z0-9_-]/g, '-') || 'project';
+  // scip-python REQUIRES a project version — it crashes (makeModuleInit) when the
+  // version is undefined (no pyproject.toml). Pass an explicit fallback version.
+  const scip = spawnSync('scip-python',
+    ['index', '--project-name', projName, '--project-version', '0.0.0', '--output', out, '.'], {
     cwd: projectRoot,
     encoding: 'utf8',
-    timeout: 120_000,
+    timeout: 180_000,
   });
-  if (scip.status === 0) return { ok: true };
+  if (scip.status === 0) return { ok: true, scipPath: out };
   return { ok: false, error: scip.stderr || `exit code ${scip.status}` };
+}
+
+// Cheap shallow language detection — does the repo contain TS/JS or Python source
+// (excluding vendored/build dirs)? Used to skip an indexer when its language is
+// absent. Walks at most a bounded depth to stay fast.
+function detectRepoLanguages(repoRoot) {
+  const SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.venv', 'venv',
+    'site-packages', '__pycache__', '.next', 'coverage', 'Pods', '.dart_tool', 'vendor']);
+  let typescript = false, python = false;
+  function isSkip(name) {
+    if (SKIP.has(name)) return true;
+    return ['dist', 'build', 'out'].some(p => name.length > p.length && name.startsWith(p) &&
+      (name[p.length] === '-' || name[p.length] === '.' || name[p.length] === '_'));
+  }
+  function walk(dir, depth) {
+    if ((typescript && python) || depth > 6) return;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (typescript && python) return;
+      if (e.isDirectory()) { if (!isSkip(e.name)) walk(path.join(dir, e.name), depth + 1); }
+      else if (e.isFile()) {
+        const ext = path.extname(e.name).toLowerCase();
+        if (ext === '.ts' || ext === '.tsx' || ext === '.js' || ext === '.jsx' || ext === '.mjs' || ext === '.cjs') typescript = true;
+        else if (ext === '.py') python = true;
+      }
+    }
+  }
+  walk(repoRoot, 0);
+  return { typescript, python };
 }
 
 function runScipRust(projectRoot) {
@@ -218,31 +255,44 @@ function buildScipResolver(repoRoot, opts = {}) {
   const { readScipIndex } = require('./gsd-t-scip-reader.cjs');
   const avail = detectScip();
 
-  // Phase-1 of M95: TypeScript/JavaScript only (scip-typescript). Python is a
-  // sequenced follow-on. If TS SCIP is absent, the resolver is a no-op (floor).
-  if (!avail.typescript) {
-    return { ok: false, reason: 'scip-typescript-absent', resolveFileEdges: passthroughResolver };
+  // Detect which languages have source present (so we only run the relevant
+  // indexer). Cheap shallow check: does the repo contain .ts/.tsx/.js or .py?
+  const langs = detectRepoLanguages(repoRoot);
+
+  // Run each available+relevant indexer, merge their resolution maps. The reader
+  // is language-agnostic (Python symbols use the same `name().` descriptor form),
+  // so TS and Python refs merge into one fileRefs map keyed by repo-relative path.
+  const fileRefs = new Map(); // relPath → [{symbol, funcId, line}]
+  const ranIndexers = [];
+
+  function mergeRead(read) {
+    if (!read || !read.ok) return;
+    for (const [file, refs] of read.fileRefs) {
+      if (fileRefs.has(file)) fileRefs.get(file).push(...refs);
+      else fileRefs.set(file, refs.slice());
+    }
   }
 
-  const scipPath = path.join(repoRoot, '.gsd-t', 'index.scip');
-  let run;
-  try {
-    run = runScipTypescript(repoRoot, scipPath);
-  } catch (e) {
-    return { ok: false, reason: `scip-run-threw: ${e.message}`, resolveFileEdges: passthroughResolver };
+  if (avail.typescript && langs.typescript) {
+    try {
+      const run = runScipTypescript(repoRoot, path.join(repoRoot, '.gsd-t', 'index.scip'));
+      if (run && run.ok) { mergeRead(readScipIndex(run.scipPath)); ranIndexers.push('typescript'); }
+    } catch { /* degrade to floor for TS */ }
   }
-  if (!run || !run.ok) {
-    return { ok: false, reason: run ? run.error : 'scip-run-failed', resolveFileEdges: passthroughResolver };
-  }
-
-  const read = readScipIndex(run.scipPath);
-  if (!read.ok) {
-    return { ok: false, reason: read.reason, resolveFileEdges: passthroughResolver };
+  if (avail.python && langs.python) {
+    try {
+      const run = runScipPython(repoRoot, path.join(repoRoot, '.gsd-t', 'index-python.scip'));
+      if (run && run.ok) { mergeRead(readScipIndex(run.scipPath)); ranIndexers.push('python'); }
+    } catch { /* degrade to floor for Python */ }
   }
 
-  // Build a fast per-file callee lookup: for a given test/impl file, the set of
-  // funcIds it references (resolved). Used to rewrite UNRESOLVED# call edges.
-  const fileRefs = read.fileRefs; // relPath → [{symbol, funcId, line}]
+  if (!ranIndexers.length) {
+    // No applicable indexer present/ran → floor mode.
+    const reason = (!avail.typescript && !avail.python) ? 'scip-indexers-absent'
+      : (!langs.typescript && !langs.python) ? 'no-indexable-source'
+      : 'scip-run-failed';
+    return { ok: false, reason, resolveFileEdges: passthroughResolver };
+  }
 
   /**
    * Resolve a single file's call edges. For each CALL edge whose dst is
@@ -276,7 +326,7 @@ function buildScipResolver(repoRoot, opts = {}) {
     return { edges: out, resolved };
   }
 
-  return { ok: true, scipPath: run.scipPath, resolveFileEdges };
+  return { ok: true, indexers: ranIndexers, scipPath: path.join(repoRoot, '.gsd-t', 'index.scip'), resolveFileEdges };
 }
 
 /** No-op resolver used when SCIP is unavailable (floor mode). */

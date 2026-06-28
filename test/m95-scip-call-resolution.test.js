@@ -125,7 +125,8 @@ test('M95-5: buildScipResolver returns a no-op passthrough when SCIP absent (nev
     try {
       const r = upg.buildScipResolver(dir);
       assert.equal(r.ok, false);
-      assert.equal(r.reason, 'scip-typescript-absent');
+      // Both indexers forced absent → 'scip-indexers-absent' (M97: TS + Python).
+      assert.equal(r.reason, 'scip-indexers-absent');
       // passthrough must not throw and must return edges unchanged
       const edges = [{ kind: 'CALL', src: 'a#f', dst: 'UNRESOLVED#g' }];
       const out = r.resolveFileEdges('a.ts', edges);

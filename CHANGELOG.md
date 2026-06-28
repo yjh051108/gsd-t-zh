@@ -2,6 +2,18 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.12.10] - 2026-06-27
+
+### Added — Python call-graph resolution (scip-python)
+
+The precise call-graph now covers Python, not just TS/JS. `buildScipResolver` runs scip-python alongside scip-typescript and merges both resolution maps — a repo with both languages gets one unified call-graph.
+
+- `bin/gsd-t-graph-scip-upgrade.cjs`: run scip-python when Python source is present; merge its `fileRefs` into the resolver. New `detectRepoLanguages()` skips an indexer when its language is absent (no wasted run). `runScipPython` now emits to a real `.gsd-t/index-python.scip` and passes `--project-name` + `--project-version 0.0.0` (scip-python crashes on an undefined version).
+- The SCIP reader was already language-agnostic (Python symbols use the same `name().` descriptor form), so cross-file Python calls resolve with no reader change.
+- `gsd-t install` / `gsd-t doctor` already covered scip-python (added in M95/M96).
+
+Proven on BDS (35 .py): 125 → 1,331 resolved calls (1,206 Python); `who-calls` returns real Python callers. Fixture test resolves a cross-file `pkg.util.compute_total` call. Suite: 2521/2521 pass.
+
 ## [4.11.11] - 2026-06-27
 
 ### Fixed — SCIP resolution missed nested/monorepo tsconfig (call-graph empty on subdir-tsconfig projects)
