@@ -76,6 +76,20 @@ const EXCLUDE_DIRS = new Set([
   '.idea', '.vscode', 'tmp', '.tmp', 'site-packages',
 ]);
 
+// Build-output dirs with a suffix (dist-local, build-ios, out-prod) — prefix
+// match, matching the indexer's shouldSkipDir. [RULE] freshness-excludes-match-indexer-skipdirs
+const EXCLUDE_DIR_PREFIXES = ['dist', 'build', 'out'];
+function shouldExcludeDir(name) {
+  if (EXCLUDE_DIRS.has(name)) return true;
+  for (const pre of EXCLUDE_DIR_PREFIXES) {
+    if (name.length > pre.length && name.startsWith(pre) &&
+        (name[pre.length] === '-' || name[pre.length] === '.' || name[pre.length] === '_')) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function walkTree(dir, results = []) {
   // Defense-in-depth: refuse to walk the filesystem root or the user's home dir.
   // A bogus projectRoot (e.g. "/") from a fake store path would otherwise recurse
@@ -90,9 +104,9 @@ function walkTree(dir, results = []) {
   catch { return results; }
   for (const e of entries) {
     if (e.name.startsWith('.') && e.name !== '.claude') {
-      if (EXCLUDE_DIRS.has(e.name)) continue;
+      if (shouldExcludeDir(e.name)) continue;
     }
-    if (EXCLUDE_DIRS.has(e.name)) continue;
+    if (shouldExcludeDir(e.name)) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
       walkTree(full, results);

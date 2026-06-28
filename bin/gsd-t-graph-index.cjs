@@ -77,6 +77,23 @@ const SKIP_DIRS = new Set([
   '.idea', '.vscode', 'tmp', '.tmp', 'site-packages',
 ]);
 
+// Build-output dirs often carry a suffix (dist-local, dist-test, build-ios,
+// out-prod). Prefix-match these so generated/minified bundles never pollute the
+// graph (binvoice indexed dist-local/dist-test → duplicate symbols in who-calls).
+const SKIP_DIR_PREFIXES = ['dist', 'build', 'out'];
+
+function shouldSkipDir(name) {
+  if (SKIP_DIRS.has(name)) return true;
+  for (const pre of SKIP_DIR_PREFIXES) {
+    // exact 'dist' is already in SKIP_DIRS; match 'dist-*'/'dist.*' variants.
+    if (name.length > pre.length && name.startsWith(pre) &&
+        (name[pre.length] === '-' || name[pre.length] === '.' || name[pre.length] === '_')) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // ── Content hash ──────────────────────────────────────────────────────────────
 
 /**
@@ -97,7 +114,7 @@ function enumerateFiles(root) {
     catch { return; }
     for (const e of entries) {
       if (e.isDirectory()) {
-        if (!SKIP_DIRS.has(e.name)) walk(path.join(dir, e.name));
+        if (!shouldSkipDir(e.name)) walk(path.join(dir, e.name));
       } else if (e.isFile()) {
         const ext = path.extname(e.name).toLowerCase();
         if (PARSED_EXTS.has(ext)) {
