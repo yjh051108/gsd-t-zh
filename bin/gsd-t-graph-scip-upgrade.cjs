@@ -134,10 +134,13 @@ function runScipTypescript(projectRoot, outPath) {
   // M95: emit to a REAL file (outPath) so the index can be READ and call edges
   // resolved — not /dev/null. The old /dev/null path only proved invocability.
   const out = outPath || path.join(projectRoot, '.gsd-t', 'index.scip');
-  const scip = spawnSync('scip-typescript', ['index', '--output', out, '.'], {
+  // --infer-tsconfig: resolve a tsconfig even when one isn't at the repo root
+  // (monorepos / nested layouts — e.g. web/tsconfig.json). Without it, projects
+  // whose tsconfig lives in a subdir got 0 resolved call edges. [RULE] scip-infer-nested-tsconfig
+  const scip = spawnSync('scip-typescript', ['index', '--infer-tsconfig', '--output', out, '.'], {
     cwd: projectRoot,
     encoding: 'utf8',
-    timeout: 120_000,
+    timeout: 180_000,
   });
   if (scip.status === 0) return { ok: true, scipPath: out };
   return { ok: false, error: scip.stderr || `exit code ${scip.status}` };

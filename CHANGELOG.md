@@ -2,6 +2,16 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.11.11] - 2026-06-27
+
+### Fixed — SCIP resolution missed nested/monorepo tsconfig (call-graph empty on subdir-tsconfig projects)
+
+`runScipTypescript` ran scip-typescript without `--infer-tsconfig`, so projects whose `tsconfig.json` lives in a subdirectory (`web/tsconfig.json`, monorepo packages) produced 0 resolved call edges — scip-typescript found no root tsconfig and skipped resolution.
+
+- `bin/gsd-t-graph-scip-upgrade.cjs`: add `--infer-tsconfig` so scip-typescript discovers a nested tsconfig; bumped the timeout to 180s for larger inferred projects.
+
+Proven on ClaudeWebCLI (tsconfig at `web/tsconfig.json`): 0 → 1,149 resolved call edges. Suite: 2519/2519 pass.
+
 ## [4.11.10] - 2026-06-27
 
 ### Added — M97: the code graph is the default for ambient code-reading (grep-intercept), + 3 call-resolution fixes
