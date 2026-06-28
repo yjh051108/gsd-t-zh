@@ -97,6 +97,24 @@ function funcNameFromSymbol(symbol) {
 
 const SYMBOL_ROLE_DEFINITION = 0x1; // SymbolRole.Definition bit
 
+// scip-typescript indexes whatever its tsconfig includes — which on real projects
+// often covers build output (dist-local/, dist-test/, build/). Those generated
+// bundles must NOT enter the graph (duplicate, minified symbols pollute who-calls).
+// Mirror the indexer's SKIP_DIRS prefix logic at the SCIP-doc level.
+function isBuildOutputPath(relPath) {
+  const seg = String(relPath).split('/');
+  for (const s of seg) {
+    if (s === 'node_modules' || s === '.git' || s === 'coverage') return true;
+    for (const pre of ['dist', 'build', 'out']) {
+      if (s === pre || (s.length > pre.length && s.startsWith(pre) &&
+          (s[pre.length] === '-' || s[pre.length] === '.' || s[pre.length] === '_'))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Decode a `.scip` file and build resolution maps.
  *
@@ -130,7 +148,7 @@ function readScipIndex(scipPath) {
   // First pass: collect every DEFINITION occurrence → symbol → funcId.
   for (const doc of docs) {
     const relPath = doc.relative_path;
-    if (!relPath) continue;
+    if (!relPath || isBuildOutputPath(relPath)) continue;
     for (const occ of doc.occurrences || []) {
       const isDef = (occ.symbol_roles & SYMBOL_ROLE_DEFINITION) !== 0;
       if (!isDef) continue;
@@ -144,7 +162,7 @@ function readScipIndex(scipPath) {
   // Second pass: collect every REFERENCE occurrence per file, resolved to the def.
   for (const doc of docs) {
     const relPath = doc.relative_path;
-    if (!relPath) continue;
+    if (!relPath || isBuildOutputPath(relPath)) continue;
     const refs = [];
     for (const occ of doc.occurrences || []) {
       const isDef = (occ.symbol_roles & SYMBOL_ROLE_DEFINITION) !== 0;

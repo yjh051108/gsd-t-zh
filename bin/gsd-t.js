@@ -453,6 +453,13 @@ const CONTEXT_METER_STALE_PATTERNS = [
   /node\s+"?\$CLAUDE_PROJECT_DIR\/scripts\/gsd-t-context-meter\.js"?/,
 ];
 
+// M97 — graph-intercept PostToolUse hook on Grep. Runs from the global package;
+// the script itself fails-open (no-op) in non-GSD-T projects / projects without a
+// graph, so it is safe to register globally with a Grep matcher.
+const GRAPH_INTERCEPT_HOOK_MARKER = "gsd-t-graph-intercept";
+const GRAPH_INTERCEPT_HOOK_COMMAND =
+  'bash -c \'[ -f "$(npm root -g)/@tekyzinc/gsd-t/scripts/gsd-t-graph-intercept.js" ] && node "$(npm root -g)/@tekyzinc/gsd-t/scripts/gsd-t-graph-intercept.js" || true\'';
+
 // Append entries to {projectDir}/.gitignore. Each entry added only if absent.
 // Idempotent. Returns true if any entries were added, false otherwise.
 function ensureGitignoreEntries(projectDir, entries) {
@@ -776,6 +783,60 @@ function configureContextMeterHooks(settingsPath) {
     return { installed: true, action: "noop" };
   }
 
+  if (isSymlink(targetPath)) {
+    warn("Skipping settings.json write — target is a symlink");
+    return { installed: false, action: "noop" };
+  }
+  try {
+    fs.writeFileSync(targetPath, JSON.stringify(settings, null, 2));
+  } catch (e) {
+    warn(`Failed to write settings.json: ${e.message}`);
+    return { installed: false, action: "noop" };
+  }
+  return { installed: true, action };
+}
+
+// M97 — register the graph-intercept PostToolUse hook (matcher "Grep").
+// Idempotent: find-by-marker, refresh stale command, else add. Mirrors the
+// context-meter installer. The script fails-open so this is safe globally.
+function configureGraphInterceptHook(settingsPath) {
+  const targetPath = settingsPath || SETTINGS_JSON;
+  let settings = {};
+  if (fs.existsSync(targetPath)) {
+    try {
+      settings = JSON.parse(fs.readFileSync(targetPath, "utf8"));
+      if (!settings || typeof settings !== "object") settings = {};
+    } catch {
+      warn("settings.json has invalid JSON — cannot configure graph-intercept hook");
+      return { installed: false, action: "noop" };
+    }
+  }
+  if (!settings.hooks) settings.hooks = {};
+  if (!Array.isArray(settings.hooks.PostToolUse)) settings.hooks.PostToolUse = [];
+
+  const cmd = GRAPH_INTERCEPT_HOOK_COMMAND;
+  let action = "noop";
+  let found = false;
+  for (const entry of settings.hooks.PostToolUse) {
+    if (!entry || !Array.isArray(entry.hooks)) continue;
+    for (const h of entry.hooks) {
+      if (!h || typeof h.command !== "string") continue;
+      if (h.command === cmd || h.command.includes(GRAPH_INTERCEPT_HOOK_MARKER)) {
+        found = true;
+        if (h.command !== cmd) { h.command = cmd; action = "updated"; }
+        // ensure the matcher targets Grep
+        if (entry.matcher !== "Grep") { entry.matcher = "Grep"; action = action === "noop" ? "updated" : action; }
+      }
+    }
+  }
+  if (!found) {
+    settings.hooks.PostToolUse.push({
+      matcher: "Grep",
+      hooks: [{ type: "command", command: cmd }],
+    });
+    action = "added";
+  }
+  if (action === "noop") return { installed: true, action: "noop" };
   if (isSymlink(targetPath)) {
     warn("Skipping settings.json write — target is a symlink");
     return { installed: false, action: "noop" };
@@ -1719,6 +1780,14 @@ async function doInstall(opts = {}) {
     if (cmHook.action === "added") success("Context meter PostToolUse hook added");
     else if (cmHook.action === "updated") success("Context meter hook command refreshed");
     else info("Context meter hook already configured");
+  }
+
+  heading("Graph-Intercept (PostToolUse on Grep — M97)");
+  const giHook = configureGraphInterceptHook(SETTINGS_JSON);
+  if (giHook.installed) {
+    if (giHook.action === "added") success("Graph-intercept hook added (structural greps consult the code graph)");
+    else if (giHook.action === "updated") success("Graph-intercept hook refreshed");
+    else info("Graph-intercept hook already configured");
   }
 
   heading("Graph Engine (CGC)");
