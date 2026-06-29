@@ -1,6 +1,12 @@
 # M98 — The Graph Serves Code (function-level slices) + Read-Intercept
 
-**Status: DEFINED 2026-06-29 — all 6 design decisions LOCKED, awaiting build. Paused for /clear.**
+**Status: SHIPPED 2026-06-29 at v4.13.10 — all 6 design decisions built; all 7 ACs green (incl. AC-3 freshness + AC-4 ambiguity killing tests); proven end-to-end on real binvoice (21× char reduction). Open implementation question resolved to option (c) conservative pass-through. Suite 2538/2538.**
+
+**Build summary:** 3 file-disjoint domains, 1 wave. D1 = end-line capture + `nodes.end_line` schema/migration (`gsd-t-graph-edge-extract.cjs`, `gsd-t-graph-index.cjs`). D2 = `body` query verb (`gsd-t-graph-query-cli.cjs`). D3 = Read-intercept hook + install wiring (`scripts/gsd-t-read-intercept.js`, `bin/gsd-t.js`). Contract: [`.gsd-t/contracts/graph-body-serve-contract.md`](../contracts/graph-body-serve-contract.md) (STABLE). Tests: `test/m98-d{1,2,3}-*.test.js` (17 tests). The Read-intercept "structural-vs-edit" signal landed as: intercept ONLY when offset+limit fall inside one known function's range; default pass-through (no file shrinking).
+
+---
+
+**Original definition (DEFINED 2026-06-29 — all 6 design decisions LOCKED):**
 
 ## The one-breath call
 Today the code graph is an INDEX — it stores names, files, line numbers, and call/import edges, but NOT the code itself. M98 makes the graph SERVE CODE: a new query returns a single function's source (sliced live from disk by line range, plus its class header + imports + callers), and the Read tool is intercepted so a structural file-read is augmented with the graph's view. This closes the last "smart reach" gap (M97's deferred #6): when Claude reaches into code, it gets the precise slice it needs (~180 tokens) instead of a whole file (~7,750 tokens) — a ~43× token reduction on the common "I need this one function" case.

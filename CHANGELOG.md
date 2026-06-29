@@ -2,6 +2,18 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.13.10] - 2026-06-29
+
+### Added — The graph serves code (function-level slices) + Read-intercept (M98)
+
+The code graph was index-only (names, files, line numbers, call/import edges — no code). M98 makes it SERVE CODE: a new query returns a single function's source, and a Read-intercept hook points structural code-reads at it.
+
+- **`gsd-t graph body <funcId|symbol>`** (`bin/gsd-t-graph-query-cli.cjs`) — returns a function's SOURCE sliced LIVE from disk by line range, with its import lines, enclosing class header (for methods), and caller list attached. Reads live (never stores bodies — files are local, always fresh); the query path re-indexes a stale file BEFORE slicing so line ranges are current. Ambiguous bare symbol → candidate list, never a merged body. A pre-M98 node (no end line) is re-indexed inline to populate it; never guesses.
+- **Function END lines captured** (`bin/gsd-t-graph-edge-extract.cjs`, `bin/gsd-t-graph-index.cjs`) — each function/method/class entity now records `endPosition` as `nodes.end_line` (the only schema change; idempotently `ALTER TABLE`-migrated onto a pre-M98 graph; kept fresh by the existing DELETE-then-reinsert re-index path).
+- **Read-intercept hook** (`scripts/gsd-t-read-intercept.js`, PostToolUse on `Read`) — when a code read's offset/limit lands inside exactly one known function, AUGMENTS the output (original retained) with a pointer to `graph body <funcId>`. Default = pass-through: a bare/edit-intent read is NEVER shrunk (no-regression). Fail-open, no-op without a graph, code files only. Registered + removed by `gsd-t install` / uninstall (`configureReadInterceptHook` / `removeInterceptHooks`).
+
+Measured on real binvoice: `body selectCommentId` returned the exact 43-line function from a 1,334-line file — 21× fewer characters — compiler-accurate, with imports + 11 callers. Suite: 2538/2538 pass (17 new M98 tests; all 7 ACs green incl. the AC-3 freshness + AC-4 ambiguity killing tests).
+
 ## [4.12.10] - 2026-06-27
 
 ### Added — Python call-graph resolution (scip-python)

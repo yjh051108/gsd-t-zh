@@ -460,6 +460,13 @@ const GRAPH_INTERCEPT_HOOK_MARKER = "gsd-t-graph-intercept";
 const GRAPH_INTERCEPT_HOOK_COMMAND =
   'bash -c \'[ -f "$(npm root -g)/@tekyzinc/gsd-t/scripts/gsd-t-graph-intercept.js" ] && node "$(npm root -g)/@tekyzinc/gsd-t/scripts/gsd-t-graph-intercept.js" || true\'';
 
+// M98 — read-intercept PostToolUse hook on Read. Same global-safe pattern as the
+// M97 grep-intercept: the script fails-open (no-op) in non-GSD-T projects / projects
+// without a graph / non-code reads, so it is safe to register globally with a Read matcher.
+const READ_INTERCEPT_HOOK_MARKER = "gsd-t-read-intercept";
+const READ_INTERCEPT_HOOK_COMMAND =
+  'bash -c \'[ -f "$(npm root -g)/@tekyzinc/gsd-t/scripts/gsd-t-read-intercept.js" ] && node "$(npm root -g)/@tekyzinc/gsd-t/scripts/gsd-t-read-intercept.js" || true\'';
+
 // Append entries to {projectDir}/.gitignore. Each entry added only if absent.
 // Idempotent. Returns true if any entries were added, false otherwise.
 function ensureGitignoreEntries(projectDir, entries) {
@@ -848,6 +855,97 @@ function configureGraphInterceptHook(settingsPath) {
     return { installed: false, action: "noop" };
   }
   return { installed: true, action };
+}
+
+// M98 — register the read-intercept PostToolUse hook (matcher "Read").
+// Idempotent: find-by-marker, refresh stale command, else add. Mirrors the
+// M97 grep-intercept installer. The script fails-open so this is safe globally.
+function configureReadInterceptHook(settingsPath) {
+  const targetPath = settingsPath || SETTINGS_JSON;
+  let settings = {};
+  if (fs.existsSync(targetPath)) {
+    try {
+      settings = JSON.parse(fs.readFileSync(targetPath, "utf8"));
+      if (!settings || typeof settings !== "object") settings = {};
+    } catch {
+      warn("settings.json has invalid JSON — cannot configure read-intercept hook");
+      return { installed: false, action: "noop" };
+    }
+  }
+  if (!settings.hooks) settings.hooks = {};
+  if (!Array.isArray(settings.hooks.PostToolUse)) settings.hooks.PostToolUse = [];
+
+  const cmd = READ_INTERCEPT_HOOK_COMMAND;
+  let action = "noop";
+  let found = false;
+  for (const entry of settings.hooks.PostToolUse) {
+    if (!entry || !Array.isArray(entry.hooks)) continue;
+    for (const h of entry.hooks) {
+      if (!h || typeof h.command !== "string") continue;
+      if (h.command === cmd || h.command.includes(READ_INTERCEPT_HOOK_MARKER)) {
+        found = true;
+        if (h.command !== cmd) { h.command = cmd; action = "updated"; }
+        if (entry.matcher !== "Read") { entry.matcher = "Read"; action = action === "noop" ? "updated" : action; }
+      }
+    }
+  }
+  if (!found) {
+    settings.hooks.PostToolUse.push({
+      matcher: "Read",
+      hooks: [{ type: "command", command: cmd }],
+    });
+    action = "added";
+  }
+  if (action === "noop") return { installed: true, action: "noop" };
+  if (isSymlink(targetPath)) {
+    warn("Skipping settings.json write — target is a symlink");
+    return { installed: false, action: "noop" };
+  }
+  try {
+    fs.writeFileSync(targetPath, JSON.stringify(settings, null, 2));
+  } catch (e) {
+    warn(`Failed to write settings.json: ${e.message}`);
+    return { installed: false, action: "noop" };
+  }
+  return { installed: true, action };
+}
+
+// M98 — remove the GSD-T intercept PostToolUse hooks (grep + read) from settings.json.
+// Used during uninstall. Marker-based; leaves all other hooks intact. Idempotent.
+function removeInterceptHooks(settingsPath) {
+  const targetPath = settingsPath || SETTINGS_JSON;
+  if (!fs.existsSync(targetPath)) return false;
+  let settings;
+  try {
+    settings = JSON.parse(fs.readFileSync(targetPath, "utf8"));
+    if (!settings || typeof settings !== "object") return false;
+  } catch {
+    warn("settings.json has invalid JSON — cannot remove intercept hooks");
+    return false;
+  }
+  if (!settings.hooks || !Array.isArray(settings.hooks.PostToolUse)) return false;
+
+  const markers = [GRAPH_INTERCEPT_HOOK_MARKER, READ_INTERCEPT_HOOK_MARKER];
+  const before = settings.hooks.PostToolUse.length;
+  settings.hooks.PostToolUse = settings.hooks.PostToolUse.filter((entry) => {
+    if (!entry || !Array.isArray(entry.hooks)) return true;
+    return !entry.hooks.some(
+      (h) => h && typeof h.command === "string" && markers.some((m) => h.command.includes(m))
+    );
+  });
+  if (before - settings.hooks.PostToolUse.length === 0) return false;
+
+  if (isSymlink(targetPath)) {
+    warn("Skipping settings.json write — target is a symlink");
+    return false;
+  }
+  try {
+    fs.writeFileSync(targetPath, JSON.stringify(settings, null, 2));
+    return true;
+  } catch (e) {
+    warn(`Failed to write settings.json: ${e.message}`);
+    return false;
+  }
 }
 
 // Remove any context meter PostToolUse hooks from settings.json.
@@ -1790,6 +1888,14 @@ async function doInstall(opts = {}) {
     else info("Graph-intercept hook already configured");
   }
 
+  // M98 — read-intercept: a structural code-read gets a graph note pointing at `graph body`.
+  const riHook = configureReadInterceptHook(SETTINGS_JSON);
+  if (riHook.installed) {
+    if (riHook.action === "added") success("Read-intercept hook added (structural code reads point at graph body slices)");
+    else if (riHook.action === "updated") success("Read-intercept hook refreshed");
+    else info("Read-intercept hook already configured");
+  }
+
   heading("Graph Engine (CGC)");
   installCgc();
 
@@ -2257,6 +2363,11 @@ function doUninstall() {
   // Remove context meter PostToolUse hook from settings.json
   if (removeContextMeterHook(SETTINGS_JSON)) {
     success("Context meter PostToolUse hook removed from settings.json");
+  }
+
+  // M98 — remove the graph + read intercept PostToolUse hooks
+  if (removeInterceptHooks(SETTINGS_JSON)) {
+    success("Graph/read-intercept PostToolUse hooks removed from settings.json");
   }
 
   warn("~/.claude/CLAUDE.md was NOT removed (may contain your customizations)");
@@ -4706,6 +4817,10 @@ module.exports = {
   installContextMeter,
   configureContextMeterHooks,
   removeContextMeterHook,
+  // M97/M98: intercept hook installers
+  configureGraphInterceptHook,
+  configureReadInterceptHook,
+  removeInterceptHooks,
   promptForApiKeyIfMissing,
   resolveApiKeyEnvVar,
   runTaskCounterRetirementMigration,

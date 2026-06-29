@@ -172,7 +172,8 @@ function buildSchema(db) {
       content_hash TEXT NOT NULL,
       file         TEXT NOT NULL,
       name         TEXT,
-      func_id      TEXT
+      func_id      TEXT,
+      end_line     INTEGER
     );
     CREATE TABLE IF NOT EXISTS edges (
       kind    TEXT    NOT NULL,
@@ -185,6 +186,21 @@ function buildSchema(db) {
     CREATE INDEX IF NOT EXISTS edges_kind_dst  ON edges(kind, dst);
     CREATE INDEX IF NOT EXISTS nodes_file      ON nodes(file);
   `);
+  migrateEndLine(db);
+}
+
+/**
+ * M98 — idempotent migration: add `nodes.end_line` to a pre-M98 graph that was
+ * built before the column existed. `CREATE TABLE IF NOT EXISTS` won't alter an
+ * existing table, so an older graph keeps its 7-column `nodes` until this runs.
+ * Safe to call on every open: checks PRAGMA first, ALTERs only when absent, never
+ * loses data. A NULL end_line is allowed (D2 re-indexes the file to populate it).
+ */
+function migrateEndLine(db) {
+  const cols = db.prepare("PRAGMA table_info(nodes)").all();
+  if (!cols.some((c) => c.name === 'end_line')) {
+    db.exec('ALTER TABLE nodes ADD COLUMN end_line INTEGER');
+  }
 }
 
 /**
@@ -210,7 +226,7 @@ function getWriteStmts(db) {
     deleteNodes: db.prepare('DELETE FROM nodes WHERE file = ?'),
     deleteEdgesSrc: db.prepare("DELETE FROM edges WHERE src = ? OR src LIKE ? OR src = ?"),
     insFile: db.prepare('INSERT OR REPLACE INTO files (file, content_hash, tier, indexed_at) VALUES (?, ?, ?, ?)'),
-    insNode: db.prepare('INSERT OR REPLACE INTO nodes (id, kind, tier, content_hash, file, name, func_id) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+    insNode: db.prepare('INSERT OR REPLACE INTO nodes (id, kind, tier, content_hash, file, name, func_id, end_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
     insEdge: db.prepare('INSERT INTO edges (kind, src, dst, partial) VALUES (?, ?, ?, ?)'),
   };
   // db.transaction() wrapper is also created once (it closes over the stmts).
@@ -220,7 +236,7 @@ function getWriteStmts(db) {
     stmts.deleteEdgesSrc.run(file, `${file}#%`, file);
     stmts.insFile.run(file, hash, tier, now);
     for (const entity of entities) {
-      stmts.insNode.run(entity.id, entity.type || 'function', tier, hash, file, entity.name || null, entity.id);
+      stmts.insNode.run(entity.id, entity.type || 'function', tier, hash, file, entity.name || null, entity.id, entity.endLine ?? null);
     }
     for (const edge of edges) {
       stmts.insEdge.run(edge.kind, edge.src, edge.dst, edge.partial ? 1 : 0);
@@ -300,6 +316,12 @@ function parse_and_put(absPath, relPath, options) {
       finalEntities = upgraded.entities;
       finalEdges = upgraded.edges;
     }
+  } else if (existingTier === 'compiler-accurate') {
+    // [RULE] reindex-tier-never-silently-downgraded — no SCIP context this call
+    // (e.g. a metadata-only re-index like M98's body end-line backfill). A file that
+    // WAS compiler-accurate must NOT silently drop to plain floor; label it STALE-SCIP
+    // so the tier reflects "previously accurate, not re-resolved" rather than a lie.
+    tier = 'tree-sitter-floor-STALE-SCIP';
   }
 
   // Normalize edges to store schema (map from parser-floor shape to store shape)
@@ -337,6 +359,7 @@ function parse_and_put(absPath, relPath, options) {
     file: relPath,
     exported: e.exported,
     parentClass: e.parentClass,
+    endLine: e.endLine ?? null,   // M98 — function end line for body-slice
   }));
 
   if (db) {

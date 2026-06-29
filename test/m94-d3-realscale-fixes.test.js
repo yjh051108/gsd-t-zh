@@ -29,7 +29,7 @@ test('putRecord does not re-prepare SQL statements per call (Bug 1 perf)', () =>
   // minimal schema
   db.exec(`
     CREATE TABLE files (file TEXT PRIMARY KEY, content_hash TEXT, tier TEXT, indexed_at TEXT);
-    CREATE TABLE nodes (id TEXT PRIMARY KEY, kind TEXT, tier TEXT, content_hash TEXT, file TEXT, name TEXT, func_id TEXT);
+    CREATE TABLE nodes (id TEXT PRIMARY KEY, kind TEXT, tier TEXT, content_hash TEXT, file TEXT, name TEXT, func_id TEXT, end_line INTEGER);
     CREATE TABLE edges (kind TEXT, src TEXT, dst TEXT, partial INTEGER);
   `);
   let prepareCount = 0;

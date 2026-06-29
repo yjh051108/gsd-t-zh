@@ -9,6 +9,7 @@
  * Verbs (D5 — original):
  *   gsd-t graph who-imports <file>             — file→file reverse import edges
  *   gsd-t graph who-calls <file#function>      — function→function reverse call edges (funcId-keyed)
+ *   gsd-t graph body <file#function|symbol>    — (M98) a function's SOURCE sliced LIVE from disk + imports + class header + callers
  *   gsd-t graph blast-radius <target>          — UNION of import-graph + call-graph reverse-reachable set (transitive)
  *   gsd-t graph status                         — live queryable index state
  *
@@ -129,7 +130,7 @@ function resolveStorePath() {
 
 /**
  * @typedef {{ importGraph: Map<string,Set<string>>, callGraph: Map<string,Set<string>>,
- *             funcEntities: Map<string,{name:string,file:string,tier:string}>,
+ *             funcEntities: Map<string,{name:string,file:string,tier:string,endLine:?number}>,
  *             allFiles: Set<string>, tier: string,
  *             skippedFiles: Set<string> }} IndexStructure
  *
@@ -329,6 +330,7 @@ function buildIndex(records, skippedFiles) {
             name: ent.name,
             file: ent.file || rec.file,
             tier: ent.tier || rec.tier,
+            endLine: ent.endLine ?? null,
           });
         }
       }
@@ -399,7 +401,13 @@ function loadSqliteStore(dbPath) {
   let db;
   try {
     db = new Database(dbPath, { readonly: true });
-    const nodes = db.prepare("SELECT id, kind, tier, file, name, func_id FROM nodes").all();
+    // M98: end_line is a post-M98 column; a pre-M98 graph (read-only here, so the
+    // write-path migration can't run) lacks it. Detect and select conditionally so
+    // an older index still loads (end_line just comes back null → body re-indexes).
+    const hasEndLine = db.prepare("PRAGMA table_info(nodes)").all().some((c) => c.name === "end_line");
+    const nodes = db.prepare(
+      `SELECT id, kind, tier, file, name, func_id, ${hasEndLine ? "end_line" : "NULL AS end_line"} FROM nodes`
+    ).all();
     const edges = db.prepare("SELECT kind, src, dst FROM edges").all();
 
     const norm = (p) => p.replace(/\\/g, "/");
@@ -427,7 +435,7 @@ function loadSqliteStore(dbPath) {
       return byFile.get(file);
     };
     for (const n of nodes) {
-      if (n.func_id) rec(n.file).entities.push({ funcId: n.func_id, name: n.name, file: n.file, tier: n.tier });
+      if (n.func_id) rec(n.file).entities.push({ funcId: n.func_id, name: n.name, file: n.file, tier: n.tier, endLine: n.end_line });
     }
     for (const e of edges) {
       // src for an IMPORT edge is the source FILE; for a CALL edge it's a funcId
@@ -607,6 +615,116 @@ function queryWhoCalls(index, identity) {
 
   // Multiple matches — ambiguous, NEVER merge
   return { ambiguous: true, candidates: matchingFuncIds.sort() };
+}
+
+// ─── Query: body (M98) ────────────────────────────────────────────────────────
+
+/**
+ * body(identity): return a single function's SOURCE — read LIVE from disk by line
+ * range — plus context (the file's import lines + the enclosing class header if a
+ * method + the caller list from the call graph). The headline "smart-reach" win:
+ * ~180 tokens for one function vs ~7,750 for the whole file.
+ *
+ * Resolution mirrors who-calls disambiguation [RULE] who-calls-function-identity-disambiguated:
+ *   - exact funcId (`file#name@line`) → that node
+ *   - bare `name` matching exactly one node → that node
+ *   - bare `name` matching N>1 → { ambiguous:true, candidates:[...] } — NEVER a merged body
+ *   - no match → { notFound:true }
+ *
+ * INVARIANTS (feed verify gate, contract §2):
+ *   [RULE] body-reads-live-never-stored          — source comes from a live disk read, not a DB blob
+ *   [RULE] body-freshness-reindex-before-slice    — Step-1 freshness re-indexes a stale file BEFORE this runs
+ *   [RULE] body-ambiguous-never-merged            — ambiguous symbol → candidates, never a wrong/joined body
+ *   [RULE] body-end-line-required                 — a node with NULL end_line returns needsReindex (caller re-indexes)
+ *
+ * @param {IndexStructure} index
+ * @param {string} identity   funcId or bare name
+ * @param {string} projectRoot  repo root (live file read is relative to this)
+ * @returns {{ ok?:boolean, funcId?:string, file?:string, lineRange?:[number,number],
+ *             tier?:string, imports?:string[], classHeader?:?string, source?:string,
+ *             callers?:string[], ambiguous?:boolean, candidates?:string[],
+ *             notFound?:boolean, needsReindex?:boolean }}
+ */
+function queryBody(index, identity, projectRoot) {
+  // ── Resolve identity → a single funcId ──
+  let funcId = null;
+  if (identity.includes("#")) {
+    // File-qualified. Tolerate a missing @line suffix (funcEntities key carries it).
+    if (index.funcEntities.has(identity)) {
+      funcId = identity;
+    } else {
+      const noLine = identity.replace(/@\d+$/, "");
+      for (const fid of index.funcEntities.keys()) {
+        if (fid === noLine || fid.replace(/@\d+$/, "") === noLine) { funcId = fid; break; }
+      }
+    }
+  } else {
+    // Bare name — disambiguate, NEVER merge.
+    const matches = [];
+    for (const [fid, meta] of index.funcEntities) {
+      if (meta.name === identity) matches.push(fid);
+    }
+    if (matches.length === 1) funcId = matches[0];
+    else if (matches.length > 1) return { ambiguous: true, candidates: matches.sort() };
+  }
+
+  if (!funcId) return { notFound: true };
+
+  const meta = index.funcEntities.get(funcId);
+  // Start line is encoded in the funcId suffix `@<line>`; end_line from the node.
+  const startMatch = /@(\d+)$/.exec(funcId);
+  const startLine = startMatch ? parseInt(startMatch[1], 10) : null;
+  const endLine = meta.endLine;
+
+  // [RULE] body-end-line-required — a pre-M98 node has no end_line; caller re-indexes.
+  if (startLine == null || endLine == null) {
+    return { needsReindex: true, funcId, file: meta.file };
+  }
+
+  // [RULE] body-reads-live-never-stored — slice the live file by line range.
+  const absFile = path.isAbsolute(meta.file) ? meta.file : path.join(projectRoot, meta.file);
+  let lines;
+  try { lines = fs.readFileSync(absFile, "utf8").split("\n"); }
+  catch (_e) { return { notFound: true, file: meta.file }; }
+
+  const source = lines.slice(startLine - 1, endLine).join("\n");
+
+  // Context: the file's top-level import/require lines.
+  const imports = [];
+  for (const ln of lines) {
+    const t = ln.trim();
+    if (/^(import\s|export\s.*\sfrom\s|const\s+\w+\s*=\s*require\(|.*\brequire\()/.test(t) && /from\s|require\(/.test(t)) {
+      imports.push(ln);
+    }
+    if (imports.length >= 40) break; // safety cap
+  }
+
+  // Context: enclosing class header (if this funcId is a method — its line sits
+  // inside a `class X {` block above it). Best-effort: nearest preceding class line.
+  let classHeader = null;
+  for (let i = startLine - 2; i >= 0; i--) {
+    const m = /^\s*(export\s+)?(abstract\s+)?class\s+[A-Za-z_$][\w$]*/.exec(lines[i]);
+    if (m) { classHeader = lines[i].trim(); break; }
+    // Stop if we hit a top-level non-indented statement that isn't a class (cheap bound).
+    if (/^\S/.test(lines[i]) && !/^(export|import|\/\/|\/\*|\*)/.test(lines[i])) break;
+  }
+
+  // Context: callers from the existing call graph (free).
+  const fidNoLine = funcId.replace(/@\d+$/, "");
+  const callerSet = index.callGraph.get(funcId) || index.callGraph.get(fidNoLine);
+  const callers = callerSet ? Array.from(callerSet).sort() : [];
+
+  return {
+    ok: true,
+    funcId,
+    file: meta.file,
+    lineRange: [startLine, endLine],
+    tier: meta.tier || index.tier,
+    imports,
+    classHeader,
+    source,
+    callers,
+  };
 }
 
 // ─── Query: blast-radius ──────────────────────────────────────────────────────
@@ -1070,6 +1188,7 @@ module.exports = {
   buildIndexFromRecords,
   queryWhoImports,
   queryWhoCalls,
+  queryBody,
   queryBlastRadius,
   queryStatus,
   // D9 additions
@@ -1107,7 +1226,7 @@ if (require.main === module) {
   }
 
   const ALL_VERBS = [
-    "who-imports", "who-calls", "blast-radius", "status",
+    "who-imports", "who-calls", "body", "blast-radius", "status",
     "cluster", "dead-code", "orphan", "dangling", "test-impl",
   ];
 
@@ -1156,6 +1275,57 @@ if (require.main === module) {
       process.exit(2);
     }
     emit({ ok: true, verb, target, results: queryResult.results, tier: queryResult.tier, coverage: queryResult.coverage });
+
+  } else if (verb === "body") {
+    if (!target) fail({ ok: false, reason: "missing-target", verb });
+    const projectRoot = path.dirname(path.dirname(storePath));
+    let bodyResult = queryBody(index, target, projectRoot);
+
+    // [RULE] body-end-line-required — a pre-M98 node lacks end_line and its file
+    // wasn't stale (so Step-1 freshness didn't re-index it). Re-index that ONE file
+    // inline to populate end_line, reload, retry. Never guess an end.
+    // [RULE] body-reindex-preserves-tier — pass the file's EXISTING tier as
+    // existingTier so this read-path re-index does NOT silently downgrade a
+    // compiler-accurate file to tree-sitter-floor (parse_and_put without SCIP would).
+    if (bodyResult.needsReindex && bodyResult.file) {
+      try {
+        const { parse_and_put } = require(path.join(__dirname, "gsd-t-graph-index.cjs"));
+        const { openDb } = loadFreshnessModule() || {};
+        const absFile = path.isAbsolute(bodyResult.file) ? bodyResult.file : path.join(projectRoot, bodyResult.file);
+        const db = typeof openDb === "function" ? openDb(projectRoot, storePath) : null;
+        if (db && parse_and_put) {
+          // Read the file's stored tier so it is preserved through the re-index.
+          let existingTier = null;
+          try {
+            const row = db.prepare("SELECT tier FROM files WHERE file = ?").get(bodyResult.file);
+            existingTier = row ? row.tier : null;
+          } catch { /* tier preservation is best-effort */ }
+          try {
+            parse_and_put(absFile, bodyResult.file, { db, existingTier });
+          } finally {
+            try { db.close(); } catch {}
+          }
+          const reloaded = loadStore(storePath);
+          if (reloaded.ok) bodyResult = queryBody(reloaded.index, target, projectRoot);
+        }
+      } catch (_e) { /* fall through to the needsReindex envelope below */ }
+    }
+
+    if (bodyResult.ambiguous) {
+      // [RULE] body-ambiguous-never-merged
+      process.stdout.write(JSON.stringify({
+        ok: false, reason: "ambiguous-function", verb, target, candidates: bodyResult.candidates,
+      }) + "\n");
+      process.exit(2);
+    }
+    if (bodyResult.notFound) fail({ ok: false, reason: "not-found", verb, target, file: bodyResult.file });
+    if (bodyResult.needsReindex) fail({ ok: false, reason: "end-line-unavailable", verb, target, file: bodyResult.file });
+    emit({
+      ok: true, verb, target: bodyResult.funcId, file: bodyResult.file,
+      lineRange: bodyResult.lineRange, tier: bodyResult.tier,
+      imports: bodyResult.imports, classHeader: bodyResult.classHeader,
+      source: bodyResult.source, callers: bodyResult.callers,
+    });
 
   } else if (verb === "blast-radius") {
     if (!target) fail({ ok: false, reason: "missing-target", verb });

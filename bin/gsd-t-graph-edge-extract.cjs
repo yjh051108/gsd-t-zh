@@ -255,6 +255,7 @@ function walkPython(rootNode, relPath, entities, edges) {
           name,
           type: 'function',
           line: node.startPosition.row + 1,
+          endLine: node.endPosition.row + 1,
           exported: false,
         });
         // walk body with this funcId as enclosing
@@ -275,6 +276,7 @@ function walkPython(rootNode, relPath, entities, edges) {
           name,
           type: 'class',
           line: node.startPosition.row + 1,
+          endLine: node.endPosition.row + 1,
           exported: false,
         });
         const body = node.childForFieldName('body');
@@ -390,6 +392,7 @@ function walkTSJS(rootNode, relPath, entities, edges) {
           name,
           type: enclosingClass ? 'method' : 'function',
           line: node.startPosition.row + 1,
+          endLine: node.endPosition.row + 1,
           exported: isExportedNode(node),
           ...(enclosingClass ? { parentClass: enclosingClass } : {}),
         });
@@ -412,6 +415,7 @@ function walkTSJS(rootNode, relPath, entities, edges) {
           name,
           type: 'method',
           line: node.startPosition.row + 1,
+          endLine: node.endPosition.row + 1,
           exported: true, // methods are implicitly exported via their class
           parentClass: enclosingClass || undefined,
         });
@@ -432,6 +436,7 @@ function walkTSJS(rootNode, relPath, entities, edges) {
           name,
           type: 'class',
           line: node.startPosition.row + 1,
+          endLine: node.endPosition.row + 1,
           exported: isExportedNode(node),
         });
         // Walk children with class context
@@ -462,6 +467,7 @@ function walkTSJS(rootNode, relPath, entities, edges) {
               name,
               type: 'function',
               line: decl.startPosition.row + 1,
+              endLine: valueNode.endPosition.row + 1,
               exported: isExp,
             });
             // Walk arrow/function body with this funcId
