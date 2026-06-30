@@ -220,8 +220,15 @@ function _detectDefaultTrack2(projectDir, notes) {
     try { return fs.existsSync(path.join(projectDir, rel)); } catch (_) { return false; }
   };
 
-  // typecheck — tsc
-  if (has('node_modules/.bin/tsc') || has('tsconfig.json')) {
+  // typecheck — tsc. Run ONLY when tsc is actually INSTALLED (the binary exists).
+  // A bare `tsconfig.json` is NOT sufficient: scip-typescript auto-creates an empty
+  // `{}` tsconfig at the root of any project it indexes (including zero-dep plain-JS
+  // repos like GSD-T itself). The old `has('tsconfig.json')` OR-trigger then ran
+  // `npx --no-install tsc` with no tsc present → "TypeScript not installed" → a
+  // FALSE verify-gate FAIL on a non-TS project. A genuine TS project ships tsc in
+  // node_modules/.bin/, so requiring the binary cannot disable typecheck where it
+  // truly applies. (We still require a tsconfig so tsc has a config to read.)
+  if (has('node_modules/.bin/tsc') && has('tsconfig.json')) {
     plan.push({
       id: 'tsc',
       cmd: 'npx',
