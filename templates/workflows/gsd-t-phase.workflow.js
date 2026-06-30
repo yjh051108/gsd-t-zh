@@ -733,6 +733,23 @@ const milestone  = _args.milestone || null;
 const userInput  = _args.userInput || "";
 const phaseName  = _args.phase;
 
+// M99 D2: persist a kind:'wiring' ledger line for this workflow.
+// Uses the `gsd-t graph wiring-log --auto` CLI shim (avoids embedding require() in strings).
+// [RULE] wiring-mode-three-states / [RULE] consumer-label-from-context-not-setenv
+async function persistWiringMode(phaseNameArg) {
+  const consumer = "phase";
+  await agent(
+    [
+      `Persist one graph-wiring-mode ledger line for the phase workflow.`,
+      `Run: \`gsd-t graph wiring-log --consumer ${consumer} --auto --project '${projectDir}'\``,
+      `(--auto detects WIRED if the graph store exists, else fallback-announced)`,
+      `If the command is not found, exit 0 (ledger write is optional).`,
+      `Return ONLY: {"ok": true, "mode": "<mode>"} or {"ok": false, "reason": "<short reason>"}.`,
+    ].join("\n"),
+    { label: "phase:wiring-ledger", phase: phaseNameArg, model: "haiku", schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" }, mode: { type: "string" }, reason: { type: "string" } } } }
+  ).catch(() => null); // fail-open
+}
+
 // M84: competition is AUTOMATIC. By default the workflow PROBES the solution space
 // (after brief) and self-decides whether to run a 3-producer + judge competition —
 // no flag needed. Optional manual OVERRIDES: `competition: N` (2-5) forces N
@@ -765,6 +782,8 @@ phase("Preflight");
 const pre = await runPreflight(projectDir);
 if (!pre.ok) return { status: "failed", reason: "preflight-failed", preflight: pre.envelope };
 const brief = await generateBrief(projectDir, { kind: phaseName, milestone, id: `${phaseName}-${(milestone || "m").toLowerCase()}` });
+// M99 D2: persist graphWiringMode for the phase consumer. [RULE] wiring-mode-three-states
+await persistWiringMode("Preflight");
 
 // ── M84: resolve competition AUTOMATICALLY (after brief, before producing) ──
 // Default: probe the solution space and self-decide. Overrides pin it.

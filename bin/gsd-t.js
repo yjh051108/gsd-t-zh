@@ -3888,9 +3888,48 @@ function doGraph(args) {
       _metricsRollup.printRollup(undefined, { json: _metricsJson });
       break;
     }
+    case "wiring-log": {
+      // M99 D2: thin CLI shim for persisting a kind:'wiring' ledger line from a
+      // Workflow agent() Bash call (avoids embedding require() in workflow strings,
+      // which trips the M71 sandbox lint).
+      //
+      // Usage A (explicit mode):
+      //   gsd-t graph wiring-log --consumer <consumer> --mode <mode> [--project <dir>]
+      //
+      // Usage B (auto mode — WIRED if store exists, else fallback-announced):
+      //   gsd-t graph wiring-log --consumer <consumer> --auto [--project <dir>]
+      //
+      // Exits 0 always (fail-open).
+      const _projIdx = args.indexOf("--project");
+      const _projDir = _projIdx !== -1 ? args[_projIdx + 1] : process.cwd();
+      const _consumerIdx = args.indexOf("--consumer");
+      const _consumerArg = _consumerIdx !== -1 ? args[_consumerIdx + 1] : "cli";
+      const _modeIdx = args.indexOf("--mode");
+      const _modeArg = _modeIdx !== -1 ? args[_modeIdx + 1] : null;
+      const _autoFlag = args.includes("--auto");
+      try {
+        const _resolver = require("./gsd-t-graph-store-resolver.cjs");
+        let _mode;
+        if (_autoFlag) {
+          const _sp = _resolver.resolveStorePath(_projDir);
+          _mode = (_sp && fs.existsSync(_sp)) ? "WIRED" : "fallback-announced";
+        } else if (_modeArg) {
+          _mode = _modeArg;
+        } else {
+          process.stdout.write("ledger-write-skipped: need --mode or --auto\n");
+          process.exit(0);
+        }
+        const _record = { kind: "wiring", ts: new Date().toISOString(), consumer: _consumerArg, graphWiringMode: _mode };
+        _resolver.append_ledger_line(_record, _projDir);
+        process.stdout.write(`ok: ${_mode}\n`);
+      } catch (_e) {
+        process.stdout.write(`ledger-write-skipped: ${_e && _e.message ? _e.message : String(_e)}\n`);
+      }
+      process.exit(0);
+    }
     default:
       error(`Unknown graph subcommand: ${sub}`);
-      info("Usage: gsd-t graph [index|status|query|who-imports|who-calls|blast-radius|body|tasks|metrics]");
+      info("Usage: gsd-t graph [index|status|query|who-imports|who-calls|blast-radius|body|tasks|metrics|wiring-log]");
       info("       gsd-t graph --output json|table   (task DAG)");
   }
 }

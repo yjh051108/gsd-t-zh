@@ -230,6 +230,23 @@ const VERDICT_SCHEMA = {
   },
 };
 
+// M99 D2: persist a kind:'wiring' ledger line. M81 sandbox: all I/O through agent() Bash.
+// Uses the `gsd-t graph wiring-log --auto` CLI shim (avoids embedding require() in strings).
+// [RULE] wiring-mode-three-states / [RULE] consumer-label-from-context-not-setenv
+async function persistWiringMode(phaseName) {
+  const consumer = "verify";
+  await agent(
+    [
+      `Persist one graph-wiring-mode ledger line for the verify workflow.`,
+      `Run: \`gsd-t graph wiring-log --consumer ${consumer} --auto --project '${projectDir}'\``,
+      `(--auto detects WIRED if the graph store exists, else fallback-announced)`,
+      `If the command is not found, exit 0 (ledger write is optional).`,
+      `Return ONLY: {"ok": true} or {"ok": false, "reason": "<short reason>"}.`,
+    ].join("\n"),
+    { label: "verify:wiring-ledger", phase: phaseName, model: "haiku", schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" }, reason: { type: "string" } } } }
+  ).catch(() => null);
+}
+
 // ───── Script body ─────
 
 if (!milestone) {
@@ -244,6 +261,8 @@ if (!pre.ok) {
   return { status: "failed", reason: "preflight-failed", preflight: pre.envelope };
 }
 const brief = await generateBrief(projectDir, { kind: "verify", milestone, id: `verify-${(milestone || "m").toLowerCase()}` });
+// M99 D2: persist graphWiringMode for the verify consumer. [RULE] wiring-mode-three-states
+await persistWiringMode("Preflight");
 
 phase("Verify-Gate");
 const vg = await runVerifyGate(projectDir);

@@ -287,6 +287,23 @@ async function runCli(verb, target, label) {
   return r || { ok: false, reason: "graph-unavailable", via: "error" };
 }
 
+// M99 D2: persist a kind:'wiring' ledger line for this workflow.
+// M81 sandbox: all I/O through agent() Bash; no require/fs in the sandbox.
+// Uses the `gsd-t graph wiring-log` CLI shim (avoids embedding require() in strings).
+// [RULE] wiring-mode-three-states / [RULE] consumer-label-from-context-not-setenv
+async function persistWiringMode(mode) {
+  const consumer = "scan";
+  await agent(
+    [
+      `Persist one graph-wiring-mode ledger line for the scan workflow.`,
+      `Run: \`gsd-t graph wiring-log --consumer ${consumer} --mode ${mode} --project '${projectDir}'\``,
+      `If the command is not found, exit 0 (ledger write is optional).`,
+      `Return ONLY: {"ok": true} or {"ok": false, "reason": "<short reason>"}.`,
+    ].join("\n"),
+    { label: "scan:wiring-ledger", phase: "Graph-Wiring", model: "haiku", schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" }, reason: { type: "string" } } } }
+  ).catch(() => null); // fail-open
+}
+
 // Preflight: an agent checks branch + whether a prior register exists, via Bash.
 // (No fs in the body — that was the bug.)
 phase("Preflight");
@@ -355,6 +372,7 @@ if (graphMode === "disabled") {
   // ZERO graph calls in this path — [RULE] no-graph-baseline-proven-graph-free.
   graphWiringMode = "disabled";
   log("graph-wiring: DISABLED (no-graph baseline mode — graph-query call-count == 0; AC-4 baseline)");
+  await persistWiringMode("disabled"); // M99 D2: persist wiring mode [RULE] wiring-mode-three-states
 } else {
   // graphMode === "wired": build index if absent, then query structural slice.
   // Step 1: check if index exists and is queryable.
@@ -364,6 +382,7 @@ if (graphMode === "disabled") {
     // [RULE] parser-fail-disables-loud-never-silent (from graph-query-cli-contract)
     graphWiringMode = "fallback-announced";
     log(`⚠ GRAPH-FALLBACK (ANNOUNCED): graph status probe returned not-ok [reason=${(statusResult && statusResult.reason) || "graph-unavailable"}, via=${(statusResult && statusResult.via) || "?"}] — scan continues in full grep-mode (today's architecture, intact). Structural findings from LLM reconstruction only. Build the index (gsd-t graph build) to enable graph-wired accuracy.`);
+    await persistWiringMode("fallback-announced"); // M99 D2 [RULE] wiring-mode-three-states
   } else {
     // Step 2: query the structural slice (dead-code + dangling + clusters).
     // These are the findings the deep-finders currently reconstruct by reading files (error-prone);
@@ -382,6 +401,7 @@ if (graphMode === "disabled") {
       // All three verbs returned graph-unavailable — announce fallback.
       graphWiringMode = "fallback-announced";
       log(`⚠ GRAPH-FALLBACK (ANNOUNCED): all structural-slice queries returned graph-unavailable — scan continues in full grep-mode. Dead-code / dangling / cluster findings from LLM reconstruction only.`);
+      await persistWiringMode("fallback-announced"); // M99 D2 [RULE] wiring-mode-three-states
     } else {
       // Structural slice assembled — will be injected into scanSlice finder agents.
       structuralSlice = {
@@ -398,6 +418,7 @@ if (graphMode === "disabled") {
       };
       graphWiringMode = "wired";
       log(`graph-wiring: WIRED — structural slice ready (dead-code: ${structuralSlice.deadCode.length} candidates, dangling: ${structuralSlice.dangling.length} edges, clusters: ${structuralSlice.clusters.length} groups, tier: ${structuralSlice.tier}). Slice will be INJECTED ADDITIVELY into scanSlice deep-finders. [RULE] scan-injects-structural-slice`);
+      await persistWiringMode("wired"); // M99 D2 [RULE] wiring-mode-three-states
     }
   }
 }
@@ -722,6 +743,11 @@ function fmtChunks(today) {
   head.push(`**Date:** ${today}`);
   head.push(`**Slices run:** ${slices.length} | **Coverage:** ${coverageComplete ? `FULL - all ${slices.length} slices succeeded` : `PARTIAL - ${succeededCount}/${slices.length} succeeded`}`);
   head.push(`**Verified findings:** ${counts.total}`, "");
+  // M99 D2 T4: stamp graphWiringMode into the header (north-star: invisible fallback leaves a trace).
+  // A `fallback-announced` mode co-occurring with a same-window outcome:'hit' is the machine-visible
+  // NiceNote scan-#12 contradiction. [RULE] wiring-mode-three-states
+  const _wiringEmoji = { "wired": "✅", "fallback-announced": "⚠️", "disabled": "🚫", "pending": "⏳" };
+  head.push(`**Graph wiring:** ${_wiringEmoji[graphWiringMode] || "?"} \`${graphWiringMode}\` (WIRED = graph answered structural queries; fallback-announced = graph unavailable, fell back to grep; disabled = no-graph baseline)`, "");
   head.push(`> Effort estimates use GSD-T-native units (domain / wave / spawn / token-spend). Never human-hours.`);
   head.push(`> TD numbering continues from the prior register (if any, archived). This scan begins at **TD-${tdStart}**.`, "");
   if (!coverageComplete) head.push(`> ⚠️ **PARTIAL COVERAGE - ${failedSlices.length} of ${slices.length} codebase areas were NOT scanned this pass** (failed to return findings): ${ascii(failedSlices.join(", "))}. Findings UNDER-COUNT the real debt. Re-run (resume) for full coverage.`, "");

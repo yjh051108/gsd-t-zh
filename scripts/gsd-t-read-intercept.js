@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * gsd-t-read-intercept.js — M98
+ * gsd-t-read-intercept.js — M98/M99
  *
  * A PostToolUse hook on the `Read` tool. When Claude reads an INDEXED code file
  * with an offset+limit that lands inside exactly one known function's line range,
@@ -21,10 +21,22 @@
  *       updatedToolOutput: "<original file output> + graph note" } }
  *   ...or nothing (exit 0) to pass the Read through unchanged.
  *
+ * M99 D2:
+ *   - Presence check and Database open use D1's resolver (resolveStorePath) — never re-derive path.
+ *   - Layer-2b logging: one line per augment/passthrough decision via append_ledger_line.
+ *     Consumer resolved from GSDT_GRAPH_CONSUMER env or payload hook_data.consumer or 'cli'.
+ *     Fail-open: a throwing sink never alters the decision or the output.
+ *
  * INVARIANTS:
- *   [RULE] read-intercept-fail-open          — any error / missing graph / non-code → pass through
- *   [RULE] read-intercept-augment-never-shrink — only APPEND; never replace the file body
- *   [RULE] read-intercept-structural-only      — augment ONLY when offset+limit ∈ one funcId range
+ *   [RULE] read-intercept-fail-open             — any error / missing graph / non-code → pass through
+ *   [RULE] read-intercept-augment-never-shrink  — only APPEND; never replace the file body
+ *   [RULE] read-intercept-structural-only       — augment ONLY when offset+limit ∈ one funcId range
+ *   [RULE] presence-check-repointed             — M99: presence + DB open via resolver, never literal
+ *   [RULE] byte-identical-on-off                — logging is a side-channel; decision unchanged
+ *   [RULE] fail-open                            — sink error never propagates
+ *   [RULE] import-resolver-never-hardcode       — import resolver, never re-derive path
+ *   [RULE] augment-never-shrink-kept            — M98 augment-never-shrink rule KEPT
+ *   [RULE] consumer-label-from-context-not-setenv
  *   - NEVER calls Read/Grep (loop guard). Reads the graph DB directly (read-only).
  *   - No graph in this project → pure no-op.
  */
@@ -63,15 +75,63 @@ function emitAugment(original, note) {
   process.exit(0);
 }
 
+// M99 D2: load D1's resolver module.
+// [RULE] import-resolver-never-hardcode / [RULE] presence-check-repointed
+function loadResolver(cwd) {
+  try {
+    const pkgLocal = path.join(__dirname, '..', 'bin', 'gsd-t-graph-store-resolver.cjs');
+    const projLocal = path.join(cwd, 'bin', 'gsd-t-graph-store-resolver.cjs');
+    const resolverPath = fs.existsSync(pkgLocal) ? pkgLocal
+      : fs.existsSync(projLocal) ? projLocal
+      : null;
+    if (!resolverPath) return null;
+    return require(resolverPath);
+  } catch { return null; }
+}
+
+// M99 D2: resolve consumer label from env or payload.
+// [RULE] consumer-label-from-context-not-setenv
+function resolveConsumer(payload) {
+  if (process.env.GSDT_GRAPH_CONSUMER) return process.env.GSDT_GRAPH_CONSUMER;
+  if (payload && payload.hook_data && typeof payload.hook_data.consumer === 'string') {
+    return payload.hook_data.consumer;
+  }
+  return 'cli';
+}
+
+// M99 D2: emit one Layer-2b ledger line. Fail-open — never alters the decision.
+// [RULE] fail-open  [RULE] byte-identical-on-off
+function logDecision(appendFn, cwd, consumer, action, filePath) {
+  if (!appendFn) return;
+  try {
+    appendFn({
+      kind: 'read',
+      ts: new Date().toISOString(),
+      action,
+      file: String(filePath).slice(0, 500),
+      consumer,
+    }, cwd);
+  } catch { /* FAIL-OPEN: sink error never propagates */ }
+}
+
 function main(payload) {
   // Only act on Read.
   if (!payload || payload.tool_name !== 'Read') passThrough();
 
   const cwd = payload.cwd || process.cwd();
 
-  // Must be a GSD-T project with a graph present.
+  // Must be a GSD-T project.
   if (!fs.existsSync(path.join(cwd, '.gsd-t'))) passThrough();
-  if (!fs.existsSync(path.join(cwd, '.gsd-t', 'graph.db'))) passThrough();
+
+  // M99 D2: resolve consumer and logging sink early (used in ALL decision branches).
+  const consumer = resolveConsumer(payload);
+  const resolver = loadResolver(cwd);
+  const appendFn = resolver && typeof resolver.append_ledger_line === 'function'
+    ? resolver.append_ledger_line : null;
+
+  // M99 D2: repoint presence check at D1's resolver. [RULE] presence-check-repointed
+  const storePath = resolver ? resolver.resolveStorePath(cwd) : null;
+  if (!storePath || !fs.existsSync(storePath)) passThrough();
 
   const input = payload.tool_input || {};
   const filePath = input.file_path;
@@ -84,7 +144,11 @@ function main(payload) {
   // full-file read has no structural target → pass through (no silent shrinking).
   const offset = Number(input.offset);
   const limit = Number(input.limit);
-  if (!Number.isFinite(offset) || !Number.isFinite(limit) || limit <= 0) passThrough();
+  if (!Number.isFinite(offset) || !Number.isFinite(limit) || limit <= 0) {
+    // Log passthrough for reads with a code file but no structural signal.
+    logDecision(appendFn, cwd, consumer, 'passthrough', filePath);
+    passThrough();
+  }
   const readStart = offset;          // 1-based first line read (Read's offset is 1-based)
   const readEnd = offset + limit - 1;
 
@@ -93,19 +157,17 @@ function main(payload) {
   if (path.isAbsolute(filePath)) rel = path.relative(cwd, filePath);
   rel = rel.split(path.sep).join('/');
 
-  // Find the function whose [start,end] range the read window lands inside, by
-  // enumerating this file's funcIds straight from the graph DB (read-only). Cheaper
-  // and more direct than spawning the query CLL — and it's the same store the CLI reads.
+  // Find the function whose [start,end] range the read window lands inside.
   let match = null;
   try {
-    // Resolve the store loader from the global package (where this hook ships) first,
-    // falling back to the project's own copy — a synthetic project may have neither,
-    // in which case we fail-open (pass through).
+    // M99 D2: open the DB via the resolver-provided store path.
+    // [RULE] presence-check-repointed — storePath comes from D1's resolver, not a literal.
     let requireStore;
     try { requireStore = require(path.join(__dirname, '..', 'bin', 'gsd-t-require-store.cjs')); }
     catch { requireStore = require(path.join(cwd, 'bin', 'gsd-t-require-store.cjs')); }
     const Database = requireStore.requireBetterSqlite();
-    const db = new Database(path.join(cwd, '.gsd-t', 'graph.db'), { readonly: true });
+    // Use the resolver-provided storePath (M99 D2 repoint).
+    const db = new Database(storePath, { readonly: true });
     try {
       const hasEnd = db.prepare('PRAGMA table_info(nodes)').all().some((c) => c.name === 'end_line');
       if (hasEnd) {
@@ -117,9 +179,7 @@ function main(payload) {
           if (!m) continue;
           const start = parseInt(m[1], 10);
           const end = r.end_line;
-          // The read window starts inside this function's [start,end] body.
           if (readStart >= start && readStart <= end) {
-            // Prefer the innermost (largest start) enclosing function.
             if (!match || start > match.start) match = { funcId: r.func_id, name: r.name, start, end };
           }
         }
@@ -127,9 +187,15 @@ function main(payload) {
     } finally {
       try { db.close(); } catch { /* best-effort */ }
     }
-  } catch (_e) { passThrough(); }
+  } catch (_e) {
+    logDecision(appendFn, cwd, consumer, 'passthrough', rel);
+    passThrough();
+  }
 
-  if (!match) passThrough();
+  if (!match) {
+    logDecision(appendFn, cwd, consumer, 'passthrough', rel);
+    passThrough();
+  }
 
   // Build the augment note (appended beneath the original file output, kept intact).
   const original = payload.tool_response || payload.tool_output || '';
@@ -138,6 +204,9 @@ function main(payload) {
     `\`${match.name}\` (${rel}:${match.start}-${match.end}). For just this function's ` +
     `source + its imports, class header, and callers (≈10× fewer tokens), run:\n` +
     `    gsd-t graph body '${match.funcId}'`;
+
+  // Log augment decision BEFORE emitting (fail-open: if logging throws, decision unchanged).
+  logDecision(appendFn, cwd, consumer, 'augment', rel);
 
   emitAugment(typeof original === 'string' ? original : JSON.stringify(original), note);
 }

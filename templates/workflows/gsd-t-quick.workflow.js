@@ -88,6 +88,23 @@ const projectDir = _args.projectDir || ".";
 const task = _args.task || null;
 const model = _args.model || "sonnet";
 
+// M99 D2: persist a kind:'wiring' ledger line. M81 sandbox: all I/O through agent() Bash.
+// Uses the `gsd-t graph wiring-log --auto` CLI shim (avoids embedding require() in strings).
+// [RULE] wiring-mode-three-states / [RULE] consumer-label-from-context-not-setenv
+async function persistWiringMode(phaseName) {
+  const consumer = "quick";
+  await agent(
+    [
+      `Persist one graph-wiring-mode ledger line for the quick workflow.`,
+      `Run: \`gsd-t graph wiring-log --consumer ${consumer} --auto --project '${projectDir}'\``,
+      `(--auto detects WIRED if the graph store exists, else fallback-announced)`,
+      `If the command is not found, exit 0 (ledger write is optional).`,
+      `Return ONLY: {"ok": true} or {"ok": false, "reason": "<short reason>"}.`,
+    ].join("\n"),
+    { label: "quick:wiring-ledger", phase: phaseName, model: "haiku", schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" }, reason: { type: "string" } } } }
+  ).catch(() => null);
+}
+
 const QUICK_SCHEMA = {
   type: "object",
   required: ["status", "filesEdited"],
@@ -228,6 +245,8 @@ phase("Preflight");
 const pre = await runPreflight(projectDir);
 if (!pre.ok) return { status: "failed", reason: "preflight-failed", preflight: pre.envelope };
 const brief = await generateBrief(projectDir, { kind: "execute", id: "quick-brief" });
+// M99 D2: persist graphWiringMode for the quick consumer. [RULE] wiring-mode-three-states
+await persistWiringMode("Preflight");
 
 // M94-D11 §READER: query graph for structural impact before the Execute agent reasons
 // [RULE] quick-writer-pattern
