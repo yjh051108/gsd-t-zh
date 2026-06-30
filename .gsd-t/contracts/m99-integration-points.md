@@ -3,6 +3,30 @@
 > Wave groupings + cross-domain seams for M99. Planned 2026-06-30. 3 domains, 2 waves, RISK-FIRST (locked).
 > Definition + 16 falsifiable criteria: `.gsd-t/progress.md` (M99). Pseudocode source-of-truth:
 > `PseudoCode-GraphObservability.md` + `PseudoCode-GraphFolderMigration.md`.
+> **RE-PLANNED 2026-06-30** after the M83 pre-mortem BLOCKED the prior plan (commit 3b5b33b) with 9
+> falsifiable findings + the traceability gate flagged 16 violations. All 9 folded + all 16 resolved;
+> both gates now pass (traceability `ok:true`, pre-mortem CLEARED). See § RE-PLAN fold-in below.
+
+## RE-PLAN fold-in (the 9 pre-mortem findings — each now a required test)
+
+| # | Sev | Finding | Fix + required test | Tasks |
+|---|-----|---------|---------------------|-------|
+| 1 | CRITICAL | D1-T4's rewire MISSED the PRIMARY cwd-walking store-discovery loop at query-cli `:107` (+ siblings `:229`/`:460`); post-migration it would still search the OLD `.gsd-t/graph.db` → graph-unavailable on every migrated project | rewire `:107`/`:229`/`:460` through the resolver + an END-TO-END `gsd-t graph who-imports` test via the discovery loop on a MIGRATED project (assert `outcome:'hit'`, same result set) | D1-T2 (test), D1-T4 (impl) |
+| 2 | CRITICAL | no-raw-literals grep would false-fail on 2 SPIKE files writing `graph.db` to throwaway temp dirs (`k1-sqlite-stream.cjs:81`, `store-bakeoff.cjs:237`) — NOT the live store | marker-keyed (`spike-local-store`) filename allow-list; classified spike-local-not-live; allow-list can't silently expand (loses-marker = fail) | D1-T5 |
+| 3 | HIGH | `:514`–`:516` is a TWO-branch ternary — the `.db` branch goes 3-up post-migration, the JSONL `graph-index/` branch STAYS 2-up; a one-size `deriveProjectRoot` breaks JSONL | branch-aware `deriveProjectRoot` + a JSONL-branch test (construct `.gsd-t/graph-index/`, assert TRUE root at 2-up) | D1-T1 (test), D1-T4 (impl) |
+| 4 | HIGH | Criterion-11 byte-identical-on/off had NO fail-open-under-throw test | stub `append_ledger_line` to THROW with telemetry ON; assert grep/read decision + output byte-identical to OFF | D2-T1, D2-T2 |
+| 5 | HIGH | rotation had no ROLLOVER-BOUNDARY test | `GSDT_GRAPH_TELEMETRY_MAXBYTES` test-only override drives a real rollover at a tiny cap; assert `-001` seals at/under cap, `-002` opens | D1-T3 |
+| 6 | MED | no WAL-specific interruption test | write uncommitted edge into `-wal`, kill after copying `graph.db` before `-wal`, re-run; assert migrated result set equals pre-migration | D1-T2 |
+| 7 | MED | contract cites `doMetrics` at `:5135` (the `case "metrics"` dispatch); the FUNCTION def is `:4697` | correct the ref + a line-ref-correctness test (grep `function doMetrics`, assert contract matches) | D3-T3 |
+| 8 | MED | north-star contradiction (`fallback-announced` + same-window `outcome:'hit'`) was not machine-counted | rollup computes + reports `fallbackAnnouncedDespiteHit`; test asserts ≥1 on a contradiction fixture, 0 on a clean one | D3-T1 |
+| 9 | MED | the M81 sandbox has NO `process`/`env`/`fs` → a workflow CANNOT `setenv GSDT_GRAPH_CONSUMER` the shell way | label passed as `--consumer <name>` ARG on the runCli ledger-write; intercept hooks resolve the consumer from the workflow context in their stdin payload (fallback `'cli'` only with no workflow context); test asserts in-workflow interception carries the label, not `'cli'` | D2-T3 |
+
+**Traceability (the 16 violations):** every M99 task used `**Files (ImplPath):**` — the gate's
+`FILES_FIELD_RE` (`/^\s*[-*]?\s*files?\s*:/i`) only matches a plain `Files:` label, so the `(ImplPath)`
+between `files` and `:` defeated it (→ `hasFiles=false` → `ac-without-path`). Both headline tasks put
+`⭐ Headline: true` in the heading suffix, not a standalone `**Headline:** true` field line (→
+`headline=false`). FIX: renamed every `**Files (ImplPath):**`→`**Files:**`; added `**Headline:** true`
+field lines to D1-T2 + D3-T1. Re-run: `ok:true`, 0/108 violations, both headlines recognized.
 
 ## Wave structure (LOCKED — risk-first)
 
@@ -69,8 +93,17 @@ parallel with D2; only the final key-set reconciliation waits.
 ## Verify-phase probes (Red Team / pre-mortem focus)
 
 - **Migration destructive path** (Criteria 2/3): interruption-safety (old-OR-new-never-neither),
-  WAL-pending survival, idempotency, real-root-only guard. Destructive Action Guard pre-approved.
+  WAL-pending survival (#6: kill after `graph.db` before `-wal`), idempotency, real-root-only guard.
+  Destructive Action Guard pre-approved.
+- **End-to-end discovery loop** (#1, Criteria 1/2/13 — THE killer): after migration, an ACTUAL
+  `gsd-t graph who-imports` via the cwd-walking `:107` discovery loop on a migrated project returns
+  `outcome:'hit'` with the same result set as pre-migration — FAILS if the loop still searches the legacy path.
 - **Fail-open invariant** (Criteria 8/11): a ledger write that throws NEVER blocks/alters a grep, read,
-  or query; byte-identical decision with `GSDT_GRAPH_TELEMETRY` on vs off.
+  or query; byte-identical decision + output with `GSDT_GRAPH_TELEMETRY` on vs off AND on-throw (#4).
+- **Rollover boundary** (#5, Criterion 7): a real rollover at a tiny `GSDT_GRAPH_TELEMETRY_MAXBYTES` cap.
+- **JSONL-branch depth** (#3, Criterion 6): branch-aware `deriveProjectRoot` — `.db` 3-up, `graph-index/` 2-up.
+- **Consumer label from context** (#9, Criterion 12): an interception inside a labeled workflow carries
+  that label (via `--consumer` arg / hook payload), never `'cli'`-leaks.
 - **Silent-disable regression** (Criterion 13 north-star): both intercepts repointed at the resolver so
-  they don't disable post-migration; a `fallback-announced` beside a live `outcome:hit` is machine-visible.
+  they don't disable post-migration; a `fallback-announced` beside a live `outcome:hit` is machine-visible
+  AND counted by the rollup's `fallbackAnnouncedDespiteHit` (#8).

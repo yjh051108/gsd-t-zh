@@ -1,5 +1,73 @@
 # Integration Points
 
+## Current State: M99 — Graph-Store Migration + Layer-1/2 Decision Telemetry + Metrics Rollup — RE-PLANNED 2026-06-30 (pre-mortem RE-RUN). The prior plan (commit 3b5b33b) was BLOCKED by the M83 pre-mortem with 9 falsifiable failure conditions lacking a required test + the traceability gate flagged 16 violations (all M99 tasks used `**Files (ImplPath):**` — the gate's `FILES_FIELD_RE` only matches a plain `Files:` label, so `(ImplPath)` between `files` and `:` defeated it; both headline tasks put `⭐ Headline: true` in the heading suffix instead of a standalone `**Headline:** true` field line). **THIS RE-PLAN folds all 9 pre-mortem findings into the 3 tasks.md + resolves all 16 traceability violations** (renamed every `**Files (ImplPath):**`→`**Files:**`; added standalone `**Headline:** true` field lines to D1-T2 + D3-T1). Both gates now pass: traceability `ok:true` (0/108 violations) + pre-mortem CLEARED. **The 9 folded findings:** #1 CRITICAL (the killer) — D1-T4's query-cli rewire MISSED the PRIMARY cwd-walking store-discovery loop at `:107` (+ sibling fallbacks `:229`/`:460`); after migration to `.gsd-t/graphDB/graph.db` it would still search the OLD `.gsd-t/graph.db` → graph-unavailable on every migrated project (NiceNote-class invisible fallback). FIX: extend the rewire list + a REQUIRED end-to-end `who-imports`-via-discovery-loop test on a migrated project (D1-T2 test (b) / D1-T4). #2 CRITICAL — no-raw-literals grep would false-fail on 2 SPIKE files writing to throwaway temp dirs (`gsd-t-graph-k1-sqlite-stream.cjs:81`, `gsd-t-graph-store-bakeoff.cjs:237`); FIX: explicit marker-keyed allow-list (D1-T5). #3 HIGH — `:514`–`:516` is a TWO-branch ternary; the `.db` branch goes 3-up post-migration but the JSONL `graph-index/` branch stays 2-up — a one-size `deriveProjectRoot` breaks JSONL; FIX: branch-aware depth + a JSONL-branch test (D1-T1/T4). #4 HIGH — Criterion-11 byte-identical had no FAIL-OPEN test; FIX: stub `append_ledger_line` to THROW, assert decision + output byte-identical to telemetry-OFF (D2-T1/T2). #5 HIGH — rotation had no ROLLOVER-BOUNDARY test; FIX: `GSDT_GRAPH_TELEMETRY_MAXBYTES` test-only override drives a real rollover at a tiny cap (D1-T3). #6 MED — no WAL-specific interruption test; FIX: kill after copying `graph.db` before `-wal`, assert migrated result set equals pre-migration (D1-T2 test (c)). #7 MED — contract cites `doMetrics` at `:5135` (the dispatch); the FUNCTION def is `:4697`; FIX: correct the ref + a line-ref-correctness test (D3-T3). #8 MED — north-star: a `fallback-announced` wiring line co-occurring with a same-window Layer-1 `outcome:'hit'` is the machine-visible contradiction; FIX: rollup computes + reports `fallbackAnnouncedDespiteHit` (D3-T1). #9 MED — the M81 sandbox has NO `process`/`env`/`fs`, so a workflow CANNOT `setenv GSDT_GRAPH_CONSUMER` the shell way; FIX: label passed as a `--consumer <name>` ARG on the runCli ledger-write + intercept hooks resolve the consumer from the workflow context in their stdin payload (fallback `'cli'` only when no workflow context); a test asserts an interception inside a labeled workflow carries that label, not `'cli'` (D2-T3). Structure UNCHANGED: **3 file-disjoint domains, 2 waves** (D1 Wave-1 serial gate; D2∥D3 Wave-2).
+
+### M99 Wave Groupings (the integration shape)
+
+```
+WAVE 1 — SERIAL GATE (runs ALONE; the migration shim proven in isolation before Wave 2 starts).
+         D1 owns EVERY shared path-resolving file so nothing else runs beside it.
+  d1 migration-resolver-sink  (bin/gsd-t-graph-store-resolver.cjs + query-cli + producers + .gitignore + 4 tests)
+    M99-D1-T1 single resolver module (resolveGraphDir/StorePath/LogsDir/deriveProjectRoot;
+                .db branch 3-up, JSONL graph-index/ branch 2-up — BRANCH-AWARE #3)
+    M99-D1-T2 copy-verify-swap migration shim  [Headline] — copy→verify→swap, WAL-safe, idempotent,
+                interruption-safe, real-root-only guard. TEST: end-to-end who-imports via the :107
+                discovery loop on a MIGRATED project (#1) + WAL-pending-edge survival (#6).
+    M99-D1-T3 append_ledger_line sink — fail-open, GSDT_GRAPH_TELEMETRY toggle, sized rotation backstop;
+                GSDT_GRAPH_TELEMETRY_MAXBYTES test-only override → real rollover-boundary test (#5).
+    M99-D1-T4 fold Layer-1 + projectRoot-depth into query-cli — REWIRE :95 + :107 (cwd-walk discovery
+                loop, THE KILLER #1) + :229/:460 (sibling fallbacks) + branch-aware depth :514-516/:1246/:1354 (#3)
+                + move _logGraphEvent sink :1241/:1278 → graphDB/logs/ (Layer-1 shape KEPT byte-for-byte).
+    M99-D1-T5 route producer literals through resolver — index.cjs:392/:525, freshness.cjs:130;
+                2 SPIKE files (k1-sqlite-stream:81, store-bakeoff:237) marker-keyed ALLOW-LISTED, spike-local-not-live (#2).
+    M99-D1-T6 retarget .gitignore at graphDB/
+    M99-D1-T7 update ~20 hardcoded-path tests + author the 4 owned tests
+       │  delivers: graph-store-resolver-contract.md (resolveGraphDir/StorePath/LogsDir/deriveProjectRoot
+       │            + migrateGraphStore + append_ledger_line; single-discovery-path + never-orphan invariants)
+       ▼
+  ┌──────────────────────────────────────────────────────────────────────────────┐
+  │ WAVE-1 GATE: the migration shim is proven (D1-T2 headline test green: end-to-end │
+  │ who-imports via the :107 discovery loop on a migrated project + WAL survival),   │
+  │ the resolver is the SOLE path source (D1-T5 no-raw-literals green minus the 2    │
+  │ marked spikes), depth branch-aware (D1-T1 JSONL-branch test green). Wave 2 waits.│
+  │ [RULE] discovery-loop-end-to-end  [RULE] copy-verify-swap-never-orphan           │
+  └──────────────────────────────────────────────────────────────────────────────┘
+       │
+WAVE 2 — BUILD (D2 ∥ D3, fully file-disjoint; both IMPORT D1's resolver, never hardcode a path):
+       ▼
+  d2 layer2-decision-logging                    ║  d3 metrics-rollup (READER + sole contract owner)
+    M99-D2-T1 grep-intercept repoint + Layer-2a     M99-D3-T1 read-only rollup helper [Headline] — 8
+                logging (incl. passthrough);                    dimensions + fallbackAnnouncedDespiteHit
+                FAIL-OPEN-on-throw test (#4)                    north-star contradiction count (#8);
+    M99-D2-T2 read-intercept repoint :74/:108 +                 zeroed-on-empty, never-writes proof
+                Layer-2b logging; augment-never-      M99-D3-T2 wire `gsd-t graph metrics` dispatch
+                shrink KEPT; FAIL-OPEN test (#4)                 (append-only doGraph switch arm, :3884)
+    M99-D2-T3 per-workflow consumer label +         M99-D3-T3 finalize graph-metrics-contract.md;
+                graphWiringMode — label via                     FIX doMetrics ref :5135→:4697 (#7) +
+                --consumer ARG + hook resolves from              line-ref-correctness test
+                workflow stdin context, NOT setenv    M99-D3-T4 author the rollup test
+                (#9); test: in-workflow ≠ 'cli'                 │  delivers: graph-metrics-contract.md
+    M99-D2-T4 stamp wiringMode into scan header                 │  (v1.0.0 STABLE; ledger event +
+                (north-star feeds D3's #8 count)                 │   rollup shape, in sync w/ emitted keys)
+    M99-D2-T5 author the 2 owned tests
+       │  consumes: graph-store-resolver-contract.md (import resolveStorePath/append_ledger_line)
+       │  + graph-metrics-contract.md § Layer-2a/2b/2c
+       ▼  GATE: every interception logs exactly one ledger line (incl. passthrough); byte-identical
+       │       decision + output with telemetry on/off AND on-throw (#4); consumer attributed from
+       │       workflow context never 'cli'-leaks (#9); the rollup computes all 8 dims + the
+       │       fallbackAnnouncedDespiteHit north-star count (#8); contract in sync (#7). Suite green.
+```
+
+**M99 cross-domain seams (the only inter-domain contracts):**
+| Producer | Artifact | Consumer | Seam guarantee |
+|----------|----------|----------|----------------|
+| D1 | `resolveStorePath` / `resolveGraphDir` / `resolveLogsDir` / `deriveProjectRoot` / `migrateGraphStore` / `append_ledger_line` (graph-store-resolver-contract.md) | D2 (intercepts + workflows), D3 (rollup) | D2/D3 IMPORT the resolver — never hardcode a path. D1 is the serial gate; D2/D3 start only after it lands. |
+| D2 | Layer-2a `kind:'grep'` + Layer-2b `kind:'read'` + Layer-2c `kind:'wiring'` ledger lines (graph-metrics-contract.md § Layer-2) | D3 rollup | D3 reads what D2 emits; D3-T3 reconciles the contract against D2's ACTUAL emitted keys at integrate (drift = fail). |
+| D2-T4 | scan-header `graphWiringMode` + the `fallback-announced`+`outcome:'hit'` co-occurrence | D3-T1 `fallbackAnnouncedDespiteHit` | The north-star: D2 produces the contradiction signal in the ledger, D3 counts it (#8). |
+| D1-T4 Layer-1 `_logGraphEvent` | `kind:'query'` ledger line (shape KEPT) | D3 rollup hit/passthrough ratio, p50/p95, tier mix | Layer-1 shape byte-for-byte unchanged (KEPT, no Divergence — only the sink PATH + rotation/toggle supersede). |
+
+**File-disjointness (M99):** D1 owns all `bin/gsd-t-graph-*` path files + `bin/gsd-t-graph-query-cli.cjs` + `.gitignore` + its 4 tests. D2 owns the 2 `scripts/*-intercept.js` + the 6 `templates/workflows/*.workflow.js` + its 2 tests. D3 owns `bin/gsd-t.js` (SOLE editor for M99 — D1/D2 touch it in ZERO places) + `bin/gsd-t-graph-metrics-rollup.cjs` + `graph-metrics-contract.md` + its 1 test. Zero inter-domain write-target overlap. (Intra-D1, T1–T5 all touch the resolver/consumers → `gsd-t parallel` reports `disjoint?=no` = EXPECTED same-owner sequential, not a real conflict.)
+
 ## Current State: M94 — Persistent Code Graph Index (Phase 1, backlog #44b) — RE-PLANNED 2026-06-26 (4) (deeper re-attack on the R3 fixes — 4 MORE falsifiable gaps found, 2 genuine design bugs; NO scope change beyond these 4). **RE-PLAN (4) — the 4 fixes (see the RE-PLAN (4) Fixes table below):** R4-1 (HIGH) AC-4 had NO halt path → infinite-fail risk: add a machine-checkable `ac4Verdict ∈ {PROVEN, RESCOPE}` outcome ladder + a hard-gate verdict test (peer of D7-T2's Wave-1 gate) so the insight headline can resolve PASS-via-proof / PASS-via-rescope / FAIL-forcing-descope, matching K1/K2/AC-3 — the STRUCTURED verdict is authoritative, not a prose "cleared" (M90 lesson) [D6-T1 contract + D6-T3 verdict+test]; R4-2 (HIGH, REAL BUG) silent accuracy DOWNGRADE on incremental re-index: SCIP is a whole-project batch tool, so `parse_and_put(file)`'s per-file tree-sitter re-index would silently relabel a previously compiler-accurate file `tree-sitter-floor` on the next edit — FREEZE the `parse_and_put` tier invariant (re-upgrade OR honest `tree-sitter-floor-STALE-SCIP` flag, never silent downgrade) [D3-T2/T3 contract + D3-T5 test]; R4-3 (HIGH) who-calls function-identity ambiguity — bare-name `who-calls` merges callers across same-named functions on real data: define a `funcId = file#function` key (FQN/`@line` where overloaded), call edges keyed at both ends, bare-name ambiguity returns an `ambiguous-function` envelope [D5-T1/D3-T1 contract+emit + D5-T4 test]; R4-4 (MEDIUM) multi-file freshness coherence — per-file atomicity ≠ multi-file query coherence: declare the multi-file dirty-set re-index SERIALIZED + the query observes the COHERENT post-re-index state, and MEASURE a ≥100-file branch-switch dirty-set re-index wall-clock [D4-T1 contract + D4-T6 test + D4-T3 budget]. +3 net-new test files (D3-T5, D5-T4, D4-T6); R4-1 folds into already-sole-owned D6 files — disjointness preserved over all 27 tasks. AC-4 RESCOPED to INSIGHT-delta-only per user decision 2026-06-25, around the CENTRAL TENET (dumb-reach vs smart-reach). RISK-FIRST: **7 file-disjoint domains** (d1–d6 + the INTEGRATE-stage d7), **27 atomic tasks (Shape D)**, zero write-target collisions (file-disjointness PROVEN over all 27). **PRIOR RE-PLAN (3) — the 6 deeper-pre-mortem fixes (2 CRITICAL wiring/owner gaps + 4 HIGH/MEDIUM — see the RE-PLAN (3) Fixes table below):** R3-Fix-1 (CRITICAL, USER-APPROVED destructive) rewire `bin/gsd-t.js` `case "graph"` → the D5 CLI + DELETE the 6 dead M20–M21 `bin/graph-*.js` + 3 dead tests (the dead path was WINNING — `gsd-t graph status` kept returning the M20–M21 "No graph index found" anti-goal) [D7-T1]; R3-Fix-2 (CRITICAL) the #8 live-store seam test gets a NAMED owner + a FINDABLE spec (`m94-integration-points.md` at the integrate-read path) [D7-T3]; R3-Fix-3 (HIGH) AC-4 ⊇ over a deterministic structural-finding IDENTITY, not LLM free-text [D6-T1/T2]; R3-Fix-4 (HIGH) Wave-1 HARD GATE machine-checkable via `k1Verdict`/`k2Verdict` + a gate test [D7-T2 + D1-T3/D2-T3]; R3-Fix-5 (MEDIUM) K1 KILL attributable per-candidate per-criterion [D1-T2/T3]; R3-Fix-6 (MEDIUM) K2 MEASURES real Atos scale, never assumes ~1.5M [D2-T2/T3]. PRIOR RE-PLANNED 2026-06-26 (2): +3 pre-mortem-fix test tasks (D3-T4 real-Atos spotcheck, D4-T4 touched-set derivation, D4-T5 add/delete/rename) + 2 contract clarifications (freshness touched-set derivation + add/del/rename) + toggle assertion folded into D6-T2 + footprint contract markings — NO scope change, all net-new test files, disjointness preserved. Wave 1 is a PROVE-OR-KILL HARD GATE — no Wave-2 body build until both spikes PASS. The graph is the MANDATORY structural-knowledge layer; the shared query layer (D5) + the contract mandate that code-reading steps consume the graph are Phase-1 deliverables so the follow-on consumers (/debug /quick /impact /execute /plan partition M92-reflex) are wiring, not redesign. Phase 1 WIRES only /scan as the first proof (ADDITIVELY — current scan kept FULLY INTACT); the others are the MANDATED SEQUENCED roadmap (below), never dropped. **AC-4 = INSIGHT delta only** (graph-wired scan surfaces ≥ the no-graph run's structural findings PLUS ≥1 it missed/got wrong, on a pinned Atos SHA); the SPEED / file-count / cost-critical-path axis is DROPPED from M94 (deferred to a separate "re-think /scan from the graph up" milestone) — D6-T4 (cost-critical-path) removed, D6-T1/T2/T3 reframed insight-only. 7 reframe-required rules remain (the 2 speed/cost-path rules retired — see the table below).
 
 ### M94 Wave Groupings (the integration shape)
