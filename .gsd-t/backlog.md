@@ -854,3 +854,27 @@ After M94 ships: (1) DEFINE the telemetry suite milestone (#46) but DO NOT build
 **Fix shape:** after the dimension-writer fan-out, stat each expected `.gsd-t/scan/<dim>.md`; any whose mtime is older than the scan start → mark failed, retry once, and if still stale → surface in `docsFailed` (never silent). Mirrors the M99 "verify on disk" discipline.
 
 **Related:** [[feedback_detached_fanout_false_completion]], [[feedback_measure_dont_claim]]. Pairs with #49 (scan checkpoint/resume — both about scan write-integrity) and #47 (scan output layout).
+
+---
+
+## #51 — Adopt Claude Sonnet 5 + refresh the model-tier policy (new model landed 2026-06-30)
+
+**Type:** Enhancement (model policy) · **Status:** QUEUED · **Priority:** MEDIUM-HIGH (cost + quality win) · **Added:** 2026-06-30
+
+**Trigger:** Anthropic released **Claude Sonnet 5** on 2026-06-30 (model id `claude-sonnet-5`). Confirmed live: the hilo-figma-atos scan's deep-finders ran on **Sonnet 5** (the `model: "sonnet"` ALIAS resolved to the new latest Sonnet at the harness level), even though GSD-T's tier policy still pins `claude-sonnet-4-6`. This is `feedback_nothing_in_gsdt_is_concrete` firing — a new model landed, re-evaluate.
+
+**Benchmarks (Sonnet 5 vs 4.6 vs Opus 4.8, verified via web 2026-06-30):**
+- SWE-bench: 58.1% → **63.2%** (Opus 4.8 = 69.2%)
+- Terminal-Bench 2.1: 67.0% → **80.4%**
+- Humanity's Last Exam (tools): 46.8% → **57.4%** (Opus 4.8 = 57.9% — Sonnet 5 NEARLY MATCHES Opus on reasoning)
+- Lower hallucination + sycophancy than 4.6
+- Pricing: **$2/$10 intro** (through Aug 31 2026), then $3/$15 — vs Sonnet 4.6 $3/$15, Opus 4.8 $5/$25
+- 1M context
+
+**Work:**
+1. **Update `bin/gsd-t-model-tier-policy.cjs`** `MODEL_IDS.sonnet`: `claude-sonnet-4-6` → `claude-sonnet-5` (single-source — the alias path means literals everywhere update). Ripple: `model-tier-policy-contract.md`, the M85 lint fixtures, README/GSD-T-README tier descriptions.
+2. **RE-EVALUATE the tier assignments** given Sonnet 5 ≈ Opus 4.8 on reasoning at ~40% the cost. Candidates to consider dropping Opus→Sonnet-5 (measure, don't assume): synthesis, some judge/verify stages. The 5 Fable stages (probes/judge/pre-mortem/red-team) stay highest-tier per M85, but the Opus-default stages are now a cost-vs-quality re-decision. KEEP the M82 blindness invariant (judge ≠ producers).
+3. **Verify the alias-vs-literal question:** does `agent({model: "sonnet"})` in a workflow resolve to the harness-latest Sonnet (5) or to GSD-T's pinned literal? The scan evidence says harness-latest. If GSD-T's literals are bypassed anyway, the M85 "pin exact IDs" design may need rethinking (pin for reproducibility vs. ride-the-latest for free upgrades).
+4. Also check: are `claude-opus-4-8` / `claude-haiku-4-5` still current, or did they also get superseded?
+
+**Related:** [[feedback_nothing_in_gsdt_is_concrete]] (re-evaluate on new model), [[feedback_no_silent_degradation]] (a silent model swap cuts both ways — surface it), [[feedback_measure_dont_claim]] (measure the tier re-assignment, don't assume).
