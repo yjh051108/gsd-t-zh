@@ -2,6 +2,17 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.13.12] - 2026-06-30
+
+### Fixed — scan graph probe silently fell back to grep-mode despite a LIVE graph
+
+A `/gsd-t-scan` on NiceNote announced `GRAPH-FALLBACK — graph index not available` and ran in grep-mode, even though the dependency graph was live (156 files, compiler-accurate, all verbs + freshness verified working). Root cause, proven by reproducing the probe through a real haiku agent: the scan's `runCli` told a **haiku** agent to "return ONLY the raw JSON line" and then `JSON.parse`'d the free-text reply — haiku wrapped the JSON in a ```` ```json ```` fence, `JSON.parse` threw, the catch returned `graph-unavailable`, and the scan demoted to grep-mode. The graph, CLI, cwd, and bin-presence were all fine. This is the deterministic-orchestration anti-pattern (a reliability-critical gate routed through an LLM's free text).
+
+- `templates/workflows/gsd-t-scan.workflow.js`: `runCli` now passes a `schema` (StructuredOutput) so the probe returns structured JSON via the tool layer, never fence-vulnerable prose; resolves project-local bin → global `gsd-t graph` fallback; drops `2>/dev/null` and surfaces `reason`/`via` in the fallback log (parse-fail vs cli-not-found vs cli-error). Mirrors the proven `gsd-t-verify.workflow.js` runCli.
+- `test/m94-d6-scan-consumer.test.js`: source-structural regression test — scan `runCli` MUST use `schema:`, MUST NOT `JSON.parse(result…)`, MUST have a global-bin fallback. (The prior test only simulated recorded envelopes; it never exercised the parsing layer where the bug lived.)
+
+The probe stays `model: "haiku"` (a mechanical CLI call) — the schema, not the model tier, is the fix. Suite: 2542/2546 pass; M71 sandbox + M85 tier lints green.
+
 ## [4.13.11] - 2026-06-29
 
 ### Fixed — `gsd-t graph body` reachable from the front door (M98 follow-up)

@@ -720,3 +720,41 @@ test("M94-D6: contract file exists and is STABLE", () => {
     );
   }
 });
+
+// ─── v4.13.12: graph probe must be SCHEMA-validated, never fence-parsed ──────
+// Regression guard for the NiceNote 2026-06-29 silent grep-fallback: the scan's
+// runCli told a haiku agent to "return ONLY the raw JSON line" and then
+// JSON.parse()'d the free-text reply. Haiku wrapped it in a ```json fence →
+// JSON.parse threw → graph-unavailable → grep-mode, while the graph was LIVE.
+// The fix routes the probe through a schema (StructuredOutput), which the model
+// satisfies via the tool layer (never fenced prose). These source-structural
+// assertions fail if the brittle pattern is reintroduced.
+test("v4.13.12: scan runCli is schema-validated and does NOT JSON.parse a free-text agent reply", () => {
+  const wfPath = path.join(ROOT, "templates", "workflows", "gsd-t-scan.workflow.js");
+  const src = fs.readFileSync(wfPath, "utf8");
+
+  // Isolate the runCli helper body.
+  const start = src.indexOf("async function runCli(");
+  assert.ok(start !== -1, "scan workflow must define async function runCli(...)");
+  // Body runs until the next top-level function/const at column 0 after it.
+  const after = src.slice(start);
+  const end = after.search(/\n(async function |function |const [A-Za-z_])/);
+  const body = end === -1 ? after : after.slice(0, end);
+
+  // 1. The probe MUST pass a schema (this is what makes it fence-proof).
+  assert.ok(/schema\s*:/.test(body),
+    "scan runCli MUST pass a `schema:` to agent() so the probe returns StructuredOutput, " +
+    "not fence-vulnerable free text. (NiceNote 2026-06-29 root cause.) " +
+    "[RULE] graph-probe-schema-validated-never-fence-parsed");
+
+  // 2. The probe MUST NOT JSON.parse the agent's text reply (the brittle pattern).
+  assert.ok(!/JSON\.parse\s*\(\s*result/.test(body),
+    "scan runCli MUST NOT JSON.parse(result...) — a fenced ```json reply throws there and " +
+    "silently demotes a LIVE graph to grep-mode. Use a schema instead.");
+
+  // 3. The probe MUST resolve project-local bin OR fall back to the global `gsd-t` binary
+  //    (a project without a local bin copy must still probe successfully).
+  assert.ok(/gsd-t graph/.test(body),
+    "scan runCli MUST fall back to the global `gsd-t graph` binary when the project-local " +
+    "bin/gsd-t-graph-query-cli.cjs is absent (was hardcoded to `node bin/...cjs`).");
+});

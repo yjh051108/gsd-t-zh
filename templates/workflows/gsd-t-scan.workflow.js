@@ -238,29 +238,53 @@ const GRAPH_SLICE_SCHEMA = {
 let structuralSlice = null;   // { deadCode, dangling, clusters, coverage, tier } | null
 let graphWiringMode = "pending"; // "wired" | "fallback-announced" | "disabled"
 
-// M94-D6: runCli — inline async helper that delegates CLI calls to an agent() Bash.
-// M81 invariant: NO require/fs/child_process in the orchestrator body.
-// This is the ONLY way to invoke the D5 query CLI from the sandbox.
-// [RULE] no-graph-baseline-proven-graph-free — this helper is called ONLY when graphMode==="wired".
+// M94-D6: runCli — inline async helper that delegates the D5 graph-query CLI to an
+// agent() Bash. M81 invariant: NO require/fs/child_process in the orchestrator body —
+// the agent runs the command; we read back a SCHEMA-VALIDATED envelope.
+//
+// v4.13.12 HARDENING (root cause of the NiceNote 2026-06-29 silent grep-fallback):
+// the old version told a HAIKU agent to "return ONLY the raw JSON line" and then
+// JSON.parse()'d its free-text reply. Haiku wrapped the JSON in a ```json fence →
+// JSON.parse threw → caught → graph-unavailable → grep-mode, even though the graph
+// was live (status returned ok, 156 files, compiler-accurate). Three fixes, mirroring
+// the proven gsd-t-verify.workflow.js runCli:
+//   1. SCHEMA-validated agent output (StructuredOutput) — the model returns structured
+//      JSON via the tool layer, never fenced text; no brittle JSON.parse of prose.
+//   2. project-local bin → GLOBAL `gsd-t` fallback (a project without a local bin copy
+//      no longer fails the probe — it was hardcoded to `node bin/...cjs`).
+//   3. stderr captured (dropped `2>/dev/null`) and surfaced in `reason` so the fallback
+//      log can say WHY (parse-fail vs not-found vs CLI-error), never a bare "unavailable".
+// [RULE] no-graph-baseline-proven-graph-free — called ONLY when graphMode==="wired".
+// [RULE] graph-probe-schema-validated-never-fence-parsed
+const _GRAPH_CLI_ENVELOPE_SCHEMA = {
+  type: "object",
+  required: ["ok"],
+  additionalProperties: true,
+  properties: {
+    ok:       { type: "boolean", description: "true iff the CLI printed a JSON envelope with ok:true" },
+    reason:   { type: "string",  description: "on failure: graph-unavailable / cli-not-found / cli-error / non-json-output, plus any stderr" },
+    via:      { type: "string",  description: "local | global | error" },
+    results:  { type: "array", items: {}, description: "the verb's results array (dead-code/dangling/cluster/etc.), [] if none" },
+    tier:     { type: "string",  description: "compiler-accurate | tree-sitter-floor | ... when present" },
+    coverage: {                   description: "coverage envelope when the verb returns one" },
+  },
+};
 async function runCli(verb, target, label) {
-  const targetArg = target ? ` ${JSON.stringify(target)}` : "";
-  const cmd = `node bin/gsd-t-graph-query-cli.cjs ${verb}${targetArg} 2>/dev/null || echo '{"ok":false,"reason":"graph-unavailable"}'`;
-  const result = await agent(
-    [
-      `Run the following command in \`${projectDir}\` via Bash and return ONLY the raw JSON line it prints (no commentary):`,
-      `\`\`\`bash`,
-      `cd ${JSON.stringify(projectDir)} && ${cmd}`,
-      `\`\`\``,
-      `If the command fails or prints no JSON, return: {"ok":false,"reason":"graph-unavailable"}`,
-      `Return ONLY the JSON, nothing else.`,
-    ].join("\n"),
-    { label: `graph:${label || verb}`, phase: "Graph-Wiring", model: "haiku" }
-  ).catch(() => null);
-  try {
-    return (typeof result === "string") ? JSON.parse(result.trim()) : (result || { ok: false, reason: "graph-unavailable" });
-  } catch (_) {
-    return { ok: false, reason: "graph-unavailable" };
-  }
+  const targetArg = target ? ` '${String(target).replace(/'/g, "'\\''")}'` : "";
+  const prompt = [
+    `Run the GSD-T graph-query CLI for the project at \`${projectDir}\` and report its result. Steps:`,
+    `1. If \`${projectDir}/bin/gsd-t-graph-query-cli.cjs\` exists, run: \`node ${projectDir}/bin/gsd-t-graph-query-cli.cjs ${verb}${targetArg}\` (set via="local"). Otherwise run: \`gsd-t graph ${verb}${targetArg}\` (set via="global"). Use cwd \`${projectDir}\`. Do NOT redirect stderr — capture it.`,
+    `2. The command prints ONE JSON envelope to stdout. Parse it. Set ok = (the parsed envelope's "ok" field === true). Copy its "results", "tier", and "coverage" fields through if present.`,
+    `3. If the command exits non-zero, prints no JSON, or stdout is not valid JSON: set ok=false and put a short reason in "reason" — "cli-not-found" if the file/binary was missing, else "cli-error", else "non-json-output" — and append the first ~200 chars of stderr.`,
+    `Do NOT do any other work. ONLY run this one command and report the structured result.`,
+  ].join("\n");
+  const r = await agent(prompt, {
+    label: `graph:${label || verb}`,
+    phase: "Graph-Wiring",
+    model: "haiku",
+    schema: _GRAPH_CLI_ENVELOPE_SCHEMA,
+  }).catch((e) => ({ ok: false, reason: `agent-error: ${e && e.message}`, via: "error" }));
+  return r || { ok: false, reason: "graph-unavailable", via: "error" };
 }
 
 // Preflight: an agent checks branch + whether a prior register exists, via Bash.
@@ -339,7 +363,7 @@ if (graphMode === "disabled") {
     // Graph unavailable — announce fallback, continue with intact grep-mode scan.
     // [RULE] parser-fail-disables-loud-never-silent (from graph-query-cli-contract)
     graphWiringMode = "fallback-announced";
-    log(`⚠ GRAPH-FALLBACK (ANNOUNCED): graph index not available (${(statusResult && statusResult.reason) || "graph-unavailable"}) — scan continues in full grep-mode (today's architecture, intact). Structural findings from LLM reconstruction only. Build the index (gsd-t graph build) to enable graph-wired accuracy.`);
+    log(`⚠ GRAPH-FALLBACK (ANNOUNCED): graph status probe returned not-ok [reason=${(statusResult && statusResult.reason) || "graph-unavailable"}, via=${(statusResult && statusResult.via) || "?"}] — scan continues in full grep-mode (today's architecture, intact). Structural findings from LLM reconstruction only. Build the index (gsd-t graph build) to enable graph-wired accuracy.`);
   } else {
     // Step 2: query the structural slice (dead-code + dangling + clusters).
     // These are the findings the deep-finders currently reconstruct by reading files (error-prone);
