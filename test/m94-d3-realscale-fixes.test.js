@@ -65,8 +65,17 @@ test('build_index surfaces a loud notice when no SCIP indexer is available (Bug 
   const repo = path.join(dir, 'repo');
   fs.mkdirSync(repo, { recursive: true });
   fs.writeFileSync(path.join(repo, 'a.ts'), 'export function f() { return 1; }\n', 'utf8');
-  const r = build_index(repo, { dbPath: path.join(dir, 'b3.db'), scip: null });
-  assert.strictEqual(r.scipAvailable, false, 'scipAvailable=false when no indexer provided');
+  // Force the SCIP-UNAVAILABLE path explicitly with a resolver-less scip context.
+  // Passing `scip: null` would auto-detect the upgrader, and when scip-typescript
+  // IS installed in the environment (M95 made it real), the build genuinely upgrades
+  // → scipAvailable:true → this test's "no indexer available" premise no longer
+  // holds. An explicit { resolver: null } context tests the notice behavior
+  // deterministically regardless of whether scip-typescript is installed.
+  const r = build_index(repo, {
+    dbPath: path.join(dir, 'b3.db'),
+    scip: { resolver: null, projectRoot: repo },
+  });
+  assert.strictEqual(r.scipAvailable, false, 'scipAvailable=false when the scip context has no resolver');
   assert.ok(typeof r.scipNotice === 'string' && /SCIP indexer not available/.test(r.scipNotice),
     'scipNotice clearly states SCIP is absent + edges are tree-sitter-floor');
   assert.strictEqual(r.tier.upgraded, 0, 'no compiler-accurate upgrade without SCIP (honest floor)');
