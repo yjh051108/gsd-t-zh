@@ -814,3 +814,26 @@ After M94 ships: (1) DEFINE the telemetry suite milestone (#46) but DO NOT build
 **Why low priority:** M99 verified green without them; the stopgap is loud (not silent-green). But a hidden handle leak in `runDispatch` could bite real fan-out dispatch, so the find-the-leak step has value beyond the test.
 
 **Related memory:** [[feedback_slow_tests_starve_workflow_watchdog]] (the exact failure class), [[feedback_real_setup_playwright]] (test against real setup — but a unit test shouldn't depend on the live repo's mutable state).
+
+---
+
+## #49 — Scan checkpoint/resume — survive rate-limit kills without re-running the whole scan
+
+**Type:** Enhancement (scan resilience) · **Status:** QUEUED · **Priority:** HIGH (real 30M-token waste observed) · **Added:** 2026-06-30 (user — hilo-figma-atos)
+
+**Problem (user, real incident):** a 30-MILLION-token scan on hilo-figma-atos died in the last few steps (synthesis / start of document phase) due to **rate limits**. Resuming re-runs almost the ENTIRE scan — a huge waste of time AND tokens. A scan that stops on a rate limit must be relaunchable and **pick up where it left off**.
+
+**Root cause:** the scan workflow (`templates/workflows/gsd-t-scan.workflow.js`) holds all progress — per-slice deep-finder results, the synthesized register — in WORKFLOW MEMORY until the final synthesis/document phase writes to disk. A kill (rate limit, crash) before that final write discards everything in memory → resume re-runs every deep-finder from scratch. There is NO incremental checkpoint. The phases (preflight → probe → graph-wiring → Deep Scan fan-out [N slices] → synthesis [archive+register] → document → plain-english) only persist at the very end.
+
+**Design (the fix):**
+1. **Per-slice checkpointing.** Each deep-finder writes its slice result to `.gsd-t/scan/.checkpoint/slice-<id>.json` (or .md) THE MOMENT it completes — not held in memory. Include a manifest `.gsd-t/scan/.checkpoint/manifest.json` recording: scan id/number, the full slice list from the probe, which slices are DONE (with a content hash of the slice's input files so a changed file re-runs only that slice), graph-wiring mode, the probe's volume numbers.
+2. **Resume detection.** On scan launch, if `.gsd-t/scan/.checkpoint/manifest.json` exists for an unfinished scan (no final register written), READ the done-slice results off disk and only re-run the MISSING slices, then proceed to synthesis. A scan that died at synthesis resumes by loading all N done slices + jumping straight to synthesis — minutes, not hours.
+3. **Phase-level checkpoints too.** After synthesis writes the register, mark it done in the manifest so a kill in the document/plain-english phase resumes from THERE (don't re-synthesize). The document + plain-english phases are independently resumable (each marks done in the manifest).
+4. **Checkpoint cleanup.** On successful full completion, delete `.gsd-t/scan/.checkpoint/` (or move under `scan/archive/` per #47). Gitignore the checkpoint dir.
+5. **Rate-limit-aware.** When a finder agent fails specifically on a rate limit (vs a real error), the workflow should record the slice as PENDING (not failed) so resume retries it, and ideally surface "halted on rate limit — relaunch to resume" rather than a generic failure.
+
+**Why HIGH priority:** the waste is enormous and concrete (30M tokens, hours). Scan is the most token-heavy workflow and the most likely to hit rate limits on big repos (Atos-scale). Every other long workflow (wave, execute) has the same latent exposure but scan is where it bit.
+
+**M81 sandbox note:** the checkpoint writes happen in the finder AGENTS' Bash (they have fs), not the orchestrator — same pattern as the existing scan dimension-file writes. The orchestrator only reads back the manifest via an agent() Bash on resume.
+
+**Related:** #47 (scan output layout — checkpoint dir should fit the new `.gsd-t/scan/` structure), [[feedback_detached_fanout_false_completion]] (verify work on disk), [[feedback_measure_dont_claim]]. Mirrors the Workflow runtime's OWN resume (journal of completed agent() calls) — the scan workflow should checkpoint at the same granularity its host runtime does.
