@@ -837,3 +837,20 @@ After M94 ships: (1) DEFINE the telemetry suite milestone (#46) but DO NOT build
 **M81 sandbox note:** the checkpoint writes happen in the finder AGENTS' Bash (they have fs), not the orchestrator — same pattern as the existing scan dimension-file writes. The orchestrator only reads back the manifest via an agent() Bash on resume.
 
 **Related:** #47 (scan output layout — checkpoint dir should fit the new `.gsd-t/scan/` structure), [[feedback_detached_fanout_false_completion]] (verify work on disk), [[feedback_measure_dont_claim]]. Mirrors the Workflow runtime's OWN resume (journal of completed agent() calls) — the scan workflow should checkpoint at the same granularity its host runtime does.
+
+---
+
+## #50 — Scan dimension-file silent write-failure (reported success but file not regenerated)
+
+**Type:** Bug (scan) · **Status:** QUEUED · **Priority:** MEDIUM · **Added:** 2026-06-30 (hilo-figma-atos)
+
+**Problem:** On the hilo-figma-atos scan (2026-06-30), 4 of 5 dimension files regenerated but `business-rules.md` was NOT — it stayed the prior version (Jun 23) — **despite the workflow reporting `docsFailed: []`** (i.e. it claimed success). A dimension finder silently failed to write its file but the workflow counted it as done. Same false-success class as the M99 scan probe (`feedback_detached_fanout_false_completion` — trust disk, not narration).
+
+**Investigate (in `templates/workflows/gsd-t-scan.workflow.js`):**
+- The 5 dimension writers (~lines 874-882) each `Write` their `.gsd-t/scan/<dim>.md`. One returned/was-counted as ok without the file's mtime advancing.
+- The `docsFailed` accounting must VERIFY each dimension file's mtime advanced (or content changed) post-write, not trust the agent's self-report. A finder that says "wrote it" but didn't must be counted as FAILED + retried, not silently passed.
+- Likely cause: the business-rules finder agent hit an error/empty-response and returned without writing, but the result-collection treated a missing/empty result as "no findings → skip" rather than "failed → retry".
+
+**Fix shape:** after the dimension-writer fan-out, stat each expected `.gsd-t/scan/<dim>.md`; any whose mtime is older than the scan start → mark failed, retry once, and if still stale → surface in `docsFailed` (never silent). Mirrors the M99 "verify on disk" discipline.
+
+**Related:** [[feedback_detached_fanout_false_completion]], [[feedback_measure_dont_claim]]. Pairs with #49 (scan checkpoint/resume — both about scan write-integrity) and #47 (scan output layout).
