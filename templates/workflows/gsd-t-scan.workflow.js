@@ -287,6 +287,29 @@ async function runCli(verb, target, label) {
   return r || { ok: false, reason: "graph-unavailable", via: "error" };
 }
 
+// Build the graph index (`gsd-t graph index`) when it is absent. The wired path
+// is documented "build index if absent, then query" but the BUILD step was never
+// wired — so on any project without a pre-built index (the common case), scan
+// silently grep-fell-back and the graph was NEVER used (observed on hilo-figma-atos
+// 2026-06-30: a 30M-token scan grep-fell-back because the index was never built).
+// `graph index` is a longer command than the verb queries → bigger timeout.
+// [RULE] scan-builds-index-when-absent
+async function runCliBuild() {
+  const prompt = [
+    `Build the GSD-T code-graph index for the project at \`${projectDir}\`, then report. Steps:`,
+    `1. If \`${projectDir}/bin/gsd-t.js\` exists, run: \`node ${projectDir}/bin/gsd-t.js graph index\` (via="local"). Otherwise run: \`gsd-t graph index\` (via="global"). Use cwd \`${projectDir}\`. This may take up to a few minutes on a large repo — wait for it to finish. Do NOT redirect stderr.`,
+    `2. Set ok=true if the command exits 0 (the index built). Set ok=false with a short reason + first ~200 chars of stderr otherwise.`,
+    `Do NOT do any other work. ONLY run this one build command and report the structured result.`,
+  ].join("\n");
+  const r = await agent(prompt, {
+    label: "graph:index-build",
+    phase: "Graph-Wiring",
+    model: "haiku",
+    schema: GRAPH_BUILD_SCHEMA,
+  }).catch((e) => ({ ok: false, reason: `agent-error: ${e && e.message}` }));
+  return r || { ok: false, reason: "build-failed" };
+}
+
 // M99 D2: persist a kind:'wiring' ledger line for this workflow.
 // M81 sandbox: all I/O through agent() Bash; no require/fs in the sandbox.
 // Uses the `gsd-t graph wiring-log` CLI shim (avoids embedding require() in strings).
@@ -376,12 +399,26 @@ if (graphMode === "disabled") {
 } else {
   // graphMode === "wired": build index if absent, then query structural slice.
   // Step 1: check if index exists and is queryable.
-  const statusResult = await runCli("status", null, "status");
+  let statusResult = await runCli("status", null, "status");
+  // Step 1b: if the index is absent/unqueryable, BUILD it once, then re-probe.
+  // This is the previously-missing build step — without it scan grep-fell-back on
+  // every project lacking a pre-built index (hilo-figma-atos 2026-06-30).
+  // [RULE] scan-builds-index-when-absent
   if (!statusResult || !statusResult.ok) {
-    // Graph unavailable — announce fallback, continue with intact grep-mode scan.
-    // [RULE] parser-fail-disables-loud-never-silent (from graph-query-cli-contract)
+    log(`graph-wiring: index not queryable (${(statusResult && statusResult.reason) || "graph-unavailable"}) — building it now (gsd-t graph index)...`);
+    const buildResult = await runCliBuild();
+    if (buildResult && buildResult.ok) {
+      log(`graph-wiring: index build OK — re-probing status.`);
+      statusResult = await runCli("status", null, "status");
+    } else {
+      log(`graph-wiring: index build FAILED [${(buildResult && buildResult.reason) || "build-failed"}] — falling back to grep-mode.`);
+    }
+  }
+  if (!statusResult || !statusResult.ok) {
+    // Graph still unavailable after a build attempt — announce fallback, continue
+    // with intact grep-mode scan. [RULE] parser-fail-disables-loud-never-silent
     graphWiringMode = "fallback-announced";
-    log(`⚠ GRAPH-FALLBACK (ANNOUNCED): graph status probe returned not-ok [reason=${(statusResult && statusResult.reason) || "graph-unavailable"}, via=${(statusResult && statusResult.via) || "?"}] — scan continues in full grep-mode (today's architecture, intact). Structural findings from LLM reconstruction only. Build the index (gsd-t graph build) to enable graph-wired accuracy.`);
+    log(`⚠ GRAPH-FALLBACK (ANNOUNCED): graph unavailable after build attempt [reason=${(statusResult && statusResult.reason) || "graph-unavailable"}, via=${(statusResult && statusResult.via) || "?"}] — scan continues in full grep-mode (today's architecture, intact). Structural findings from LLM reconstruction only.`);
     await persistWiringMode("fallback-announced"); // M99 D2 [RULE] wiring-mode-three-states
   } else {
     // Step 2: query the structural slice (dead-code + dangling + clusters).

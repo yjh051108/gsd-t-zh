@@ -758,3 +758,38 @@ test("v4.13.12: scan runCli is schema-validated and does NOT JSON.parse a free-t
     "scan runCli MUST fall back to the global `gsd-t graph` binary when the project-local " +
     "bin/gsd-t-graph-query-cli.cjs is absent (was hardcoded to `node bin/...cjs`).");
 });
+
+// ─── v4.14.11: scan must BUILD the index when absent, not silently grep-fall-back ──
+// hilo-figma-atos 2026-06-30: a 30M-token scan grep-fell-back because the graph
+// index was never built. The wired path was documented "build index if absent, then
+// query" but the BUILD step was never wired — GRAPH_BUILD_SCHEMA was defined and
+// unused. On any project without a pre-built index (the common case) scan never
+// used the graph at all. These source-structural assertions fail if the build step
+// is dropped again.
+test("v4.14.11: scan wired-path BUILDS the index when absent (no silent grep-fallback)", () => {
+  const wfPath = path.join(ROOT, "templates", "workflows", "gsd-t-scan.workflow.js");
+  const src = fs.readFileSync(wfPath, "utf8");
+
+  // 1. A build helper must exist and run `gsd-t graph index` (the build verb).
+  assert.ok(/async function runCliBuild\s*\(/.test(src),
+    "scan workflow MUST define runCliBuild() — the index-build step the wired path needs.");
+  assert.ok(/graph index/.test(src),
+    "runCliBuild MUST invoke `gsd-t graph index` (or `node bin/gsd-t.js graph index`).");
+
+  // 2. The previously-orphaned GRAPH_BUILD_SCHEMA must now be USED (not dead).
+  assert.ok(/schema:\s*GRAPH_BUILD_SCHEMA/.test(src),
+    "GRAPH_BUILD_SCHEMA must be passed to the build agent — it was defined but never used.");
+
+  // 3. The wired branch must CALL runCliBuild before falling back (build-then-reprobe).
+  //    Anchor on the status-probe that opens the wired branch's body (the first
+  //    `let statusResult = await runCli("status"`), through the fallback announce.
+  const wiredStart = src.indexOf('let statusResult = await runCli("status"');
+  assert.ok(wiredStart !== -1, "scan wired branch must open with `let statusResult = await runCli(\"status\"...)`");
+  const wiredRegion = src.slice(wiredStart, wiredStart + 2500);
+  assert.ok(/runCliBuild\s*\(/.test(wiredRegion),
+    "the wired branch MUST call runCliBuild() when status is not-ok, BEFORE announcing grep-fallback. " +
+    "[RULE] scan-builds-index-when-absent");
+  // 4. After a build it must RE-PROBE status (so a successful build actually wires the graph).
+  assert.ok(/runCliBuild[\s\S]{0,500}runCli\("status"/.test(wiredRegion),
+    "after runCliBuild succeeds, the wired branch MUST re-probe `runCli(\"status\")` so the built graph is used.");
+});
