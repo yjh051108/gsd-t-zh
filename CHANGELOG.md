@@ -2,6 +2,19 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.16.10] - 2026-07-01
+
+### Added — `/gsd-t-estimate`: Tekyz client estimate + PRD from a scan
+
+New standalone command that turns a completed scan (`.gsd-t/techdebt.md`) into a Tekyz client estimate (a Google Sheet with a T-Shirt-Size tab + a Team-Mix cross-check) and a matching PRD deliverable. Encodes the 7-phase Tekyz playbook proven on the HILO Figma ATOS project (21 criticals → 32.73 eng-days → $13,090–$16,362).
+
+- `commands/gsd-t-estimate.md` — the skill: scope + read register; client renumber to TD-1 (range-bounded, archives untouched, second pass for bare/chained refs); T-shirt sizing (XS.25/S.5/M1/L3/XL5/XXL7, FE+BE columns independent); familiarization bump for new teams (bump SIZE not MF, never cross the M→L 3× cliff); Google Sheet write via a throwaway service-account + JWT (gcloud's spreadsheets scope is Google-blocked); domain grouping + SUMIF-range widen; Team-Mix reconcile; PRD with FR↔TD crosswalk + estimate-not-quote disclaimer + §10-syncs-the-sheet; three-total verify.
+- `templates/playbooks/tekyz-estimation-and-prd-playbook.md` — bundled reference (ships in the package so the skill works in a fresh install).
+- `commands/gsd-t-help.md`, `templates/CLAUDE-global.md`, `README.md` — doc-ripple (help summary, successor mapping `scan → estimate`, commands table).
+- `test/filesystem.test.js` — command count 45→46 / 51→52.
+
+Note: this produces a paid CLIENT estimate — the "no cost estimates" rule governs GSD-T's own Max-funded build work, not client deliverables.
+
 ## [4.15.10] - 2026-06-30
 
 ### Added — scan builds the graph index when absent + repo-labeled `share/` export
