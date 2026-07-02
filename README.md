@@ -186,7 +186,7 @@ This will replace changed command files, back up your CLAUDE.md if customized, a
 | `/gsd-t-scan` | Deep codebase analysis → techdebt.md | Manual |
 | `/gsd-t-gap-analysis` | Requirements gap analysis — spec vs. existing code | Manual |
 | `/gsd-t-promote-debt` | Convert techdebt items to milestones | Manual |
-| `/gsd-t-estimate` | Turn a scan into a Tekyz client estimate (Google Sheet: T-Shirt Size + Team Mix) + matching PRD | Manual |
+| `/gsd-t-estimate` | Turn any work doc (scan, requirements, feature/app spec) into a Tekyz client estimate (Google Sheet: T-Shirt Size + Team Mix) + matching PRD — supervised, with an operator-arbitrated Estimate Red Team | Manual |
 | `/gsd-t-populate` | Auto-populate docs from existing codebase | Manual |
 | `/gsd-t-design-decompose` | Decompose design into element/widget/page contracts | Manual |
 

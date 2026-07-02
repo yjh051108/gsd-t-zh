@@ -2,6 +2,29 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.17.10] - 2026-07-01
+
+### Changed — `/gsd-t-estimate` v2: generalized + supervised + adversarial, with a permanent Sheets service account
+
+Reshaped the estimator from scan-only to a general work-document pricer, made it human-in-the-loop, added an operator-arbitrated Estimate Red Team, and replaced the throwaway-per-run Google service account with a permanent reusable one.
+
+- **Input generalized** — scan register OR new-feature/new-app requirements doc OR PRD-in; line-items become findings or requirements (Step 0 classifies + picks id vocabulary).
+- **Numbering hygiene** — renumber only when numbering is absent / non-sequential / doesn't start at 1; preserve hierarchical numbering (`1`/`1.1`/`1.1.1`), never flatten.
+- **Estimate Adjustments** (Step 2.5) broadened from familiarization-only to familiarization + R&D/unknown-approach/spike risk, documented per-item; M→L 3× cliff caution retained.
+- **Parameterized** — rate / hoursPerDay / sizeScale / totalMF / highFactor / sheet template / GCP project via `$ARGUMENTS` or `.gsd-t/estimate-config.json`; defaults are Tekyz values, always named in the report (no silent default).
+- **Human-in-the-loop** — judgment phases (sizing, adjustments, PRD, Red Team) pause for operator review; mechanical phases flow-but-show.
+- **NEW Step 8 Estimate Red Team** — adversarial pass on under-sizing / missing line-items / optimistic multipliers / cross-check integrity; **operator is the final arbiter** (argue until concede or a definitive ruling; Red Team then grudgingly accepts and may document overridden objections to `share/<Repo>-estimate-redteam-notes.md`).
+- **Sheet write: permanent reusable service account** — Step 0 asks for the sheet URL first + extracts the id; Step 5 reuses a permanent SA (`gsd-t-sheets-writer@ai-estimator-415612.iam.gserviceaccount.com`, key at `~/.claude/gsd-t-secrets/…`, chmod 600, outside any repo) instead of creating+deleting a throwaway each run. Recreation breaks existing sheet shares, so the SA is never deleted; each sheet is shared with it once.
+
+- `commands/gsd-t-estimate.md`: full rewrite (generalization, HITL, Step 8 Red Team, Step 0 URL-first, Step 5 permanent SA, config table).
+- `templates/estimate-config.json`: new optional documented override (installed to `~/.claude/templates/` via `SHARED_TEMPLATES`, not auto-scaffolded into projects).
+- `bin/gsd-t.js`: `estimate-config.json` added to `SHARED_TEMPLATES`.
+- `templates/playbooks/tekyz-estimation-and-prd-playbook.md`: header + Phase 5 updated to match.
+- `commands/gsd-t-help.md`, `README.md`, `GSD-T-README.md`: description + version-history ripple.
+- `.gsd-t/contracts/graph-metrics-contract.md`: `doMetrics` line citation 4742→4743 (shifted by the `SHARED_TEMPLATES` edit; keeps the M99 T6 line-ref test green).
+
+Also captured two HIGH-priority framework-default backlog items (#47 universal build-number rule, #48 universal trace + audit logging) — promote-later; no code yet.
+
 ## [4.16.10] - 2026-07-01
 
 ### Added — `/gsd-t-estimate`: Tekyz client estimate + PRD from a scan

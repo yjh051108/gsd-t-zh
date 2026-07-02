@@ -1708,6 +1708,7 @@ const SHARED_TEMPLATES = [
   "page-contract.md",
   "design-contract.md",
   "shared-services-contract.md",
+  "estimate-config.json",
 ];
 
 function installSharedTemplates() {

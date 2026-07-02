@@ -1,9 +1,17 @@
 # Tekyz Estimation + PRD Playbook
 
 > Reusable procedure for producing a Tekyz client estimate (Google Sheet: T-Shirt
-> Size + Team Mix) and a matching PRD deliverable, from a GSD-T tech-debt scan.
-> Proven on the HILO Figma ATOS project (21 criticals → 32.73 eng-days →
-> $13,090–$16,362). Apply to E-Learning and any other GSD-T client project.
+> Size + Team Mix) and a matching PRD deliverable, from **any structured work
+> document** — a GSD-T tech-debt scan register, a new-feature or new-application
+> requirements doc, or an existing PRD. Proven on the HILO Figma ATOS project
+> (21 criticals → 32.73 eng-days → $13,090–$16,362). Apply to E-Learning and any
+> other GSD-T client project.
+>
+> **This process is SUPERVISED and JUDGMENT-HEAVY.** The operator reviews the
+> judgment phases (sizing, adjustments, PRD) and is the FINAL ARBITER of the
+> Estimate Red Team (Phase 8). It does not run autonomously. Rate + sheet template
+> + factors are parameterized (defaults are the Tekyz values below). See
+> `commands/gsd-t-estimate.md` for the authoritative, current phase list.
 
 Related memory: `tekyz-estimation-method`, `tekyz-familiarization-bump`,
 `tekyz-client-prd-structure`, `tekyz-tech-debt-numbering-caution`,
@@ -81,10 +89,20 @@ cells does NOT auto-expand hardcoded ranges; only `insertDimension` shifts them.
 
 ## Phase 5 — Writing to the Google Sheet (auth)
 
-gcloud's `spreadsheets` scope is **blocked by Google**. Use a **throwaway service
-account** (see `google-sheets-service-account-workaround` memory): create SA → mint
-key → user shares sheet with SA email as Editor → JWT (RS256 via openssl) → token →
-Sheets v4 REST (`values PUT` / `:batchUpdate`). Clean up the SA + key when done.
+gcloud's `spreadsheets` OAuth scope is **blocked by Google** (user ADC unusable).
+Use the **PERMANENT reusable service account** (see
+`google-sheets-service-account-workaround` memory + `commands/gsd-t-estimate.md`
+Step 5 for the authoritative runbook):
+- **SA (share-target):** `gsd-t-sheets-writer@ai-estimator-415612.iam.gserviceaccount.com`
+- **Project:** `ai-estimator-415612` · **Key:** `~/.claude/gsd-t-secrets/gsd-t-sheets-writer-key.json` (chmod 600).
+
+Flow: operator pastes sheet URL → extract id → shares sheet with the SA email as
+Editor (one-time per sheet — SA is permanent) → JWT (RS256 via openssl) → token →
+Sheets v4 REST (`values PUT` / `:batchUpdate`; reads via `GET ...includeGridData`).
+Gotchas: `X-Goog-User-Project` header for 403 quota; `urllib.parse.quote` every
+range; `insertDimension` to shift hardcoded SUMIF ranges; full `spreadsheets` scope
+(not `drive.file`); JWT `exp=now+3600`, mint fresh each run.
+**NEVER delete/recreate the SA** — recreation breaks every existing sheet share.
 
 ---
 

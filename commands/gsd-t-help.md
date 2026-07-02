@@ -359,10 +359,10 @@ Use these when user asks for help on a specific command:
 - **Use when**: Ready to address technical debt items
 
 ### estimate
-- **Summary**: Turn a completed scan (`.gsd-t/techdebt.md`) into a Tekyz client estimate (Google Sheet: T-Shirt Size + Team Mix) and a matching PRD deliverable
+- **Summary**: Turn any structured work document — a scan register, a new-feature or new-app requirements doc, or a PRD-in — into a Tekyz client estimate (Google Sheet: T-Shirt Size + Team Mix) and a matching PRD deliverable
 - **Auto-invoked**: No
-- **Updates**: the Tekyz estimate Google Sheet + `share/<Repo>-PRD-*.md` (and, if renumbered, the register/docs/scan files)
-- **Use when**: A scan is done and you need a client-facing paid estimate + PRD (T-shirt sizing, dollar range, sign-off). Encodes the 7-phase Tekyz playbook (`~/.claude/playbooks/tekyz-estimation-and-prd-playbook.md`)
+- **Updates**: the Tekyz estimate Google Sheet + `share/<Repo>-PRD-*.md` (and, if renumbered, the source doc/docs/scan files) + optional `share/<Repo>-estimate-redteam-notes.md`
+- **Use when**: You need a client-facing paid estimate + PRD (T-shirt sizing, dollar range, sign-off) from a scan OR a requirements/feature/app spec. **SUPERVISED** — judgment phases (sizing, adjustments, PRD, Red Team) pause for your review; **you are the final arbiter** of an Estimate Red Team that challenges the numbers. Rate + sheet template + factors are parameterized (default Tekyz). Encodes the Tekyz playbook (`~/.claude/playbooks/tekyz-estimation-and-prd-playbook.md`)
 
 ### populate
 - **Summary**: Auto-populate all living docs from existing codebase analysis
