@@ -34,7 +34,8 @@ export const meta = {
     { title: "Probe",         detail: "volume probe → per-area slice list", model: "sonnet" },
     { title: "Graph-Wiring",  detail: "M94-D6: build index if absent + query structural slice (dead-code/dangling/cluster) → inject into finders ADDITIVELY; fallback announced on graph-unavailable", model: "haiku" },
     { title: "Deep Scan",     detail: "pipeline: per-slice deep finder (graph-augmented when wired) → single verify" },
-    { title: "Synthesis",     detail: "archive prior + write fresh register + git", model: "opus" },
+    { title: "Synthesis",     detail: "archive prior + write fresh register (type-grouped within severity) + git", model: "opus" },
+    { title: "Consolidation", detail: "opus + graph-assisted: high-confidence clusters of TDs to fix as one workstream → appended to register", model: "opus" },
     { title: "Document",      detail: "living docs + 5 dimension files (per-doc fan-out)" },
     { title: "Plain-English", detail: "non-technical companion: batched gen + severity-grouped chunked write" },
   ],
@@ -785,6 +786,35 @@ function ascii(s) {
     .replace(/…/g, "...")              // ellipsis
     .replace(/[ \t]+\n/g, "\n");            // tidy trailing whitespace
 }
+
+// Register ordering — SINGLE source of truth so the formatter's TD-numbering and the
+// consolidation stage's TD references stay identical. Within each severity, findings
+// are sub-grouped by TYPE (derived from `area`). typeOf() maps free-text area→bucket;
+// unmatched → "Other". `orderedFindings` is the final, numbered sequence (TD-tdStart..).
+function typeOf(f) {
+  const a = String(f.area || "").toLowerCase() + " " + String(f.title || "").toLowerCase();
+  if (/(vuln|idor|auth|injection|xss|csrf|secret|privilege|tenant|security|rce|ssrf)/.test(a)) return "Security / Vulnerability";
+  if (/(dead.?code|unreachable|unused|orphan|never (called|used|imported))/.test(a)) return "Dead Code";
+  if (/(duplicat|redundant|reimplement|copy)/.test(a)) return "Duplication";
+  if (/(data.?integrity|race|concurren|transaction|idempoten|double|constraint)/.test(a)) return "Data Integrity / Concurrency";
+  if (/(perf|n\+1|slow|latency|batch|query.?count)/.test(a)) return "Performance";
+  if (/(contract.?drift|schema.?drift|api.?mismatch|404|endpoint.*(missing|not exist))/.test(a)) return "Contract Drift";
+  if (/(test|coverage|shallow|flaky)/.test(a)) return "Testing";
+  return "Other";
+}
+const TYPE_ORDER = ["Security / Vulnerability", "Dead Code", "Duplication", "Data Integrity / Concurrency", "Performance", "Contract Drift", "Testing", "Other"];
+const SEV_ORDER2 = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+// Stable sort: severity, then type, then original index. Computed ONCE; both consumers use it.
+const orderedFindings = finalFindings
+  .map((f, i) => ({ f, i, t: typeOf(f) }))
+  .sort((a, b) => {
+    const sv = (SEV_ORDER2[a.f.severity] ?? 9) - (SEV_ORDER2[b.f.severity] ?? 9);
+    if (sv !== 0) return sv;
+    const tv = TYPE_ORDER.indexOf(a.t) - TYPE_ORDER.indexOf(b.t);
+    if (tv !== 0) return tv;
+    return a.i - b.i;
+  });
+
 function fmtChunks(today) {
   const sevHead = { CRITICAL: "🔴 Critical", HIGH: "🟠 High", MEDIUM: "🟡 Medium", LOW: "🟢 Low" };
   const head = [];
@@ -820,11 +850,17 @@ function fmtChunks(today) {
 
   const CHUNK_MAX = 30000;
   const chunks = [head.join("\n")];
-  let buf = "", n = tdStart, lastSev = null;
+  let buf = "", n = tdStart, lastSev = null, lastType = null;
   const flush = () => { if (buf) { chunks.push(buf); buf = ""; } };
-  for (const f of finalFindings) {
+  // Consume the shared `orderedFindings` (severity → type → original-index) so the
+  // TD numbers assigned here are IDENTICAL to those the consolidation stage references.
+  for (const { f, t } of orderedFindings) {
     let piece = "";
-    if (f.severity !== lastSev) { piece += `\n## ${sevHead[f.severity] || f.severity} Priority\n\n`; lastSev = f.severity; }
+    if (f.severity !== lastSev) { piece += `\n## ${sevHead[f.severity] || f.severity} Priority\n\n`; lastSev = f.severity; lastType = null; }
+    // Type sub-heading uses a bold marker line (NOT `###`) so it never collides with
+    // the `### TD-N` item headings that downstream tools grep for. ASCII hyphens only
+    // (M76: no em/en-dashes in fmtChunks literals).
+    if (t !== lastType) { piece += `**-- ${t} --**\n\n`; lastType = t; }
     piece += itemMd(f, n++);
     if (buf.length + piece.length > CHUNK_MAX) flush();
     buf += piece;
@@ -888,6 +924,99 @@ log(`register written in ${chunkOk}/${chunks.length} chunks (${counts.total} fin
 
 const synthesis = { status: "written", counts, archivePath, tdRange: `TD-${tdStart}..TD-${lastTd}`, finalFindings };
 log(`register written: ${JSON.stringify(synthesis.counts)} (${synthesis.tdRange})`);
+
+// ── Consolidation Opportunities (opus + graph-assisted) ────────────────────────
+// After the register is written (TD numbers final), cluster HIGH-CONFIDENCE groups
+// of TDs that share a root and should be fixed as ONE workstream (duplicate-function
+// families, batch dead-code deletions, a guard-pattern missing across N sites, god-file
+// splits). Only tight clusters — ungrouped TDs stay standalone (user directive). The
+// section is APPENDED to the END of the register, after all individual items.
+// Graph-assisted: an agent may run `gsd-t graph who-imports/who-calls/blast-radius`
+// (project-local bin first, else global) on a TD's files to confirm two TDs truly share
+// code before grouping — grounds the clustering in real relationships, not just prose
+// similarity. Best-effort: any failure leaves the register intact (no section).
+phase("Consolidation");
+try {
+  // Number from the SHARED `orderedFindings` so each TD-N here is EXACTLY the id the
+  // register wrote (severity → type → original-index — the single ordering source).
+  let _n = tdStart;
+  const consInput = orderedFindings.map(({ f }) => {
+    const td = _n++;
+    return `TD-${td} [${f.severity}] (${ascii(f.area) || "?"}) ${ascii(f.title)} @ ${(f.files && f.files[0]) || "?"}`;
+  }).join("\n");
+  const CONS_SCHEMA = {
+    type: "object", required: ["groups"], additionalProperties: false,
+    properties: {
+      groups: {
+        type: "array",
+        items: {
+          type: "object", required: ["title", "members", "sharedRoot", "recommendedAction"], additionalProperties: false,
+          properties: {
+            title: { type: "string" },
+            members: { type: "array", items: { type: "string" } },   // e.g. ["TD-75","TD-143"]
+            sharedRoot: { type: "string" },
+            recommendedAction: { type: "string" },
+            effort: { type: "string" },                              // GSD-T-native units
+          },
+        },
+      },
+      notes: { type: "string" },
+    },
+  };
+  const consAgent = await agent(
+    [
+      `You are identifying CONSOLIDATION OPPORTUNITIES in a tech-debt register — sets of findings that share a ROOT and should be fixed as ONE workstream, not one-by-one.`,
+      `Below are ${finalFindings.length} findings as "TD-N [SEVERITY] (area) title @ location".`,
+      ``,
+      `Group ONLY HIGH-CONFIDENCE clusters (user directive — tight, not loose themes):`,
+      `  • duplicate-functionality families (same logic implemented 2+ times / diverging copies)`,
+      `  • batch dead-code deletions (multiple never-used modules/components removable together)`,
+      `  • a single missing pattern repeated across N sites (e.g. the same auth guard absent on many routes)`,
+      `  • god-file / god-object splits touching several TDs`,
+      `  • the SAME remediation applied in multiple places`,
+      `Findings with no strong shared root MUST be left OUT (they stay standalone — do not force weak groupings).`,
+      ``,
+      `GRAPH-ASSIST (optional, strengthens confidence): to confirm two TDs truly share code, you MAY run the code graph via Bash on their files — try a project-local binary first then the global one:`,
+      `  \`${projectDir}/bin/gsd-t-graph-query-cli.cjs who-imports <file>\`  OR  \`gsd-t graph who-imports <file>\` (also who-calls / blast-radius). If the graph is unavailable, fall back to the location/area text — do NOT fail.`,
+      ``,
+      `Return "groups": each = { title, members: ["TD-N",...] (>=2), sharedRoot, recommendedAction (which to keep/delete/extract), effort (GSD-T-native units: domain/wave/spawn count — NEVER human-hours) }. If nothing clusters with high confidence, return groups: [].`,
+      ``,
+      consInput.slice(0, 140000),
+    ].join("\n"),
+    { label: "consolidation:cluster", phase: "Consolidation", schema: CONS_SCHEMA, model: "opus" }
+  ).catch((e) => { log(`consolidation cluster failed (non-fatal): ${e && e.message}`); return null; });
+
+  const groups = (consAgent && Array.isArray(consAgent.groups)) ? consAgent.groups : [];
+  if (groups.length) {
+    const cs = [
+      ``, `---`, ``, `## 🧩 Consolidation Opportunities`, ``,
+      `> High-confidence clusters of findings that share a root cause and should be addressed as ONE workstream (candidates for a single consolidation milestone). Findings not listed here have no strong shared root and stand alone. Effort is in GSD-T-native units.`, ``,
+    ];
+    groups.forEach((g, gi) => {
+      cs.push(`### CG-${gi + 1} - ${ascii(g.title)}`);
+      cs.push(`- **Members:** ${(g.members || []).map((m) => ascii(m)).join(", ")}`);
+      cs.push(`- **Shared root:** ${ascii(g.sharedRoot)}`);
+      cs.push(`- **Recommended action:** ${ascii(g.recommendedAction)}`);
+      if (g.effort) cs.push(`- **Effort:** ${ascii(g.effort)}`);
+      cs.push("");
+    });
+    if (consAgent.notes) cs.push(`> Notes: ${ascii(consAgent.notes)}`, "");
+    // Append via a bounded agent Bash heredoc (orchestrator has no fs).
+    const consBlock = cs.join("\n");
+    await agent(
+      [
+        `APPEND EXACTLY the content between the markers to the END of \`${regPath}\` (append — do NOT overwrite existing content). Use a Bash heredoc: \`cat >> ${regPath} <<'GSDTEOF'\` … \`GSDTEOF\`. After writing, reply ONLY "OK".`,
+        ``, `<<<CHUNK>>>`, consBlock, `<<<END_CHUNK>>>`,
+      ].join("\n"),
+      { label: "consolidation:write", phase: "Consolidation", model: "haiku" }
+    ).catch((e) => log(`consolidation append uncertain (non-fatal): ${e && e.message}`));
+    log(`consolidation: ${groups.length} high-confidence group(s) appended to register`);
+  } else {
+    log(`consolidation: no high-confidence clusters found (register unchanged)`);
+  }
+} catch (e) {
+  log(`consolidation phase failed (non-fatal — register intact): ${e && e.message}`);
+}
 
 // Document — per-doc fan-out. Each agent writes its file via Write/Edit (its tools).
 // The orchestrator passes the findings + (for plain-english) tells the agent to

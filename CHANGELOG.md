@@ -2,6 +2,18 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.18.10] - 2026-07-03
+
+### Added — Scan Consolidation Opportunities + type-grouped register; init-scan-setup repo adoption
+
+The scan register is now organized by TD **type within each severity**, and a new **Consolidation** phase (opus + graph-assisted) appends a **🧩 Consolidation Opportunities** section listing high-confidence clusters of findings that share a root and should be fixed as one workstream. `/gsd-t-init-scan-setup` gains a **Step 0 "Adopt a Foreign Repo"** sanitization pass and a **Step 4a completeness check**, so repos built by others (or plain Claude) run correctly on this machine and an incomplete/hand-driven scan is caught and re-run.
+
+- `templates/workflows/gsd-t-scan.workflow.js`: register `fmtChunks` groups by `typeOf(area)` within severity via a shared `orderedFindings` ordering (so consolidation TD-N ids match the register exactly); new `Consolidation` phase (opus, graph-assisted via `who-imports`/`who-calls`/`blast-radius`) emits `CG-N` groups (members/sharedRoot/recommendedAction/effort) appended at the end; `meta.phases` +1. Best-effort — any failure leaves the register intact.
+- `commands/gsd-t-init-scan-setup.md`: Step 0 adoption (settings reconciled vs global, CLAUDE.md regenerated from fresh scan, no foreign/stale workflow-script execution) + Step 4a post-scan completeness check + 8-phase scan description + corrected graph note (`graphDB/`).
+- `commands/gsd-t-scan.md`: synthesis/consolidation phase description.
+- `.gsd-t/backlog.md`: split logging item #48 → #48 (trace) + #49 (audit) with full specs.
+- Lints green: M71 runtime-native, M85 tier-policy, M76 ascii. Suite 2631/2631.
+
 ## [4.17.10] - 2026-07-01
 
 ### Changed — `/gsd-t-estimate` v2: generalized + supervised + adversarial, with a permanent Sheets service account
