@@ -1,6 +1,64 @@
 # Integration Points
 
-## Current State: M99 — Graph-Store Migration + Layer-1/2 Decision Telemetry + Metrics Rollup — RE-PLANNED 2026-06-30 (pre-mortem RE-RUN). The prior plan (commit 3b5b33b) was BLOCKED by the M83 pre-mortem with 9 falsifiable failure conditions lacking a required test + the traceability gate flagged 16 violations (all M99 tasks used `**Files (ImplPath):**` — the gate's `FILES_FIELD_RE` only matches a plain `Files:` label, so `(ImplPath)` between `files` and `:` defeated it; both headline tasks put `⭐ Headline: true` in the heading suffix instead of a standalone `**Headline:** true` field line). **THIS RE-PLAN folds all 9 pre-mortem findings into the 3 tasks.md + resolves all 16 traceability violations** (renamed every `**Files (ImplPath):**`→`**Files:**`; added standalone `**Headline:** true` field lines to D1-T2 + D3-T1). Both gates now pass: traceability `ok:true` (0/108 violations) + pre-mortem CLEARED. **The 9 folded findings:** #1 CRITICAL (the killer) — D1-T4's query-cli rewire MISSED the PRIMARY cwd-walking store-discovery loop at `:107` (+ sibling fallbacks `:229`/`:460`); after migration to `.gsd-t/graphDB/graph.db` it would still search the OLD `.gsd-t/graph.db` → graph-unavailable on every migrated project (NiceNote-class invisible fallback). FIX: extend the rewire list + a REQUIRED end-to-end `who-imports`-via-discovery-loop test on a migrated project (D1-T2 test (b) / D1-T4). #2 CRITICAL — no-raw-literals grep would false-fail on 2 SPIKE files writing to throwaway temp dirs (`gsd-t-graph-k1-sqlite-stream.cjs:81`, `gsd-t-graph-store-bakeoff.cjs:237`); FIX: explicit marker-keyed allow-list (D1-T5). #3 HIGH — `:514`–`:516` is a TWO-branch ternary; the `.db` branch goes 3-up post-migration but the JSONL `graph-index/` branch stays 2-up — a one-size `deriveProjectRoot` breaks JSONL; FIX: branch-aware depth + a JSONL-branch test (D1-T1/T4). #4 HIGH — Criterion-11 byte-identical had no FAIL-OPEN test; FIX: stub `append_ledger_line` to THROW, assert decision + output byte-identical to telemetry-OFF (D2-T1/T2). #5 HIGH — rotation had no ROLLOVER-BOUNDARY test; FIX: `GSDT_GRAPH_TELEMETRY_MAXBYTES` test-only override drives a real rollover at a tiny cap (D1-T3). #6 MED — no WAL-specific interruption test; FIX: kill after copying `graph.db` before `-wal`, assert migrated result set equals pre-migration (D1-T2 test (c)). #7 MED — contract cites `doMetrics` at `:5135` (the dispatch); the FUNCTION def is `:4697`; FIX: correct the ref + a line-ref-correctness test (D3-T3). #8 MED — north-star: a `fallback-announced` wiring line co-occurring with a same-window Layer-1 `outcome:'hit'` is the machine-visible contradiction; FIX: rollup computes + reports `fallbackAnnouncedDespiteHit` (D3-T1). #9 MED — the M81 sandbox has NO `process`/`env`/`fs`, so a workflow CANNOT `setenv GSDT_GRAPH_CONSUMER` the shell way; FIX: label passed as a `--consumer <name>` ARG on the runCli ledger-write + intercept hooks resolve the consumer from the workflow context in their stdin payload (fallback `'cli'` only when no workflow context); a test asserts an interception inside a labeled workflow carries that label, not `'cli'` (D2-T3). Structure UNCHANGED: **3 file-disjoint domains, 2 waves** (D1 Wave-1 serial gate; D2∥D3 Wave-2).
+## Current State: M100 — Universal Trace + Audit Logging — PLANNED 2026-07-08. Five file-disjoint domains, four waves. Two RISK-FIRST spikes (d1 storage-scaffolder human-approval PAUSE + d3 verify envelope/PII/no-collapse/immutability gate) proven in Wave 1 BEFORE any machinery builds on them; the two streams (d2 trace, d4 audit) are DESIGNED-FRESH and mechanically no-collapse by sharing NO file/module/template/test; d5 lands the two CLAUDE.md defaults + brownfield migration + the greenfield UMI-Automation pilot (the HEADLINE, both streams live through the gate). Sole-editor invariants: d1 owns EVERY edit to `bin/gsd-t.js` (incl. d5's `case "migrate-logging"`); d3 owns the ONE registration line in `bin/gsd-t-verify-gate.cjs`.
+
+### M100 Wave Groupings (the integration shape)
+
+```
+WAVE 1 — RISK-FIRST SPIKES (the two highest-risk novel pieces proven standalone; run CONCURRENTLY, file-disjoint).
+  d1-storage-scaffolder-pause  (sole bin/gsd-t.js editor)
+    M100-D1-T1 pause + no-silent-pick (KILLING TEST: no approve → no backend written)
+    M100-D1-T2 deterministic resume + choice-record in project docs
+    M100-D1-T3 dispatch wiring + published seam (incl. d5's migrate-logging case)
+  d3-verify-envelope-gate  (sole bin/gsd-t-verify-gate.cjs editor — ONE registration line)
+    M100-D3-T1 structural predicate (KILLING TEST: valid/missing/wrong-type/PII/novel/COLLAPSED synthetic envelopes)
+    M100-D3-T2 immutability + retention-configurable + audit-default-except-opt-out
+    M100-D3-T3 register into verify gate, FAIL-CLOSED
+
+  ── HARD GATE: both Wave-1 spikes green (seam published + envelope gate registered) ──
+
+WAVE 2 — MACHINERY (DESIGNED FRESH; run CONCURRENTLY; NO shared file/module/template/test → no-collapse by construction).
+  d2-trace-machinery
+    M100-D2-T1 trace module template — fire-and-forget emitter + dual toggle (setTraceEnabled + TRACE=1) + PII bar
+    M100-D2-T2 trace-half CATEGORY distiller (from plan; never confabulate)
+  d4-audit-machinery
+    M100-D4-T1 audit module template — append-only IMMUTABLE (real SQLite rejects UPDATE/DELETE) + query surface
+    M100-D4-T2 audit-half ACTION distiller + opt-out convention
+
+WAVE 3 — DEFAULTS + MIGRATION (d5; depends on all machinery).
+    M100-D5-T1 two CLAUDE.md hard rules rippled across 4 reference docs (one pass)
+    M100-D5-T2 brownfield migration command on a THROWAWAY fixture (KILLING TEST: additive/non-destructive)
+
+WAVE 4 — HEADLINE PILOT (d5; the falsifiable payoff).
+    M100-D5-T3 [Headline] UMI-Automation greenfield build-into (separate repo) — BOTH streams live,
+                trace on Grain/Airtable/Anthropic/Apify REST + audit on PodCoach draft-approval,
+                run through d3's gate, no-collapse; storage choice recorded in UMI CLAUDE.md
+```
+
+### M100 Producer → Consumer Seams
+
+| Producer | Consumer | Interface |
+|----------|----------|-----------|
+| d1 `scaffoldLogging()` seam envelope (`backend`/`traceSink`/`auditSink`/`recordedAt`/`resumeToken`) | d2, d4, d5 | `logging-scaffold-seam-contract.md` — transport selection + queryable audit sink |
+| d1 `bin/gsd-t.js` `case "migrate-logging"` | d5 `bin/gsd-t-migrate-logging.cjs` | d1 wires dispatch on d5's behalf (d5 never edits `bin/gsd-t.js`) |
+| d3 `bin/gsd-t-logging-envelope-check.cjs` (`checkEnvelope(record,{stream})`) | d2, d4, d5 | `logging-verify-gate-contract.md` — both streams must PASS; no-collapse enforced |
+| d5 `logging-schema-distillation-contract.md` | d2 `gsd-t-trace-distill.cjs`, d4 `gsd-t-audit-distill.cjs` | per-project category/action distillation (from plan, never confabulated) |
+| d2 `trace-module.template.ts` + d4 `audit-module.template.ts` | d5 UMI pilot | both instantiated in UMI; must pass d3 gate for both streams |
+
+### M100 Invariants (mechanized, not attested)
+
+| Invariant | Mechanism |
+|-----------|-----------|
+| Trace & audit NEVER collapse | d2/d4 share NO file/module/template/test (scope boundary) + d3 gate FAILS a collapsed single-stream record |
+| Audit append-only IMMUTABLE | write helper exposes no update/delete + real SQLite REJECTS UPDATE/DELETE (M100-D4-T1 killing test) |
+| Audit retention configurable + audit default-except-opt-out | d3 gate checks `audit-retention-configurable` + `audit-default-except-optout` (M100-D3-T2) |
+| Trace PII-barred + toggleable | d2 emitter rejects PII shape + dual toggle; d3 gate FAILS PII-in-trace |
+| Storage stack-adaptive with HUMAN-APPROVAL PAUSE | d1 scaffolder returns `status:"PAUSED"` with no approve — never silently picks (M100-D1-T1 killing test) |
+| Structural gate, never hardcodes a value | d3 predicate parses shape as shape; a novel category/action PASSES (M100-D3-T1) |
+
+---
+
+## Prior State: M99 — Graph-Store Migration + Layer-1/2 Decision Telemetry + Metrics Rollup — RE-PLANNED 2026-06-30 (pre-mortem RE-RUN). The prior plan (commit 3b5b33b) was BLOCKED by the M83 pre-mortem with 9 falsifiable failure conditions lacking a required test + the traceability gate flagged 16 violations (all M99 tasks used `**Files (ImplPath):**` — the gate's `FILES_FIELD_RE` only matches a plain `Files:` label, so `(ImplPath)` between `files` and `:` defeated it; both headline tasks put `⭐ Headline: true` in the heading suffix instead of a standalone `**Headline:** true` field line). **THIS RE-PLAN folds all 9 pre-mortem findings into the 3 tasks.md + resolves all 16 traceability violations** (renamed every `**Files (ImplPath):**`→`**Files:**`; added standalone `**Headline:** true` field lines to D1-T2 + D3-T1). Both gates now pass: traceability `ok:true` (0/108 violations) + pre-mortem CLEARED. **The 9 folded findings:** #1 CRITICAL (the killer) — D1-T4's query-cli rewire MISSED the PRIMARY cwd-walking store-discovery loop at `:107` (+ sibling fallbacks `:229`/`:460`); after migration to `.gsd-t/graphDB/graph.db` it would still search the OLD `.gsd-t/graph.db` → graph-unavailable on every migrated project (NiceNote-class invisible fallback). FIX: extend the rewire list + a REQUIRED end-to-end `who-imports`-via-discovery-loop test on a migrated project (D1-T2 test (b) / D1-T4). #2 CRITICAL — no-raw-literals grep would false-fail on 2 SPIKE files writing to throwaway temp dirs (`gsd-t-graph-k1-sqlite-stream.cjs:81`, `gsd-t-graph-store-bakeoff.cjs:237`); FIX: explicit marker-keyed allow-list (D1-T5). #3 HIGH — `:514`–`:516` is a TWO-branch ternary; the `.db` branch goes 3-up post-migration but the JSONL `graph-index/` branch stays 2-up — a one-size `deriveProjectRoot` breaks JSONL; FIX: branch-aware depth + a JSONL-branch test (D1-T1/T4). #4 HIGH — Criterion-11 byte-identical had no FAIL-OPEN test; FIX: stub `append_ledger_line` to THROW, assert decision + output byte-identical to telemetry-OFF (D2-T1/T2). #5 HIGH — rotation had no ROLLOVER-BOUNDARY test; FIX: `GSDT_GRAPH_TELEMETRY_MAXBYTES` test-only override drives a real rollover at a tiny cap (D1-T3). #6 MED — no WAL-specific interruption test; FIX: kill after copying `graph.db` before `-wal`, assert migrated result set equals pre-migration (D1-T2 test (c)). #7 MED — contract cites `doMetrics` at `:5135` (the dispatch); the FUNCTION def is `:4697`; FIX: correct the ref + a line-ref-correctness test (D3-T3). #8 MED — north-star: a `fallback-announced` wiring line co-occurring with a same-window Layer-1 `outcome:'hit'` is the machine-visible contradiction; FIX: rollup computes + reports `fallbackAnnouncedDespiteHit` (D3-T1). #9 MED — the M81 sandbox has NO `process`/`env`/`fs`, so a workflow CANNOT `setenv GSDT_GRAPH_CONSUMER` the shell way; FIX: label passed as a `--consumer <name>` ARG on the runCli ledger-write + intercept hooks resolve the consumer from the workflow context in their stdin payload (fallback `'cli'` only when no workflow context); a test asserts an interception inside a labeled workflow carries that label, not `'cli'` (D2-T3). Structure UNCHANGED: **3 file-disjoint domains, 2 waves** (D1 Wave-1 serial gate; D2∥D3 Wave-2).
 
 ### M99 Wave Groupings (the integration shape)
 

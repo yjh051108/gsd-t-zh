@@ -3,6 +3,13 @@
 ## Responsibility
 TIER 0 (RISKIEST — Wave 1 spike). The stack-adaptive storage SCAFFOLDER that STOPS for human approval and NEVER silently picks. Owns the sole init-scaffold seam and ALL edits to the single-file `bin/gsd-t.js` hot spot (init dispatch + any new dispatch case), so no other domain co-owns that file. Publishes the scaffolder→machinery handoff seam contract that d2/d4/d5 consume.
 
+## Files Owned
+- `bin/gsd-t-logging-scaffolder.cjs`
+- `bin/gsd-t.js`
+- `commands/gsd-t-init.md`
+- `test/m100-d1-storage-scaffolder-pause.test.js`
+- `.gsd-t/contracts/logging-scaffold-seam-contract.md`
+
 ## Owned Files/Directories
 - `bin/gsd-t-logging-scaffolder.cjs` — stack detection, alternative presentation, human-approval PAUSE, choice recording, deterministic resume.
 - `bin/gsd-t.js` — init dispatch wiring + any new dispatch case (SOLE M100 editor of this file, incl. d5's `case "migrate-logging"` on d5's behalf).

@@ -3,6 +3,20 @@
 ## Responsibility
 TIER 3 + TIER 4 (Waves 3-4 — depends on ALL machinery). Two parts, sequenced but file-disjoint from every machinery domain: (Wave 3) the TWO CLAUDE.md hard rules (trace default every project; audit default except explicit opt-out) rippled across the sole-owned reference-doc set, plus the brownfield MIGRATION command proven on a throwaway fixture; (Wave 4) the UMI-Automation greenfield build-into pilot, ALL pilot files in the SEPARATE repo `/Users/david/projects/UMI-Automation`, trivially disjoint from every GSD-T-repo domain.
 
+## Files Owned
+- `templates/CLAUDE-global.md`
+- `README.md`
+- `GSD-T-README.md`
+- `commands/gsd-t-help.md`
+- `bin/gsd-t-migrate-logging.cjs`
+- `commands/gsd-t-migrate-logging.md`
+- `test/m100-d5-migration-fixture.test.js`
+- `.gsd-t/contracts/logging-schema-distillation-contract.md`
+- `/Users/david/projects/UMI-Automation/src/logging/trace.ts`
+- `/Users/david/projects/UMI-Automation/src/logging/audit.ts`
+- `/Users/david/projects/UMI-Automation/CLAUDE.md`
+- `/Users/david/projects/UMI-Automation/docs/infrastructure.md`
+
 ## Owned Files/Directories
 - `templates/CLAUDE-global.md` — the two logging hard rules (trace default; audit default-except-opt-out).
 - `README.md`, `GSD-T-README.md`, `commands/gsd-t-help.md` — reference-doc ripple of the two rules + the migration command.
