@@ -50,7 +50,7 @@ Append-only immutability has exactly ONE sanctioned exception: the retention `pr
 
 ## Admin query surface (mandatory — this is the whole point)
 
-A conformant audit implementation MUST provide a query/view surface filterable by **actor / target / time** — the "look back without GSD-T" surface. A store with no queryable surface violates this contract. Because audit is admin-QUERYABLE, a no-server project needs something QUERYABLE (embedded SQLite likely, not a flat file) — the scaffolder flags this at storage-approval time.
+A conformant audit implementation MUST provide a query/view surface filterable by **actor / target / time** — the "look back without GSD-T" surface. A store with no queryable surface violates this contract. Because audit is admin-QUERYABLE, a no-server project needs something QUERYABLE (embedded SQLite likely, not a flat file) — the scaffolder flags this at storage-approval time. This query entry point MUST be GSD-T-independent — reachable by the project's own admin tooling (an exported function, generated CLI, or route handler shipped in the audit module template) after GSD-T itself is uninstalled, not merely callable from within the GSD-T toolchain.
 
 ## Default + opt-out
 

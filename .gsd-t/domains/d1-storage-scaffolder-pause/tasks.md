@@ -42,11 +42,13 @@ W1 — RISK-FIRST spike, runs CONCURRENTLY with d3. Highest-risk novel piece (th
 - **Contract refs**: `logging-scaffold-seam-contract.md`
 - **Dependencies**: Requires M100-D1-T2
 - **Test**: `test/m100-d1-storage-scaffolder-pause.test.js` — asserts `scaffoldLogging()` returns the full seam envelope (`backend` / `traceSink` / `auditSink` / `recordedAt` / `resumeToken`) with `auditSink.kind` QUERYABLE (SQLite, not flat file) on no-server; asserts `bin/gsd-t.js` has a `migrate-logging` dispatch case delegating to `bin/gsd-t-migrate-logging.cjs` (d5's module).
-- **ImplPath**: `bin/gsd-t.js` init path calls `scaffoldLogging()`; a `case "migrate-logging":` in the dispatch switch requires-and-invokes `gsd-t-migrate-logging.cjs` (d5 owns the module, d1 owns the wiring).
+  - **Dispatch-halt-on-PAUSE killing sub-case (M100 pre-mortem FINDING, HIGH — capability built but the caller acting on it is never tested)**: an integration killing-test that drives the REAL init dispatch path in `bin/gsd-t.js` (not `scaffoldLogging` directly) with no recorded choice and asserts: (a) the init flow HALTS on `status:"PAUSED"` — it does NOT continue to write any trace/audit sink files; (b) no downstream module template is instantiated with an undefined/empty backend; (c) the process surfaces the `alternatives[]` to the user rather than consuming the paused envelope as a result. A dispatch that reads `backend:undefined` off the paused envelope and proceeds must FAIL this test.
+- **ImplPath**: `bin/gsd-t.js` init path calls `scaffoldLogging()`; a `case "migrate-logging":` in the dispatch switch requires-and-invokes `gsd-t-migrate-logging.cjs` (d5 owns the module, d1 owns the wiring). The init dispatch explicitly checks the returned envelope's `status` field: on `status:"PAUSED"` it halts BEFORE any sink/template write and surfaces `alternatives[]` to the user; it only proceeds to write trace/audit sinks when `status` is absent/resolved with a valid `backend`.
 - **Acceptance criteria**:
   - `bin/gsd-t.js` init dispatch calls the scaffolder; `case "migrate-logging"` wired here on d5's behalf (d5 does NOT edit `bin/gsd-t.js`).
   - `scaffoldLogging(...)` returns the seam envelope d2/d4/d5 consume.
   - Seam contract published (1.0.0) + referenced by consumers.
+  - Init dispatch HALTS on `status:"PAUSED"` before any sink write, instantiates no template with an undefined/empty backend, and surfaces `alternatives[]` — proven by the dispatch-halt-on-PAUSE integration killing-test above.
 
 ## Execution Estimate
 - Total tasks: 3
