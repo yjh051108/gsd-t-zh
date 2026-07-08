@@ -25,14 +25,23 @@ WAVE 2 — MACHINERY (DESIGNED FRESH; run CONCURRENTLY; NO shared file/module/te
     M100-D4-T1 audit module template — append-only IMMUTABLE (real SQLite rejects UPDATE/DELETE) + query surface
     M100-D4-T2 audit-half ACTION distiller + opt-out convention
 
-WAVE 3 — DEFAULTS + MIGRATION (d5; depends on all machinery).
-    M100-D5-T1 two CLAUDE.md hard rules rippled across 4 reference docs (one pass)
-    M100-D5-T2 brownfield migration command on a THROWAWAY fixture (KILLING TEST: additive/non-destructive)
+WAVE 3 — DEFAULTS + MIGRATION + SEAM-INTEGRATION (d5; depends on all machinery).
+    M100-D5-T1  two CLAUDE.md hard rules rippled across 4 reference docs (one pass)
+    M100-D5-T2  brownfield migration command on a THROWAWAY fixture (KILLING TEST: additive/non-destructive)
+    M100-D5-T2c opt-out shared-fixture seam test (round-2 F2): d4 writeOptOut → d3 gate over the SAME
+                 .gsd-t/audit-optout.json fixture (present→PASS, absent+no-store→FAIL)
+    M100-D5-T2d real-template durability composition test (round-2 F3): d3's real gate over d4's ACTUAL
+                 audit-module.template.ts (PASS real / FAIL mutated copy exposing update-delete or hardcoded retention)
 
-WAVE 4 — HEADLINE PILOT (d5; the falsifiable payoff).
-    M100-D5-T3 [Headline] UMI-Automation greenfield build-into (separate repo) — BOTH streams live,
-                trace on Grain/Airtable/Anthropic/Apify REST + audit on PodCoach draft-approval,
-                run through d3's gate, no-collapse; storage choice recorded in UMI CLAUDE.md
+WAVE 4 — UMI BOOTSTRAP + HEADLINE PILOT (d5; the falsifiable payoff; T2b precedes T3).
+    M100-D5-T2b UMI TS-toolchain bootstrap (round-2 F1, ADDITIVE + destructive-guard): package.json + real
+                 tsconfig + installed TS/tsx — runs BEFORE the pilot writes src/logging/*.ts; T3 depends on it
+    M100-D5-T3  [Headline] UMI-Automation greenfield build-into (separate repo) — BOTH streams live,
+                 trace on Grain/Airtable/Anthropic/Apify REST + audit on PodCoach draft-approval (distilled
+                 from UMI's REAL docs/plan.md, each category/action grep-traceable — none confabulated),
+                 run through d3's gate, no-collapse; storage choice recorded in UMI CLAUDE.md.
+                 Import-resolvability sub-case imports the modules through T2b's configured resolver
+                 (tsx import → live emitTrace/appendAudit symbol → exit 0) — FAILS pre-bootstrap, PASSES after T2b
 ```
 
 ### M100 Producer → Consumer Seams
@@ -44,6 +53,9 @@ WAVE 4 — HEADLINE PILOT (d5; the falsifiable payoff).
 | d3 `bin/gsd-t-logging-envelope-check.cjs` (`checkEnvelope(record,{stream})`) | d2, d4, d5 | `logging-verify-gate-contract.md` — both streams must PASS; no-collapse enforced |
 | d5 `logging-schema-distillation-contract.md` | d2 `gsd-t-trace-distill.cjs`, d4 `gsd-t-audit-distill.cjs` | per-project category/action distillation (from plan, never confabulated) |
 | d2 `trace-module.template.ts` + d4 `audit-module.template.ts` | d5 UMI pilot | both instantiated in UMI; must pass d3 gate for both streams |
+| d4 `writeOptOut(projectDir)` → `.gsd-t/audit-optout.json` | d3 `audit-default-except-optout` check | `audit-logging-contract.md` §opt-out-record — ONE shared artifact; fail-closed (unrecognized record = absent). Proven by M100-D5-T2c |
+| d4 ACTUAL `audit-module.template.ts` | d3 real durability gate | `audit-append-only-immutable` + `audit-retention-configurable` compose over the shipped template, not a stand-in. Proven by M100-D5-T2d |
+| d5 T2b UMI `package.json` + `tsconfig.json` + installed TS/tsx | d5 T3 pilot `src/logging/*.ts` | bootstrap-before-pilot — the pilot's import-resolvability sub-case fails pre-bootstrap, passes after (round-2 F1) |
 
 ### M100 Invariants (mechanized, not attested)
 
