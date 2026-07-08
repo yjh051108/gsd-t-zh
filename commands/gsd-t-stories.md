@@ -71,16 +71,18 @@ classDef newfeat   fill:#e2f0fb,stroke:#5b9bd5,color:#1f4e79,stroke-dasharray:4 
 
 The whole diagram MUST fit inside the page's visible area. **Compare aspect ratios first, then clamp ONLY the constraining dimension** — this is the standard "contain" fit; it guarantees no clipping and no distortion. Do NOT eyeball it or rely on layout luck.
 
-**Page dimensions** (the visible printable area) default to **US Letter portrait content box ≈ 6.5in × 9in** (W×H, i.e. 8.5×11 minus 1in margins) unless the deliverable specifies otherwise. `page_AR = page_width / page_height`.
+**Page dimensions** (the visible printable area) default to **US Letter portrait content box ≈ 6.5in × 9in** (W×H, i.e. 8.5×11 minus 1in margins) unless the deliverable specifies otherwise.
+
+**⚠️ RESERVE LABEL SPACE — critical.** Every diagram has a heading label ABOVE it (`Flow Diagram:`) that must sit on the SAME page (4b keep-with-next). If the image is set to the FULL page height, there is no room for the label → keep-with-next pushes the whole image to the next page (the Newman failure). So the height the image may occupy is **`avail_height = page_height − label_reserve`**, where `label_reserve ≈ 0.5in` (heading line + gap). Use `avail_height` — NOT the full `page_height` — as the height constraint. Width is unaffected (`avail_width = page_width`). `page_AR = avail_width / avail_height`.
 
 **Algorithm — run per rendered diagram:**
 1. **Render** the Mermaid to PNG (Step 4c), then **measure its actual pixel dimensions** `img_w × img_h` (e.g. via `sips -g pixelWidth -g pixelHeight <png>` on macOS, or `mmdc` output metadata). `img_AR = img_w / img_h`.
-2. **Compute both aspect ratios** — compare SHAPES, not sizes yet.
+2. **Compute both aspect ratios** against the **label-reserved** page box — compare SHAPES, not sizes yet.
 3. **Clamp the constraining dimension:**
-   - **If `img_AR > page_AR`** (image is *wider* than the page shape) → **width is the constraint → set embedded `width = page_width`** (height scales proportionally, lands ≤ page_height). *Example: a 5-wide × 4-tall image on a 4:3 page → set width = page width.*
-   - **If `img_AR < page_AR`** (image is *taller* than the page shape) → **height is the constraint → set embedded `height = page_height`** (width scales proportionally, lands ≤ page_width). *Example: a 2-wide × 4-tall image on a 4:3 page → set height = page height.*
-   - **If equal** → either dimension works; set width = page_width.
-4. **Embed at that ONE clamped dimension** so the renderer scales the other proportionally. In markdown, use an HTML `<img>` with only the clamped side set (e.g. `<img src="media/<name>.png" width="…" />` or `height="…"`) — never set both (that distorts). For `.docx`, pandoc honors the single dimension.
+   - **If `img_AR > page_AR`** (image is *wider* than the available box) → **width is the constraint → set embedded `width = avail_width` (= page_width)** (height scales proportionally, lands ≤ avail_height). *Example: a 5-wide × 4-tall image → set width = page width.*
+   - **If `img_AR < page_AR`** (image is *taller* than the available box) → **height is the constraint → set embedded `height = avail_height` (= page_height − label_reserve, NOT full page height)** (width scales proportionally). This is what leaves room for the label above. *Example: a 2-wide × 4-tall image → set height = page_height − 0.5in.*
+   - **If equal** → either works; set width = avail_width.
+4. **Embed at that ONE clamped dimension** so the renderer scales the other proportionally. In markdown, use an HTML `<img>` with only the clamped side set (e.g. `<img src="media/<name>.png" width="…" />` or `height="…"`) — never set both (that distorts). For `.docx`, pandoc honors the single dimension. The label + image together now fit on one page.
 
 **Layout still matters as an INPUT to the ratio** (not a substitute for it): choose `flowchart LR` for long linear flows and `TD` for short ones so the rendered `img_AR` is closer to the page shape *before* clamping — this maximizes the final on-page size. But the aspect-ratio clamp above is what GUARANTEES the fit; the direction choice only optimizes how much of the page it fills.
 

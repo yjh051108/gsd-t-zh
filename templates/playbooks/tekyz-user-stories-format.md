@@ -137,18 +137,23 @@ terminals are round `([...])`; label decision-branch edges (`-->|Yes|`).
 ### Fit-to-page by ASPECT-RATIO CONTAIN (MANDATORY — deterministic)
 
 Compare aspect ratios FIRST, then clamp only the constraining dimension (standard "contain" fit —
-no clipping, no distortion). Page = visible content box, default US Letter portrait ≈ 6.5in × 9in
-(W×H); `page_AR = page_w / page_h`.
+no clipping, no distortion). Page = visible content box, default US Letter portrait ≈ 6.5in × 9in (W×H).
+
+**RESERVE LABEL SPACE:** each diagram's `Flow Diagram:` label sits above it on the same page. If the
+image is set to FULL page height, no room is left for the label and keep-with-next pushes the image to
+the next page (the Newman bug). So use `avail_height = page_height − label_reserve` (label_reserve ≈
+0.5in) as the height constraint, NOT full page_height. `avail_width = page_width`;
+`page_AR = avail_width / avail_height`.
 
 1. Render to PNG, then MEASURE its pixels `img_w × img_h` (`sips -g pixelWidth -g pixelHeight`);
    `img_AR = img_w / img_h`.
-2. Compare shapes:
-   - `img_AR > page_AR` (wider than page) → **set width = page_width** (height scales, fits).
-     e.g. 5w×4h image on a 4:3 page → width = page width.
-   - `img_AR < page_AR` (taller than page) → **set height = page_height** (width scales, fits).
-     e.g. 2w×4h image on a 4:3 page → height = page height.
-   - equal → set width = page_width.
-3. Embed with ONLY the clamped side set (`<img … width>` OR `height`, never both).
+2. Compare shapes against the label-reserved box:
+   - `img_AR > page_AR` (wider) → **set width = avail_width (= page_width)** (height scales, fits).
+   - `img_AR < page_AR` (taller) → **set height = avail_height (= page_height − 0.5in, NOT full page)**
+     (width scales) — this leaves room for the label above.
+   - equal → set width = avail_width.
+3. Embed with ONLY the clamped side set (`<img … width>` OR `height`, never both). Label + image fit
+   on one page.
 
 Direction (`LR` for long flows, `TD` for short) is chosen to bring `img_AR` closer to `page_AR`
 BEFORE clamping (maximizes final on-page size) — but the ratio clamp is what guarantees the fit.

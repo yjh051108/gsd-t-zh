@@ -2,6 +2,15 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.19.13] - 2026-07-07
+
+### Fixed — `/gsd-t-stories`: reserve label space when a diagram is height-constrained
+
+The aspect-ratio "contain" fit (v4.19.12) set a tall image to the FULL page height, leaving no room for the `Flow Diagram:` label above it — so keep-with-next pushed the whole image to the next page (observed on Newman). The height constraint is now `avail_height = page_height − label_reserve` (label_reserve ≈ 0.5in) instead of full page height, so the label + image always fit on one page. Width-constrained images are unaffected.
+
+- `commands/gsd-t-stories.md`: Step 4b — label-reserved page box (`avail_height`), clamp height to it not full page.
+- `templates/playbooks/tekyz-user-stories-format.md`: same.
+
 ## [4.19.12] - 2026-07-07
 
 ### Fixed — `/gsd-t-stories` diagrams: deterministic aspect-ratio fit + heading placement + no orphans
