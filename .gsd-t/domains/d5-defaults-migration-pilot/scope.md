@@ -16,6 +16,8 @@ TIER 3 + TIER 4 (Waves 3-4 — depends on ALL machinery). Two parts, sequenced b
 - `/Users/david/projects/UMI-Automation/src/logging/audit.ts`
 - `/Users/david/projects/UMI-Automation/CLAUDE.md`
 - `/Users/david/projects/UMI-Automation/docs/infrastructure.md`
+- `/Users/david/projects/UMI-Automation/package.json` (M100-D5-T2b — TS toolchain bootstrap, pre-pilot)
+- `/Users/david/projects/UMI-Automation/tsconfig.json` (M100-D5-T2b — TS toolchain bootstrap, pre-pilot)
 
 ## Owned Files/Directories
 - `templates/CLAUDE-global.md` — the two logging hard rules (trace default; audit default-except-opt-out).
@@ -28,6 +30,8 @@ TIER 3 + TIER 4 (Waves 3-4 — depends on ALL machinery). Two parts, sequenced b
 - `/Users/david/projects/UMI-Automation/src/logging/audit.ts` — UMI audit build-into (PodCoach human draft-approval targets).
 - `/Users/david/projects/UMI-Automation/CLAUDE.md` — UMI storage-choice record + the two rules.
 - `/Users/david/projects/UMI-Automation/docs/infrastructure.md` — UMI logging storage/infra doc.
+- `/Users/david/projects/UMI-Automation/package.json` — minimal TS toolchain manifest (bootstrapped by M100-D5-T2b, BEFORE M100-D5-T3 writes `src/logging/*.ts`).
+- `/Users/david/projects/UMI-Automation/tsconfig.json` — real TS config (bootstrapped by M100-D5-T2b, BEFORE M100-D5-T3 writes `src/logging/*.ts`).
 - `.gsd-t/domains/d5-defaults-migration-pilot/{scope,constraints,tasks}.md`
 
 ## NOT Owned (do not modify)

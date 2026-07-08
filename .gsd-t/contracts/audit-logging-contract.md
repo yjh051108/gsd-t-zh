@@ -56,6 +56,23 @@ A conformant audit implementation MUST provide a query/view surface filterable b
 
 Audit is a default for EVERY project EXCEPT explicit opt-out declared in the project's own CLAUDE.md (e.g. WindowsVoiceTranscription wants trace but NOT audit). A project with neither an audit store NOR an explicit opt-out record → `gsd-t-verify` FAIL. A project with a valid opt-out record → verify does NOT fail it for missing audit.
 
+## §opt-out-record — pinned opt-out record shape (load-bearing seam, M100 pre-mortem FINDING 2)
+
+This is the EXACT, canonical shape of the audit opt-out record — the seam BOTH d4 (writer, `writeOptOut(projectDir)`) and d3 (reader, the `audit-default-except-optout` check) build to. Neither side may invent its own shape or path; both consume THIS definition.
+
+- **Canonical file path**: `.gsd-t/audit-optout.json`, resolved relative to the project's root directory (the same `projectDir` passed to `writeOptOut`).
+- **Canonical shape** (exactly these two keys, no others required):
+  ```json
+  {
+    "auditOptOut": true,
+    "reason": "<string — human-readable justification, e.g. \"trace only, no admin-facing accountability surface\">"
+  }
+  ```
+- **Field rules**:
+  - `auditOptOut` — REQUIRED, type `boolean`, MUST be exactly `true` for a valid opt-out. A file with `auditOptOut: false` (or any non-`true` value) is NOT a valid opt-out — the gate treats the project as opted IN (default) and FAILs it for missing audit if no audit store exists.
+  - `reason` — REQUIRED, type non-empty `string`. A missing or empty `reason` makes the record invalid (gate treats it as no-opt-out).
+- **Validity rule**: the gate's `audit-default-except-optout` check reads `.gsd-t/audit-optout.json` at the project root; the record is valid ONLY if the file exists, parses as JSON, and satisfies both field rules above. Any other file shape, path, or key name is NOT a recognized opt-out (fail-closed — an unrecognized record is treated as absent, never as an implicit pass).
+
 ## Storage (stack-adaptive, human-approval-gated)
 
 Storage is chosen at `gsd-t-init` scaffolding time, STACK-ADAPTIVE, and the scaffolder MUST STOP for human approval presenting alternatives (has-DB → dedicated `audit_log` table; no-server → an embedded queryable store — SQLite flagged OVER a flat file because audit is queryable). The contract fixes the ENVELOPE + durability; storage is whatever fits, never silently picked.

@@ -34,6 +34,8 @@ W1 — RISK-FIRST spike, runs CONCURRENTLY with d1. Highest-risk novel piece (th
 - **Acceptance criteria**:
   - Append-only/immutability declaration checked (#7); retention-configurable checked (#9).
   - Audit-default-except-opt-out: no audit + no opt-out → FAIL; valid opt-out → PASS (#13).
+  - Opt-out record shape per `audit-logging-contract.md` §opt-out-record — reader side of the seam; see M100-D5-T2c for the shared-fixture integration proof against d4's real writer.
+  - See M100-D5-T2d for the integration proof that this durability gate PASSES d4's REAL shipped `templates/logging/audit-module.template.ts` (and FAILS a mutated copy), not just synthetic fixtures.
 
 ### M100-D3-T3: Register into the verify gate (FAIL-CLOSED, one line)
 - **Touches**: `bin/gsd-t-verify-gate.cjs`, `commands/gsd-t-verify.md`

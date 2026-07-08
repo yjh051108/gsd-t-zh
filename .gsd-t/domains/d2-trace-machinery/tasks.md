@@ -28,11 +28,13 @@ W2 — runs CONCURRENTLY with d4-audit (file-disjoint). Starts after the W1 seam
 - **Contract refs**: `logging-schema-distillation-contract.md`, `trace-logging-contract.md`
 - **Dependencies**: Requires M100-D2-T1
 - **Test**: `test/m100-d2-trace-machinery.test.js` — given a fixture project plan, asserts the distiller emits the plan's ACTUAL trace categories and does NOT invent categories absent from the plan (no-confabulation falsifier: a category with no plan source FAILS); asserts output is a data structure (not a literal baked into the envelope gate); asserts the source file path differs from the audit distiller (`gsd-t-audit-distill.cjs`) — no-collapse by construction.
+  - **Empty-distill lower-bound killing sub-cases (M100 pre-mortem FINDING 4, MEDIUM)**: (a) NON-EMPTY real-plan lower bound — running `distillTraceCategories(planPath)` against UMI-Automation's REAL `docs/plan.md` returns `categories.length > 0` and the set INCLUDES at least the Grain, Airtable, Anthropic, and Apify integration-point categories, each grep-traceable to a source line in that plan; a run returning zero categories against this real plan FAILS the test. (b) Empty-input pole — given a plan fixture with NO trace-worthy operations, `distillTraceCategories` returns `{ categories: [] }` (empty array, not an error, not a confabulated placeholder); a downstream consumer asserting `categories.length > 0` on THIS empty-plan fixture must FAIL LOUDLY (an explicit assertion failure), never silently pass or silently skip — proving the empty case is distinguishable from a broken distiller.
 - **ImplPath**: `distillTraceCategories(planPath)` parses the project plan for concrete trace-worthy operations and returns `{ categories: [...] }` grounded in plan text.
 - **Acceptance criteria**:
   - Distills concrete trace CATEGORIES from the project plan; never confabulates (#14).
   - Emits categories as data — never baked into the envelope gate.
   - Shares NO file with the audit distiller (no-collapse).
+  - Non-empty lower bound proven against UMI's real plan (Grain/Airtable/Anthropic/Apify present); empty-input pole returns `[]` and a downstream zero-categories assertion fails loudly, not silently.
 
 ## Execution Estimate
 - Total tasks: 2

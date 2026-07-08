@@ -23,6 +23,7 @@ W2 — runs CONCURRENTLY with d2-trace (file-disjoint). Starts after the W1 seam
   - Retention configurable + extendable, not hardcoded (#9).
   - `checkEnvelope` import-time existence asserted before use.
   - Immutability trigger resists drop/replace-then-UPDATE; `prune_expired()` deletes ONLY expired rows and cannot be coerced (via config) into deleting a live row.
+  - See M100-D5-T2d for the integration proof that d3's real durability gate PASSES this ACTUAL shipped template (and FAILS a mutated copy exposing update/delete or hardcoded retention).
 
 ### M100-D4-T2: Audit-half action distiller + opt-out convention
 - **Touches**: `bin/gsd-t-audit-distill.cjs`, `test/m100-d4-audit-machinery.test.js`
@@ -30,11 +31,14 @@ W2 — runs CONCURRENTLY with d2-trace (file-disjoint). Starts after the W1 seam
 - **Contract refs**: `logging-schema-distillation-contract.md`, `audit-logging-contract.md`
 - **Dependencies**: Requires M100-D4-T1
 - **Test**: `test/m100-d4-audit-machinery.test.js` — given a fixture plan, asserts the distiller emits the plan's ACTUAL audit actions and invents none (no-confabulation falsifier); asserts a valid opt-out record is produced/recognized by the convention; asserts the source file path differs from the trace distiller (`gsd-t-trace-distill.cjs`) — no-collapse by construction.
+  - **Empty-distill lower-bound killing sub-cases (M100 pre-mortem FINDING 4, MEDIUM)**: (a) NON-EMPTY real-plan lower bound — running `distillAuditActions(planPath)` against UMI-Automation's REAL `docs/plan.md` returns `actions.length > 0` and the set INCLUDES the PodCoach draft-approval action (grep-traceable to the plan's review→edit→approve clause); a run returning zero actions against this real plan FAILS the test. (b) Empty-input pole — given a plan fixture with NO accountability-worthy actions, `distillAuditActions` returns `{ actions: [] }` (empty array, not an error, not a confabulated placeholder); a downstream consumer asserting `actions.length > 0` on THIS empty-plan fixture must FAIL LOUDLY (an explicit assertion failure), never silently pass or silently skip.
 - **ImplPath**: `distillAuditActions(planPath)` extracts accountability-worthy actions grounded in the plan; `writeOptOut(projectDir)` emits the opt-out record the gate recognizes.
 - **Acceptance criteria**:
   - Distills concrete audit ACTIONS from the project plan; never confabulates (#14).
   - Ships the opt-out record convention (#13).
   - Shares NO file with the trace distiller (no-collapse).
+  - Opt-out record shape per `audit-logging-contract.md` §opt-out-record — writer side of the seam; see M100-D5-T2c for the shared-fixture integration proof against d3's real reader.
+  - Non-empty lower bound proven against UMI's real plan (PodCoach draft-approval present); empty-input pole returns `[]` and a downstream zero-actions assertion fails loudly, not silently.
 
 ## Execution Estimate
 - Total tasks: 2
