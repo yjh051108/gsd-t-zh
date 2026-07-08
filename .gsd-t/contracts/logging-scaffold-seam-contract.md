@@ -1,6 +1,6 @@
 # Logging Scaffold-Seam Contract
 
-**Version:** 1.0.0 DRAFT (M100 partition)
+**Version:** 1.0.0 STABLE (published — M100-D1-T3)
 **Owner:** d1-storage-scaffolder-pause
 **Consumers:** d2-trace-machinery, d4-audit-machinery, d5-defaults-migration-pilot
 **Milestone:** M100 — Universal Trace + Audit Logging (framework defaults).

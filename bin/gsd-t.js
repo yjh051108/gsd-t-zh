@@ -203,6 +203,24 @@ const {
 } = require("./playwright-bootstrap.cjs");
 const { hasUI } = require("./ui-detection.cjs");
 
+// M100 D1: stack-adaptive storage scaffolder — the sole init-scaffold seam.
+// Presents real alternatives and PAUSES for human approval; never silently
+// picks a logging backend. See .gsd-t/contracts/logging-scaffold-seam-contract.md.
+const { scaffoldLogging } = require("./gsd-t-logging-scaffolder.cjs");
+
+// runLoggingScaffoldStep(projectDir, opts): the init-dispatch integration
+// point. Calls the scaffolder and explicitly checks the envelope's `status`
+// field: on "PAUSED" it halts BEFORE any sink/template write and surfaces
+// alternatives[] to the caller; it only proceeds (halted:false) once a
+// resolved `backend` comes back (fresh approval or a valid recorded choice).
+function runLoggingScaffoldStep(projectDir, opts) {
+  const envelope = scaffoldLogging(Object.assign({ projectDir }, opts || {}));
+  if (envelope.status === "PAUSED") {
+    return { halted: true, alternatives: envelope.alternatives, resumeToken: envelope.resumeToken };
+  }
+  return { halted: false, backend: envelope.backend, envelope };
+}
+
 function readProjectDeps(projectDir) {
   const pkgPath = path.join(projectDir, "package.json");
   if (!fs.existsSync(pkgPath)) return [];
@@ -2129,6 +2147,26 @@ async function doInit(projectName) {
 
   // M52 D1: auto-install the journey-coverage gate. Idempotent — no-op if marker present.
   if (hasUI(projectDir)) installJourneyCoverageHook(projectDir);
+
+  // M100 D1: storage scaffolder step. Presents real backend alternatives and
+  // PAUSES for human approval — the ONE sanctioned pause against Level-3
+  // full-auto. On PAUSED, halts here and surfaces alternatives; never writes
+  // a trace/audit sink or picks a backend silently. See
+  // .gsd-t/contracts/logging-scaffold-seam-contract.md.
+  try {
+    const loggingOutcome = runLoggingScaffoldStep(projectDir);
+    if (loggingOutcome.halted) {
+      warn("Logging backend not yet chosen — scaffolder is PAUSED for human approval:");
+      for (const alt of loggingOutcome.alternatives) {
+        info(`  - ${alt.backend}${alt.recommended ? " (recommended)" : ""}: ${alt.label} — ${alt.reason}`);
+      }
+      info(`Re-run init with an approved backend to resume (resumeToken: ${loggingOutcome.resumeToken}).`);
+    } else {
+      success(`Logging backend: ${loggingOutcome.backend}`);
+    }
+  } catch (e) {
+    warn(`Logging scaffold step errored: ${e.message || e}`);
+  }
 
   showInitTree(projectDir);
 }
@@ -4871,6 +4909,8 @@ module.exports = {
   promptForApiKeyIfMissing,
   resolveApiKeyEnvVar,
   runTaskCounterRetirementMigration,
+  // M100: storage scaffolder seam
+  runLoggingScaffoldStep,
 };
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -4972,6 +5012,22 @@ if (require.main === module) {
     case "graph":
       doGraph(args.slice(1));
       break;
+    case "migrate-logging": {
+      // M100 D1 wiring on d5's behalf — d1 is the SOLE editor of bin/gsd-t.js;
+      // d5 owns bin/gsd-t-migrate-logging.cjs (the module) and
+      // commands/gsd-t-migrate-logging.md (the command). See
+      // .gsd-t/contracts/logging-scaffold-seam-contract.md §Ownership boundary.
+      let migrateLogging;
+      try {
+        migrateLogging = require("./gsd-t-migrate-logging.cjs");
+      } catch (e) {
+        error(`migrate-logging module not found: ${e.message || e}`);
+        process.exit(1);
+      }
+      Promise.resolve(migrateLogging.run ? migrateLogging.run(args.slice(1)) : migrateLogging(args.slice(1)))
+        .catch((e) => { error(e.message || String(e)); process.exit(1); });
+      break;
+    }
     case "headless":
       doHeadless(args.slice(1));
       break;

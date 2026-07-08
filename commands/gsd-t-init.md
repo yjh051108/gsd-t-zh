@@ -350,6 +350,17 @@ Operator overrides: `gsd-t setup-playwright [path]` (explicit single-project ins
 
 The spawn-time gate in `bin/headless-auto-spawn.cjs` re-runs the install on first need if the project skipped this step (e.g., older project that pre-dates M50).
 
+## Step 11.5: Logging Backend Scaffold (M100)
+
+The `bin/gsd-t.js init` flow calls `runLoggingScaffoldStep(projectDir)` (from `bin/gsd-t-logging-scaffolder.cjs`) automatically, right before the init tree summary. This is the sole init-scaffold seam for M100's trace/audit logging.
+
+- It detects the stack (has-DB → `db-table` alternative; no-server/desktop → `local-sqlite` | `local-jsonl`, with SQLite flagged over flat-file for audit queryability).
+- It **presents real alternatives and PAUSES for human approval** — this is the ONE sanctioned pause against the Level-3 full-auto default (see `.gsd-t/contracts/logging-scaffold-seam-contract.md`). It never silently picks a backend.
+- On re-run with a previously-approved choice, it resumes deterministically (no re-prompt) and records the backend into the project's `CLAUDE.md`.
+- If it halts with `status:"PAUSED"`, report the presented alternatives to the user and wait for them to choose before re-running init with an approved backend — do NOT guess or auto-select on their behalf.
+
+See `.gsd-t/contracts/logging-scaffold-seam-contract.md` for the full seam envelope shape consumed by d2 (trace), d4 (audit), and d5 (migrate-logging).
+
 ## Step 12: Test Verification
 
 After initialization:
