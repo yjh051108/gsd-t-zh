@@ -92,6 +92,15 @@ embedded (`![Flow Diagram](media/<PREFIX>-NNN-flow.png)`) — matching the sampl
 - Cover the happy path (Positive), failure modes (Negative), and boundaries (Edge). Every
   acceptance-criteria group should be represented by at least one test case.
 
+### Heading placement + no orphans (MANDATORY)
+
+- Every section label sits ABOVE its content, never below. `Flow Diagram:` precedes its image;
+  `Mapped Test Cases:` precedes its table; `Workflow:` precedes its steps. A label below the
+  block it introduces is a defect.
+- A heading must NOT be orphaned at a page bottom with its content on the next page — it stays
+  with at least the first line of its content (keep-with-next). In `.docx`, enforce with
+  `keepNext` on heading paragraphs or an explicit page break before a heading that would strand.
+
 ---
 
 ## §3 — Scope Summary
@@ -125,13 +134,25 @@ Green = go/success/action · Orange = decision · Red = destructive/irreversible
 = new/optional · Purple = screen/state · White = terminal. Decisions are diamonds `{...}`;
 terminals are round `([...])`; label decision-branch edges (`-->|Yes|`).
 
-### Fit-to-page (MANDATORY — the whole diagram must fit)
+### Fit-to-page by ASPECT-RATIO CONTAIN (MANDATORY — deterministic)
 
-A long top-down flow overflows the page. Keep EVERY diagram fully on one page:
-- Prefer `flowchart LR` (left-to-right) for long linear flows; use `TD` only for ≤6-node flows.
-- For many nodes, break into `subgraph` lanes or split into part-1/part-2 diagrams.
-- Render with explicit sizing so nothing clips, then VERIFY the PNG isn't clipped; if it is,
-  switch direction or split and re-render. Never ship a clipped diagram.
+Compare aspect ratios FIRST, then clamp only the constraining dimension (standard "contain" fit —
+no clipping, no distortion). Page = visible content box, default US Letter portrait ≈ 6.5in × 9in
+(W×H); `page_AR = page_w / page_h`.
+
+1. Render to PNG, then MEASURE its pixels `img_w × img_h` (`sips -g pixelWidth -g pixelHeight`);
+   `img_AR = img_w / img_h`.
+2. Compare shapes:
+   - `img_AR > page_AR` (wider than page) → **set width = page_width** (height scales, fits).
+     e.g. 5w×4h image on a 4:3 page → width = page width.
+   - `img_AR < page_AR` (taller than page) → **set height = page_height** (width scales, fits).
+     e.g. 2w×4h image on a 4:3 page → height = page height.
+   - equal → set width = page_width.
+3. Embed with ONLY the clamped side set (`<img … width>` OR `height`, never both).
+
+Direction (`LR` for long flows, `TD` for short) is chosen to bring `img_AR` closer to `page_AR`
+BEFORE clamping (maximizes final on-page size) — but the ratio clamp is what guarantees the fit.
+Never ship a diagram larger than the page.
 
 ### Render
 

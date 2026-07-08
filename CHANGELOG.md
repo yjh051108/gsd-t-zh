@@ -2,6 +2,15 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.19.12] - 2026-07-07
+
+### Fixed — `/gsd-t-stories` diagrams: deterministic aspect-ratio fit + heading placement + no orphans
+
+Three layout corrections. **(1) Fit-to-page** rewritten from the vague "prefer LR / verify not clipped" heuristic to the deterministic **aspect-ratio "contain"** algorithm: measure the rendered PNG's pixel W×H, compare `img_AR` to the page aspect ratio, and clamp ONLY the constraining dimension (`width = page_width` if the image is wider than the page, else `height = page_height`) — embedded via an HTML `<img>` with a single dimension so it always fits with no clipping or distortion. **(2) Heading placement** — each section label (`Story:`, `Workflow:`, `Flow Diagram:`, `Mapped Test Cases:`) must sit ABOVE its content, never below the block it introduces. **(3) No orphaned headings** — a heading must stay with its first content on the same page (keep-with-next).
+
+- `commands/gsd-t-stories.md`: Step 4b aspect-ratio algorithm + 4c measure/clamp/embed; heading-order + orphan-control rules.
+- `templates/playbooks/tekyz-user-stories-format.md`: same.
+
 ## [4.19.11] - 2026-07-07
 
 ### Fixed — `/gsd-t-stories` diagrams: semantic coloring + fit-to-page
