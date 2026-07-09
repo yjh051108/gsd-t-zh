@@ -271,6 +271,29 @@ const TRACE_STORE_CANDIDATES = [
   '.gsd-t/logging/trace-records.json',
 ];
 
+// SQLite store candidates — the contracts EXPLICITLY sanction "storage is
+// whatever fits the stack", so a DB-backed store is first-class, not an
+// unlisted edge case. When one is discovered we open it read-only and run
+// checkEnvelope over its rows (better-sqlite3 is already a dependency). A
+// discovered-but-UNINSPECTABLE store (unknown shape, unopenable, no known
+// table) FAILS-CLOSED rather than silently passing with zero records inspected.
+const TRACE_DB_CANDIDATES = [
+  '.gsd-t/trace.db',
+  '.gsd-t/trace.sqlite',
+  '.gsd-t/logging/trace.db',
+  '.gsd-t/logging/trace.sqlite',
+];
+const AUDIT_DB_CANDIDATES = [
+  '.gsd-t/audit.db',
+  '.gsd-t/audit.sqlite',
+  '.gsd-t/logging/audit.db',
+  '.gsd-t/logging/audit.sqlite',
+];
+// Known table names per stream (structural — the audit module template ships
+// `audit_log`; trace's DB-backed convention is `trace_records`/`trace_log`).
+const TRACE_DB_TABLES = ['trace_records', 'trace_log', 'trace'];
+const AUDIT_DB_TABLES = ['audit_log', 'audit_records', 'audit'];
+
 const AUDIT_MODULE_CANDIDATES = [
   'src/logging/audit-module.ts',
   'src/logging/audit.ts',
@@ -305,6 +328,68 @@ function _firstExisting(projectDir, candidates) {
   return null;
 }
 
+// ── Stack-adaptive SQLite store inspection ──────────────────────────────────
+//
+// Opens a discovered .db/.sqlite store read-only and rehydrates rows into the
+// canonical envelope shape so checkEnvelope can validate them exactly like JSON
+// records. Return shapes are DISTINCT so the caller can fail-closed:
+//   { records: [...] }        → inspectable, here are the records (maybe [])
+//   { uninspectable: 'why' }  → discovered but CANNOT inspect → caller FAILS.
+
+function _loadBetterSqlite() {
+  try {
+    return require('better-sqlite3');
+  } catch (_err) {
+    return null;
+  }
+}
+
+/** Column set → canonical trace/audit record. Reads JSON-text columns back into objects. */
+function _rowToRecord(row) {
+  const rec = {};
+  for (const k of Object.keys(row)) {
+    if (k === 'id') continue; // store-assigned key, not part of the envelope
+    let v = row[k];
+    // JSON-serialized object/array columns (before/after/context/data) come
+    // back as TEXT — rehydrate so checkEnvelope sees the real shape/type.
+    if (typeof v === 'string' && v.length > 0 && (v[0] === '{' || v[0] === '[')) {
+      try { v = JSON.parse(v); } catch (_e) { /* leave as string */ }
+    }
+    rec[k] = v;
+  }
+  return rec;
+}
+
+/**
+ * Inspect a SQLite store for a given stream. Returns { records } when a known
+ * table is found and read, else { uninspectable: reason } — NEVER a silent
+ * empty pass.
+ */
+function _inspectSqliteStore(absDbPath, knownTables) {
+  const Database = _loadBetterSqlite();
+  if (!Database) {
+    return { uninspectable: 'a SQLite store was discovered but better-sqlite3 is unavailable to inspect it' };
+  }
+  let db = null;
+  try {
+    db = new Database(absDbPath, { readonly: true, fileMustExist: true });
+    const present = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all()
+      .map((r) => r.name);
+    const table = knownTables.find((t) => present.includes(t));
+    if (!table) {
+      return { uninspectable: 'a SQLite store was discovered but no recognized records table was found (saw: ' + present.join(', ') + ')' };
+    }
+    const rows = db.prepare('SELECT * FROM "' + table + '"').all();
+    return { records: rows.map(_rowToRecord) };
+  } catch (err) {
+    return { uninspectable: 'a SQLite store was discovered but could not be opened/read: ' + (err && err.message ? err.message : String(err)) };
+  } finally {
+    if (db) { try { db.close(); } catch (_e) { /* ignore */ } }
+  }
+}
+
 /**
  * Reads a module's declared surface out of its source text — best-effort,
  * structural signal only (looks for documented export/declaration markers),
@@ -336,6 +421,7 @@ function checkLoggingEnvelopes(opts) {
   // so a symmetric .gsd-t/trace-optout.json opt-out exists, mirroring audit's).
   const traceModulePath = _firstExisting(projectDir, TRACE_MODULE_CANDIDATES);
   const traceStorePath = _firstExisting(projectDir, TRACE_STORE_CANDIDATES);
+  const traceDbPath = _firstExisting(projectDir, TRACE_DB_CANDIDATES);
   const traceRecords = traceStorePath ? _readJsonArrayIfExists(traceStorePath) : null;
   let traceOptOutRecord = null;
   const traceOptOutPath = path.join(projectDir, '.gsd-t', 'trace-optout.json');
@@ -343,7 +429,7 @@ function checkLoggingEnvelopes(opts) {
     if (fs.existsSync(traceOptOutPath)) traceOptOutRecord = JSON.parse(fs.readFileSync(traceOptOutPath, 'utf8'));
   } catch (_e) { traceOptOutRecord = null; }
 
-  if (!traceModulePath && !traceStorePath) {
+  if (!traceModulePath && !traceStorePath && !traceDbPath) {
     if (!_isValidTraceOptOut(traceOptOutRecord)) {
       failures.push({ rule: 'trace-default-except-optout', stream: 'trace', detail: 'no trace module or store discoverable and no valid trace opt-out record' });
     }
@@ -352,18 +438,35 @@ function checkLoggingEnvelopes(opts) {
       const result = checkEnvelope(rec, { stream: 'trace' });
       if (!result.ok) failures.push(...result.failures);
     }
+  } else if (traceDbPath) {
+    // Stack-adaptive: a DB-backed trace store — inspect it, don't wave it through.
+    const inspected = _inspectSqliteStore(traceDbPath, TRACE_DB_TABLES);
+    if (inspected.uninspectable) {
+      failures.push({ rule: 'trace-store-uninspectable', stream: 'trace', detail: inspected.uninspectable + ' — the PII bar + envelope check cannot be enforced, failing closed' });
+    } else {
+      for (const rec of inspected.records) {
+        const result = checkEnvelope(rec, { stream: 'trace' });
+        if (!result.ok) failures.push(...result.failures);
+      }
+    }
+  } else if (traceStorePath && traceRecords === null) {
+    // A recognized JSON store path EXISTS but did NOT parse as a JSON array —
+    // it is an uninspectable shape (malformed JSON, or a non-array). The PII
+    // bar + envelope check cannot run over it, so FAIL-CLOSED rather than pass.
+    failures.push({ rule: 'trace-store-uninspectable', stream: 'trace', detail: 'trace store at ' + traceStorePath + ' is present but is not a parseable JSON array — cannot enforce the envelope/PII checks, failing closed' });
   }
-  // else: trace module is present but the store is absent or not a JSON array
-  // yet (traceRecords === null) — a fresh project that has scaffolded trace
-  // but not yet emitted a record. This is intentionally legal: there is
-  // nothing to validate yet, and the module's mere presence already satisfies
-  // trace-default-except-optout above.
+  // else: trace MODULE present but NO store discovered at all (traceStorePath &&
+  // traceDbPath both absent) — a fresh project that scaffolded trace but has not
+  // yet emitted a record. This is the ONLY genuinely-legal no-records case: the
+  // module's presence satisfies trace-default-except-optout above, and there is
+  // legitimately nothing to validate yet.
 
   // (ii) Audit discovery.
   const auditModulePath = _firstExisting(projectDir, AUDIT_MODULE_CANDIDATES);
   const auditStorePath = _firstExisting(projectDir, AUDIT_STORE_CANDIDATES);
+  const auditDbPath = _firstExisting(projectDir, AUDIT_DB_CANDIDATES);
   const auditRecords = auditStorePath ? _readJsonArrayIfExists(auditStorePath) : null;
-  const hasAuditStore = !!(auditModulePath || auditStorePath);
+  const hasAuditStore = !!(auditModulePath || auditStorePath || auditDbPath);
 
   // (iii) Opt-out file.
   let optOutRecord = null;
@@ -385,6 +488,21 @@ function checkLoggingEnvelopes(opts) {
         const result = checkEnvelope(rec, { stream: 'audit' });
         if (!result.ok) failures.push(...result.failures);
       }
+    } else if (auditDbPath) {
+      // Stack-adaptive: a DB-backed audit store — inspect it, don't wave it through.
+      const inspected = _inspectSqliteStore(auditDbPath, AUDIT_DB_TABLES);
+      if (inspected.uninspectable) {
+        failures.push({ rule: 'audit-store-uninspectable', stream: 'audit', detail: inspected.uninspectable + ' — the envelope check cannot be enforced, failing closed' });
+      } else {
+        for (const rec of inspected.records) {
+          const result = checkEnvelope(rec, { stream: 'audit' });
+          if (!result.ok) failures.push(...result.failures);
+        }
+      }
+    } else if (auditStorePath && auditRecords === null) {
+      // A recognized JSON audit store exists but is not a parseable JSON array —
+      // an uninspectable shape. FAIL-CLOSED rather than silently pass.
+      failures.push({ rule: 'audit-store-uninspectable', stream: 'audit', detail: 'audit store at ' + auditStorePath + ' is present but is not a parseable JSON array — cannot enforce the envelope check, failing closed' });
     }
 
     if (auditModulePath) {
@@ -421,6 +539,7 @@ module.exports = {
   _isValidOptOut,
   _checkDefaultExceptOptOut,
   _readModuleSurface,
+  _inspectSqliteStore,
 };
 
 // ── CLI (invoked by the verify gate as a Track 2 worker) ────────────────────

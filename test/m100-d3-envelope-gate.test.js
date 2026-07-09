@@ -434,6 +434,154 @@ test('discovery: valid opt-out exempts audit-store requirement but trace is unaf
   }
 });
 
+// ── Stack-adaptive store discovery killing sub-cases (Red Team M100 BUG 3, HIGH) ──
+// Store discovery was a CLOSED flat-file allowlist: a project whose records
+// live in SQLite (which the contracts EXPLICITLY sanction) hit the else branch
+// and returned ok:true with ZERO records inspected — the PII bar silently
+// no-op'd for the majority of real deployments. It must now fail-closed on an
+// uninspectable store, and (best) actually inspect a SQLite store.
+
+const DatabaseCtor = require('better-sqlite3');
+
+function seedAuditDb(dbPath, records) {
+  const db = new DatabaseCtor(dbPath);
+  db.exec(`CREATE TABLE audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL, actor TEXT, action TEXT, target TEXT,
+    before TEXT, after TEXT, context TEXT
+  )`);
+  const stmt = db.prepare('INSERT INTO audit_log (ts, actor, action, target, before, after, context) VALUES (?,?,?,?,?,?,?)');
+  for (const r of records) {
+    stmt.run(
+      r.ts, r.actor, r.action, r.target,
+      r.before == null ? null : JSON.stringify(r.before),
+      r.after == null ? null : JSON.stringify(r.after),
+      JSON.stringify(r.context || {})
+    );
+  }
+  db.close();
+}
+
+function seedTraceDb(dbPath, records) {
+  const db = new DatabaseCtor(dbPath);
+  db.exec(`CREATE TABLE trace_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL, category TEXT, decision INTEGER, detail TEXT, data TEXT
+  )`);
+  const stmt = db.prepare('INSERT INTO trace_records (ts, category, decision, detail, data) VALUES (?,?,?,?,?)');
+  for (const r of records) {
+    stmt.run(
+      r.ts, r.category,
+      r.decision == null ? null : (r.decision ? 1 : 0),
+      r.detail,
+      r.data == null ? null : JSON.stringify(r.data)
+    );
+  }
+  db.close();
+}
+
+test('BUG 3 (HIGH): a trace module + a PII-bearing record in a SQLite (.db) store does NOT return ok:true (SQLite is inspected)', () => {
+  const dir = mkTmpProject();
+  try {
+    fs.writeFileSync(path.join(dir, 'src', 'logging', 'trace.ts'), 'export function trace() {}\n');
+    // audit opted out so ONLY the trace-store outcome is under test.
+    fs.writeFileSync(path.join(dir, '.gsd-t', 'audit-optout.json'), JSON.stringify({ auditOptOut: true, reason: 'trace only' }));
+    // Same PII record that FAILS in a JSON store — now placed in a SQLite store.
+    seedTraceDb(path.join(dir, '.gsd-t', 'trace.db'), [
+      { ts: '2026-07-08T12:00:00.000Z', category: 'AudioChunk', decision: true, detail: 'contact john@example.com about this' },
+    ]);
+
+    const r = checkLoggingEnvelopes({ projectDir: dir });
+    assert.equal(r.ok, false, 'a PII record in a .db store must NOT slip through as ok:true');
+    // BEST path implemented: the record IS inspected → trace-pii-barred (not merely uninspectable).
+    assert.ok(
+      r.failures.some((f) => f.rule === 'trace-pii-barred' || f.rule === 'trace-store-uninspectable'),
+      'expected the DB record to be barred for PII (or at minimum fail-closed as uninspectable): ' + JSON.stringify(r.failures)
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('BUG 3: an AUDIT PII/broken record in a SQLite (.db) store is inspected — a broken record FAILS', () => {
+  const dir = mkTmpProject();
+  try {
+    // No audit module file — pure DB store discovery; trace opted out.
+    fs.writeFileSync(path.join(dir, '.gsd-t', 'trace-optout.json'), JSON.stringify({ traceOptOut: true, reason: 'stateless CLI' }));
+    const broken = validAudit();
+    delete broken.target; // planted broken audit record
+    seedAuditDb(path.join(dir, '.gsd-t', 'audit.db'), [validAudit(), broken]);
+
+    const r = checkLoggingEnvelopes({ projectDir: dir });
+    assert.equal(r.ok, false, 'a broken audit record in a .db store must be caught, not waved through');
+    assert.ok(r.failures.some((f) => f.rule === 'audit-envelope-structural' || f.rule === 'audit-store-uninspectable'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('BUG 3 fail-closed: a trace module + an UNINSPECTABLE store (unknown table in .db) does NOT return ok:true', () => {
+  const dir = mkTmpProject();
+  try {
+    fs.writeFileSync(path.join(dir, 'src', 'logging', 'trace.ts'), 'export function trace() {}\n');
+    fs.writeFileSync(path.join(dir, '.gsd-t', 'audit-optout.json'), JSON.stringify({ auditOptOut: true, reason: 'trace only' }));
+    // A .db store with NO recognized records table → uninspectable.
+    const db = new DatabaseCtor(path.join(dir, '.gsd-t', 'trace.db'));
+    db.exec('CREATE TABLE something_else (x TEXT)');
+    db.close();
+
+    const r = checkLoggingEnvelopes({ projectDir: dir });
+    assert.equal(r.ok, false, 'an uninspectable store must fail-closed, never silently pass');
+    assert.ok(r.failures.some((f) => f.rule === 'trace-store-uninspectable'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('BUG 3 preserve legit case: a fresh project with a trace module + an EMPTY [] JSON store still PASSES', () => {
+  const dir = mkTmpProject();
+  try {
+    fs.writeFileSync(path.join(dir, 'src', 'logging', 'trace.ts'), 'export function trace() {}\n');
+    fs.writeFileSync(path.join(dir, '.gsd-t', 'trace-records.json'), JSON.stringify([])); // empty = legit no-records-yet
+    fs.writeFileSync(path.join(dir, '.gsd-t', 'audit-optout.json'), JSON.stringify({ auditOptOut: true, reason: 'trace only' }));
+
+    const r = checkLoggingEnvelopes({ projectDir: dir });
+    assert.equal(r.ok, true, 'an empty JSON array store is a legitimate no-records-yet case and must PASS: ' + JSON.stringify(r.failures));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('BUG 3 preserve legit case: a trace module with NO store at all (not scaffolded yet) still PASSES', () => {
+  const dir = mkTmpProject();
+  try {
+    fs.writeFileSync(path.join(dir, 'src', 'logging', 'trace.ts'), 'export function trace() {}\n');
+    fs.writeFileSync(path.join(dir, '.gsd-t', 'audit-optout.json'), JSON.stringify({ auditOptOut: true, reason: 'trace only' }));
+
+    const r = checkLoggingEnvelopes({ projectDir: dir });
+    assert.equal(r.ok, true, 'module present + no store yet is legal and must PASS: ' + JSON.stringify(r.failures));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('BUG 3 SQLite inspection: a PII record in a .db store yields specifically trace-pii-barred', () => {
+  const dir = mkTmpProject();
+  try {
+    fs.writeFileSync(path.join(dir, 'src', 'logging', 'trace.ts'), 'export function trace() {}\n');
+    fs.writeFileSync(path.join(dir, '.gsd-t', 'audit-optout.json'), JSON.stringify({ auditOptOut: true, reason: 'trace only' }));
+    seedTraceDb(path.join(dir, '.gsd-t', 'trace.db'), [
+      { ts: '2026-07-08T12:00:00.000Z', category: 'C', decision: true, detail: 'ok', data: { user: { email: 'jane@example.com' } } },
+    ]);
+
+    const r = checkLoggingEnvelopes({ projectDir: dir });
+    assert.equal(r.ok, false);
+    assert.ok(r.failures.some((f) => f.rule === 'trace-pii-barred'), 'nested PII in a .db record must be barred: ' + JSON.stringify(r.failures));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ── Registration into the verify gate (FAIL-CLOSED, one line) ──────────
 
 test('verify-gate.cjs registers exactly ONE line referencing gsd-t-logging-envelope-check.cjs', () => {

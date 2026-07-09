@@ -89,8 +89,12 @@ export interface AuditModuleOptions {
 // ── Schema + immutability guard ─────────────────────────────────────────
 
 const TABLE = 'audit_log';
+const GATE_TABLE = 'audit_log_prune_gate';
+const SENTINEL_TABLE = 'audit_log_prune_sentinel';
 const IMMUTABLE_TRIGGER_UPDATE = 'audit_log_no_update';
 const IMMUTABLE_TRIGGER_DELETE = 'audit_log_no_delete';
+const GATE_TRIGGER_UPDATE = 'audit_log_prune_gate_no_update';
+const GATE_TRIGGER_DELETE = 'audit_log_prune_gate_no_delete';
 
 function ensureSchema(db: InstanceType<typeof Database>): void {
   db.pragma('journal_mode = WAL');
@@ -120,10 +124,14 @@ function ensureSchema(db: InstanceType<typeof Database>): void {
     END;
   `);
 
+  // COALESCE-hardened WHEN: an EMPTY gate table (subquery → NULL) is treated as
+  // active=0 (LOCKED) so the trigger FIRES and blocks the delete — fail-CLOSED,
+  // never fail-open. A hostile `DELETE FROM audit_log_prune_gate` therefore
+  // cannot slip a live-row DELETE through on a NULL=0 short-circuit.
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS ${IMMUTABLE_TRIGGER_DELETE}
     BEFORE DELETE ON ${TABLE}
-    WHEN (SELECT active FROM audit_log_prune_gate LIMIT 1) = 0
+    WHEN COALESCE((SELECT active FROM ${GATE_TABLE} LIMIT 1), 0) = 0
     BEGIN
       SELECT RAISE(ABORT, 'audit_log is append-only: direct DELETE is forbidden — use pruneExpired()');
     END;
@@ -144,9 +152,14 @@ function ensureSchema(db: InstanceType<typeof Database>): void {
  */
 function _triggersIntact(db: InstanceType<typeof Database>): boolean {
   const rows = db
-    .prepare(`SELECT name FROM sqlite_master WHERE type = 'trigger' AND name IN (?, ?)`)
-    .all(IMMUTABLE_TRIGGER_UPDATE, IMMUTABLE_TRIGGER_DELETE) as Array<{ name: string }>;
-  return rows.length === 2;
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'trigger' AND name IN (?, ?, ?, ?)`)
+    .all(
+      IMMUTABLE_TRIGGER_UPDATE,
+      IMMUTABLE_TRIGGER_DELETE,
+      GATE_TRIGGER_UPDATE,
+      GATE_TRIGGER_DELETE
+    ) as Array<{ name: string }>;
+  return rows.length === 4;
 }
 
 // pruneExpired needs to delete rows the DELETE trigger above unconditionally
@@ -154,28 +167,70 @@ function _triggersIntact(db: InstanceType<typeof Database>): boolean {
 // module exists to close), pruneExpired runs its bounded DELETE through a
 // short-lived gate flag the trigger's WHEN clause checks: a flag set only
 // inside pruneExpired's own transaction, and reset immediately after,  never
-// exposed on the module's public surface. This keeps "no update/delete path
-// in normal operation" true for every consumer of this module while giving
-// retention pruning a single, narrow, bounds-checked door. Every call to
-// ensurePruneGuard/pruneExpired first RE-ASSERTS both triggers (idempotent
-// `CREATE TRIGGER` after an explicit `DROP TRIGGER IF EXISTS`), so a prior
-// DROP TRIGGER against this connection is healed before the gate is used.
+// exposed on the module's public surface.
+//
+// The gate table is itself TAMPER-PROTECTED (Red Team M100 BUG 1/2 fix). A
+// prior design delegated immutability to a WIDE-OPEN `active` flag: a second
+// connection could `UPDATE audit_log_prune_gate SET active = 1` (then delete a
+// live row while the DELETE trigger's WHEN read active=1), or `DELETE FROM
+// audit_log_prune_gate` (emptying it → subquery NULL → `NULL = 0` is NULL, not
+// TRUE → the WHEN was unsatisfied → the DELETE trigger never fired). Both
+// defeated append-only immutability. The fix:
+//   (a) BEFORE UPDATE / BEFORE DELETE triggers on the gate table itself that
+//       RAISE(ABORT) unless an IN-BAND prune sentinel row is present — the same
+//       treatment audit_log rows get. pruneExpired inserts that sentinel inside
+//       its own transaction (and removes it after), so ONLY the sanctioned
+//       prune path may touch the gate; any out-of-band UPDATE/DELETE of the
+//       gate from a hostile second connection is aborted.
+//   (b) the audit_log DELETE trigger's WHEN is COALESCE-hardened (see
+//       ensureSchema) so an emptied gate reads as active=0 (LOCKED), fail-CLOSED.
+//   (c) ensurePruneGuard/pruneExpired self-heal the gate ROW (re-INSERT the
+//       single active=0 row if missing) AND re-assert every trigger before the
+//       gate is used, so the between-tamper-and-prune window can never leave a
+//       deletable table.
+// Every call to ensurePruneGuard/pruneExpired first RE-ASSERTS all triggers
+// (idempotent `CREATE TRIGGER` after an explicit `DROP TRIGGER IF EXISTS`) and
+// restores the gate row, so a prior DROP TRIGGER / gate-tamper against this
+// connection is healed before the gate is used.
 
 function ensurePruneGuard(db: InstanceType<typeof Database>): void {
   db.exec(`
-    CREATE TABLE IF NOT EXISTS audit_log_prune_gate (
+    CREATE TABLE IF NOT EXISTS ${GATE_TABLE} (
       active INTEGER NOT NULL DEFAULT 0
     );
   `);
-  const row = db.prepare('SELECT COUNT(*) AS n FROM audit_log_prune_gate').get() as { n: number };
-  if (row.n === 0) {
-    db.prepare('INSERT INTO audit_log_prune_gate (active) VALUES (0)').run();
-  }
-
+  // The in-band prune sentinel: a row exists ONLY inside pruneExpired's own
+  // transaction. The gate-protection triggers key off its presence to tell a
+  // sanctioned gate write apart from a hostile out-of-band one.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ${SENTINEL_TABLE} (
+      token INTEGER NOT NULL
+    );
+  `);
+  _restoreGateRow(db);
   _reassertTriggers(db);
 }
 
-/** Unconditionally (re)creates both immutability triggers — self-healing against a DROP TRIGGER attempt. */
+/** Re-INSERT the single gate row (active=0) if the gate table was emptied by a tamper attempt. */
+function _restoreGateRow(db: InstanceType<typeof Database>): void {
+  const row = db.prepare(`SELECT COUNT(*) AS n FROM ${GATE_TABLE}`).get() as { n: number };
+  if (row.n === 0) {
+    // Direct restore while the gate-protection trigger may be active: run it
+    // through the same in-band sentinel window the sanctioned path uses.
+    const restore = db.transaction(() => {
+      db.prepare(`INSERT INTO ${SENTINEL_TABLE} (token) VALUES (1)`).run();
+      db.prepare(`INSERT INTO ${GATE_TABLE} (active) VALUES (0)`).run();
+      db.prepare(`DELETE FROM ${SENTINEL_TABLE}`).run();
+    });
+    restore();
+  }
+}
+
+/**
+ * Unconditionally (re)creates BOTH the audit_log immutability triggers AND the
+ * gate-table self-protection triggers — self-healing against a DROP TRIGGER
+ * attempt on any of them.
+ */
 function _reassertTriggers(db: InstanceType<typeof Database>): void {
   db.exec(`DROP TRIGGER IF EXISTS ${IMMUTABLE_TRIGGER_UPDATE};`);
   db.exec(`
@@ -190,9 +245,33 @@ function _reassertTriggers(db: InstanceType<typeof Database>): void {
   db.exec(`
     CREATE TRIGGER ${IMMUTABLE_TRIGGER_DELETE}
     BEFORE DELETE ON ${TABLE}
-    WHEN (SELECT active FROM audit_log_prune_gate LIMIT 1) = 0
+    WHEN COALESCE((SELECT active FROM ${GATE_TABLE} LIMIT 1), 0) = 0
     BEGIN
       SELECT RAISE(ABORT, 'audit_log is append-only: direct DELETE is forbidden — use pruneExpired()');
+    END;
+  `);
+
+  // Gate-table self-protection: any UPDATE/DELETE of the gate row is aborted
+  // unless the in-band prune sentinel is present (i.e. we are inside
+  // pruneExpired's own transaction). This is what closes the wide-open-flag
+  // bypass — a hostile second connection cannot flip or clear the gate.
+  db.exec(`DROP TRIGGER IF EXISTS ${GATE_TRIGGER_UPDATE};`);
+  db.exec(`
+    CREATE TRIGGER ${GATE_TRIGGER_UPDATE}
+    BEFORE UPDATE ON ${GATE_TABLE}
+    WHEN (SELECT COUNT(*) FROM ${SENTINEL_TABLE}) = 0
+    BEGIN
+      SELECT RAISE(ABORT, 'audit_log_prune_gate is tamper-protected: out-of-band UPDATE is forbidden');
+    END;
+  `);
+
+  db.exec(`DROP TRIGGER IF EXISTS ${GATE_TRIGGER_DELETE};`);
+  db.exec(`
+    CREATE TRIGGER ${GATE_TRIGGER_DELETE}
+    BEFORE DELETE ON ${GATE_TABLE}
+    WHEN (SELECT COUNT(*) FROM ${SENTINEL_TABLE}) = 0
+    BEGIN
+      SELECT RAISE(ABORT, 'audit_log_prune_gate is tamper-protected: out-of-band DELETE is forbidden');
     END;
   `);
 }
@@ -299,9 +378,11 @@ export class AuditModule {
    * than being allowed to widen the cutoff into the present/future.
    */
   pruneExpired(): { deletedCount: number } {
-    // Self-heal first: if a prior statement on this connection DROPped the
-    // immutability triggers, re-assert them before doing anything else so
-    // pruneExpired never runs against an unguarded table.
+    // Self-heal first: if a prior statement on this connection DROPped any of
+    // the immutability / gate-protection triggers, re-assert them AND restore
+    // the gate row before doing anything else so pruneExpired never runs
+    // against an unguarded table or a missing gate row.
+    _restoreGateRow(this.db);
     if (!_triggersIntact(this.db)) {
       _reassertTriggers(this.db);
     }
@@ -317,9 +398,15 @@ export class AuditModule {
     const cutoff = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000).toISOString();
 
     const openGate = this.db.transaction(() => {
-      this.db.prepare('UPDATE audit_log_prune_gate SET active = 1').run();
+      // Raise the in-band prune sentinel so the gate-protection triggers allow
+      // THIS transaction (and only this one) to flip the gate flag. A hostile
+      // second connection has no such sentinel, so its gate UPDATE/DELETE is
+      // aborted.
+      this.db.prepare(`INSERT INTO ${SENTINEL_TABLE} (token) VALUES (1)`).run();
+      this.db.prepare(`UPDATE ${GATE_TABLE} SET active = 1`).run();
       const info = this.db.prepare(`DELETE FROM ${TABLE} WHERE ts < ?`).run(cutoff);
-      this.db.prepare('UPDATE audit_log_prune_gate SET active = 0').run();
+      this.db.prepare(`UPDATE ${GATE_TABLE} SET active = 0`).run();
+      this.db.prepare(`DELETE FROM ${SENTINEL_TABLE}`).run();
       return info.changes;
     });
 

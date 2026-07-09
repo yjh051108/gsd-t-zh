@@ -259,6 +259,172 @@ test('T1 bypass (iii): prune_expired() deletes ONLY window-expired rows — one 
   }
 });
 
+// ── Gate-table tamper killing sub-cases (Red Team M100 BUG 1 CRITICAL + BUG 2 HIGH) ──
+// The audit immutability once delegated to a WIDE-OPEN `audit_log_prune_gate`
+// flag with NO trigger protecting itself. Two second-connection attacks defeated
+// it; both must now be BLOCKED (the live audit row must SURVIVE).
+
+test('BUG 1 (CRITICAL): second-connection UPDATE audit_log_prune_gate SET active=1 then DELETE a live row is BLOCKED (row survives)', async () => {
+  const { AuditModule } = await freshAuditModule();
+  const dbPath = mkTmpDb('gsd-t-audit-gate1-');
+  const mod = new AuditModule({ dbPath, retention: { retentionDays: 30 } });
+  try {
+    const live = mod.appendAudit(sampleEntry({ actor: 'victim', ts: new Date().toISOString() }));
+
+    const raw = new Database(dbPath);
+    try {
+      // Attack: flip the gate open from a hostile second connection, then delete a live row.
+      assert.throws(
+        () => raw.prepare('UPDATE audit_log_prune_gate SET active = 1').run(),
+        /tamper-protected/i,
+        'out-of-band gate UPDATE must be aborted by the gate self-protection trigger'
+      );
+      // Even if the flip is retried some other way, the live DELETE itself must still abort.
+      assert.throws(
+        () => raw.prepare('DELETE FROM audit_log WHERE id = ?').run(live.id),
+        /append-only/i,
+        'live-row DELETE must remain blocked'
+      );
+    } finally {
+      raw.close();
+    }
+
+    // The live row must still be present.
+    const rows = mod.queryAudit({ actor: 'victim' });
+    assert.equal(rows.length, 1, 'live audit row must SURVIVE the gate-flip attack');
+    assert.equal(rows[0].id, live.id);
+  } finally {
+    mod.close();
+  }
+});
+
+test('BUG 2 (HIGH): second-connection DELETE FROM audit_log_prune_gate (empty gate = NULL) then DELETE a live row is BLOCKED (fail-closed)', async () => {
+  const { AuditModule } = await freshAuditModule();
+  const dbPath = mkTmpDb('gsd-t-audit-gate2-');
+  const mod = new AuditModule({ dbPath, retention: { retentionDays: 30 } });
+  try {
+    const live = mod.appendAudit(sampleEntry({ actor: 'victim2', ts: new Date().toISOString() }));
+
+    const raw = new Database(dbPath);
+    try {
+      // Attack: empty the gate so the DELETE trigger's subquery returns NULL.
+      // The gate self-protection trigger aborts the DELETE outright...
+      assert.throws(
+        () => raw.prepare('DELETE FROM audit_log_prune_gate').run(),
+        /tamper-protected/i,
+        'out-of-band gate DELETE must be aborted by the gate self-protection trigger'
+      );
+      // ...and COALESCE-hardening means an empty gate reads as active=0 (LOCKED),
+      // so the live-row DELETE is still blocked fail-CLOSED.
+      assert.throws(
+        () => raw.prepare('DELETE FROM audit_log WHERE id = ?').run(live.id),
+        /append-only/i,
+        'empty-gate live-row DELETE must be blocked fail-closed'
+      );
+    } finally {
+      raw.close();
+    }
+
+    const rows = mod.queryAudit({ actor: 'victim2' });
+    assert.equal(rows.length, 1, 'live audit row must SURVIVE the empty-gate attack');
+    assert.equal(rows[0].id, live.id);
+  } finally {
+    mod.close();
+  }
+});
+
+test('BUG 2 fail-closed: even if the gate table is forcibly emptied, a live-row DELETE reads NULL as LOCKED and is BLOCKED', async () => {
+  const { AuditModule } = await freshAuditModule();
+  const dbPath = mkTmpDb('gsd-t-audit-gate2b-');
+  const mod = new AuditModule({ dbPath, retention: { retentionDays: 30 } });
+  try {
+    const live = mod.appendAudit(sampleEntry({ actor: 'victim3', ts: new Date().toISOString() }));
+
+    // Prove the COALESCE fail-closed property in isolation: drop the gate
+    // self-protection triggers first (so the empty is possible), empty the gate,
+    // then confirm the audit_log DELETE trigger STILL fires (NULL → active=0).
+    const raw = new Database(dbPath);
+    try {
+      raw.exec('DROP TRIGGER IF EXISTS audit_log_prune_gate_no_delete');
+      raw.prepare('DELETE FROM audit_log_prune_gate').run(); // gate now empty → subquery NULL
+      assert.throws(
+        () => raw.prepare('DELETE FROM audit_log WHERE id = ?').run(live.id),
+        /append-only/i,
+        'COALESCE must treat an empty (NULL) gate as active=0 → trigger fires → DELETE blocked'
+      );
+    } finally {
+      raw.close();
+    }
+
+    const rows = mod.queryAudit({ actor: 'victim3' });
+    assert.equal(rows.length, 1, 'live row must survive when the gate is emptied (fail-closed)');
+  } finally {
+    mod.close();
+  }
+});
+
+test('sanctioned path intact: pruneExpired of an EXPIRED row still succeeds after the gate hardening', async () => {
+  const { AuditModule } = await freshAuditModule();
+  const dbPath = mkTmpDb('gsd-t-audit-gate-sane-');
+  const mod = new AuditModule({ dbPath, retention: { retentionDays: 30 } });
+  try {
+    const expiredTs = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString();
+    mod.appendAudit(sampleEntry({ ts: expiredTs, actor: 'expired-actor' }));
+    const live = mod.appendAudit(sampleEntry({ ts: new Date().toISOString(), actor: 'live-actor' }));
+
+    const result = mod.pruneExpired();
+    assert.equal(result.deletedCount, 1, 'the sanctioned prune must still delete the expired row');
+
+    const remaining = mod.queryAudit({});
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].id, live.id);
+  } finally {
+    mod.close();
+  }
+});
+
+test('self-heal: pruneExpired restores a missing gate row (re-INSERT active=0) before pruning', async () => {
+  const { AuditModule } = await freshAuditModule();
+  const dbPath = mkTmpDb('gsd-t-audit-gate-heal-');
+  const mod = new AuditModule({ dbPath, retention: { retentionDays: 30 } });
+  try {
+    const expiredTs = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString();
+    mod.appendAudit(sampleEntry({ ts: expiredTs, actor: 'expired-heal' }));
+    const live = mod.appendAudit(sampleEntry({ ts: new Date().toISOString(), actor: 'live-heal' }));
+
+    // Forcibly remove the gate row out-of-band (drop the self-protection trigger first).
+    const raw = new Database(dbPath);
+    try {
+      raw.exec('DROP TRIGGER IF EXISTS audit_log_prune_gate_no_delete');
+      raw.prepare('DELETE FROM audit_log_prune_gate').run();
+      const cnt = raw.prepare('SELECT COUNT(*) AS n FROM audit_log_prune_gate').get();
+      assert.equal(cnt.n, 0, 'precondition: gate row removed');
+    } finally {
+      raw.close();
+    }
+
+    // pruneExpired must self-heal the missing gate row, then prune only the expired row.
+    const result = mod.pruneExpired();
+    assert.equal(result.deletedCount, 1, 'prune must succeed after restoring the gate row');
+
+    const check = new Database(dbPath);
+    try {
+      const cnt = check.prepare('SELECT COUNT(*) AS n FROM audit_log_prune_gate').get();
+      assert.equal(cnt.n, 1, 'gate row must be restored to exactly one row');
+      const active = check.prepare('SELECT active FROM audit_log_prune_gate LIMIT 1').get();
+      assert.equal(active.active, 0, 'restored gate row must be active=0 (locked)');
+    } finally {
+      check.close();
+    }
+
+    const remaining = mod.queryAudit({});
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].id, live.id);
+  } finally {
+    mod.close();
+  }
+});
+
 test('T1 bypass (iii): prune_expired() cannot be coerced via a malicious retention-window override into deleting a live row', async () => {
   const dbPath = mkTmpDb('gsd-t-audit-coerce-');
 
