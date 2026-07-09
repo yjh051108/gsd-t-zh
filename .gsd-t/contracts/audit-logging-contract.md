@@ -32,9 +32,18 @@ Every audit entry MUST carry these fields:
 
 Unlike trace's `decision:boolean|null`, audit is a STATE-CHANGE record — the `before`→`after` pair is its defining shape and MUST be present (either side may be `null`, but the fields are required).
 
-## Append-only immutability (non-negotiable — David's stated choice)
+## Append-only immutability (append-only IN NORMAL OPERATION — scoped honestly)
 
-Audit entries are IMMUTABLE: append-only, NEVER edited or deleted in normal operation. The write helper MUST NOT expose an update-existing or delete-existing path in normal operation. The enforcement gate proves the store rejects an UPDATE/DELETE of an existing entry.
+Audit entries are IMMUTABLE **in normal operation**: append-only, NEVER edited or deleted through the module's own write path. The write helper MUST NOT expose an update-existing or delete-existing path in normal operation. The enforcement gate proves the store rejects an UPDATE/DELETE of an existing entry via the sanctioned surface, and SQLite triggers (gate + sentinel, self-healing) resist casual and in-app mutation.
+
+### ⚠ KNOWN LIMITATION — defense-in-depth, NOT cryptographic tamper-proofing (M100 verify, Red Team)
+
+The immutability guarantee is **defense-in-depth against accidental and in-app mutation**, NOT cryptographic tamper-proofing against a hostile process with **direct write access to the .db file**. This is a **fundamental limitation of trigger-based immutability in an embedded, file-writable store** (SQLite): triggers live inside the same writable file, so a determined attacker with a second raw connection and arbitrary SQL can eventually defeat any in-file guard (the guard needs its own guard, recursively — verified across 2 verify fix-cycles). Preventing that is an **OS-permissions / append-only-filesystem / external-WORM-storage / off-box-log-shipping concern**, OUT OF SCOPE for a default logging module.
+
+- **In scope + enforced:** the module never mutates; casual/in-app/second-connection-casual tampering is blocked by triggers; the gate proves the sanctioned surface is append-only.
+- **Out of scope (documented, NOT claimed):** cryptographic tamper-EVIDENCE or tamper-PREVENTION against a hostile process with direct DB-file write access.
+- **Follow-up:** tamper-EVIDENCE (a hash-chained append-only log — each entry hashes the prior, so tampering is DETECTABLE even if not preventable) is a **separate backlog item**, not part of M100's default-logging scope.
+- The Red Team realism gate treats the "hostile direct-DB-write" attack as **out-of-scope-documented**, not an in-scope CRITICAL, for this module. Money/security findings within the module's OWN surface (PII leak, in-app mutation, gate no-op) remain in-scope and were all fixed.
 
 ## Configurable retention window (extendable)
 

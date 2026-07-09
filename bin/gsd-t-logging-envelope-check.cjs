@@ -89,7 +89,12 @@ const EMAIL_RE = /(?<![^\s(])[^\s@()]+@[^\s@()]+\.[a-zA-Z]{2,}(?![^\s).,;:!?"'>\
 // an ISO-8601 date/timestamp shape (YYYY-MM-DD[THH:MM:SS...]) which otherwise
 // false-positives against generic digit-dash grouping.
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T[\d:.Z+-]*)?$/;
-const PHONE_RE = /(?<!\d)\+?\(?\d{1,4}\)?[\s.-]\d{2,4}[\s.-]\d{2,4}(?:[\s.-]\d{2,4})?(?!\d)/;
+// CONSERVATIVE phone matcher (fail-closed gate — a false positive BLOCKS a legit build,
+// so we only flag CLEAR phone signals, accepting we miss exotic formats):
+//   +CC prefix, OR a parenthesized area code, OR the classic NNN-NNN-NNNN US shape.
+// A bare undelimited digit run is NOT a phone (contract: a bare long id isn't a phone).
+// Grouped internal ids / ranges (12-34-56, 100-200-300, 1234-5678-90) are NOT matched.
+const PHONE_RE = /(?<!\d)(?:\+\d{1,3}[\s.-]?)?(?:\(\d{3}\)[\s.-]?\d{3}[\s.-]?\d{4}|\d{3}[.-]\d{3}[.-]\d{4})(?!\d)/;
 
 function _isPhoneShaped(value) {
   const matches = value.match(new RegExp(PHONE_RE.source, 'g')) || [];

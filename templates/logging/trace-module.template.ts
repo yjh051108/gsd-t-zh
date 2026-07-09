@@ -59,7 +59,10 @@ export function isTraceEnabled(): boolean {
 // bin/gsd-t-logging-envelope-check.cjs.
 const EMAIL_RE = /(?<![^\s(])[^\s@()]+@[^\s@()]+\.[a-zA-Z]{2,}(?![^\s).,;:!?"'>\]}])/;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T[\d:.Z+-]*)?$/;
-const PHONE_RE = /(?<!\d)\+?\(?\d{1,4}\)?[\s.-]\d{2,4}[\s.-]\d{2,4}(?:[\s.-]\d{2,4})?(?!\d)/;
+// Keep PHONE_RE identical to the copy in bin/gsd-t-logging-envelope-check.cjs.
+// CONSERVATIVE: +CC, parenthesized area code, or classic NNN-NNN-NNNN only — a bare
+// digit run / grouped id / range is NOT a phone (fail-closed gate; avoid blocking builds).
+const PHONE_RE = /(?<!\d)(?:\+\d{1,3}[\s.-]?)?(?:\(\d{3}\)[\s.-]?\d{3}[\s.-]?\d{4}|\d{3}[.-]\d{3}[.-]\d{4})(?!\d)/;
 const ADDRESS_RE =
   /\b\d{1,6}\s+[A-Za-z0-9.'-]+(?:\s+[A-Za-z0-9.'-]+){0,4}\s+(Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Way|Place|Pl)\b/i;
 
