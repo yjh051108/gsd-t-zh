@@ -1,0 +1,4 @@
+{
+  "traceOptOut": true,
+  "reason": "GSD-T is a stateless CLI + methodology package, not a running application with runtime data packets / events / transmissions to trace. Its own workflow decisions are already captured in progress.md decision logs + .gsd-t/metrics/ event streams. No app-runtime trace surface applies."
+}

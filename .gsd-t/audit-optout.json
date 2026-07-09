@@ -1,0 +1,4 @@
+{
+  "auditOptOut": true,
+  "reason": "GSD-T has no admin-facing clients, no per-client history, and no compliance surface — it is a developer CLI, not a multi-tenant application. There is no who-did-what-to-a-client accountability record to keep."
+}

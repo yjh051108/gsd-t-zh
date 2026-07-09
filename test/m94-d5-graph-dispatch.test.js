@@ -239,16 +239,22 @@ test("gsd-t graph --output json still emits the M44 task DAG (not collateral-dam
     Array.isArray(dag.nodes),
     `Task DAG JSON should have a 'nodes' array, got keys: ${Object.keys(dag || {}).join(", ")}`
   );
+  // Assert the task-DAG SHAPE (not-collateral-damaged into entity-graph output),
+  // NOT a non-empty node count. A completed milestone legitimately has ZERO live
+  // domains (they're archived at complete-milestone), so `nodes: []` is a valid
+  // state — the invariant is that the DAG path still emits task-DAG-shaped JSON.
   assert.ok(
-    dag.nodes.length > 0,
-    `Task DAG should have at least one node (M94 tasks exist), got 0`
+    Array.isArray(dag.nodes) && Array.isArray(dag.edges),
+    `Task DAG JSON should have 'nodes' + 'edges' arrays (task-DAG shape, not entity graph), got keys: ${Object.keys(dag || {}).join(", ")}`
   );
-  // Verify the nodes look like tasks, not entity-graph nodes
-  const firstNode = dag.nodes[0];
-  assert.ok(
-    firstNode && (firstNode.id || firstNode.domain),
-    `Task DAG nodes should have 'id' or 'domain' fields (GSD-T task format), got: ${JSON.stringify(firstNode)}`
-  );
+  // If any live domains exist, their nodes must look like tasks (id/domain fields).
+  if (dag.nodes.length > 0) {
+    const firstNode = dag.nodes[0];
+    assert.ok(
+      firstNode && (firstNode.id || firstNode.domain),
+      `Task DAG nodes should have 'id' or 'domain' fields (GSD-T task format), got: ${JSON.stringify(firstNode)}`
+    );
+  }
 });
 
 // ─── (e) gsd-t graph index does not throw or hit dead engine ─────────────────

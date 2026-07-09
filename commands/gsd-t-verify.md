@@ -20,9 +20,10 @@ preflight → brief → verify-gate (deterministic Track 1+2)
 Per `.gsd-t/contracts/orthogonal-validation-contract.md` v1.0.0 STABLE, the three triad stages are orthogonal objective functions — no collapse, no substitution, no transitive trust. Synthesis preserves category labels.
 
 **Hard-failing gates** (each halts before triad):
-- `verify-gate` — deterministic Track 1 (preflight envelope) + Track 2 (tsc/biome/npm-test/knip/gitleaks/scc fan-out)
+- `verify-gate` — deterministic Track 1 (preflight envelope) + Track 2 (tsc/biome/npm-test/knip/gitleaks/scc/logging-envelope fan-out)
 - M57 `build-coverage` + `ci-parity` — origin TimeTracking v1.10.12 Dockerfile incident
 - M58 `test-data --purge` — origin GSD-T-Board v0.1.10 2442 E2E orphans incident
+- M100 `logging-envelope` — structural predicate (`bin/gsd-t-logging-envelope-check.cjs`) enforcing BOTH the trace envelope (`ts`/`category`/`decision`/`detail`) and the audit envelope (`ts`/`actor`/`action`/`target`/`before`/`after`/`context`) over per-project-varying schemas — never a hardcoded category/action value. Also enforces the trace PII bar (recursing into nested `data`), the no-collapse boundary (a record MUST NOT carry top-level markers from both streams), append-only/immutability, retention-configurability, and audit-default-except-opt-out (`.gsd-t/audit-optout.json`). FAIL-CLOSED — never warn-and-proceed. Contract: `.gsd-t/contracts/logging-verify-gate-contract.md`.
 
 ## Step 1: Read the current milestone state
 

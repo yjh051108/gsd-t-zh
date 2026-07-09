@@ -305,6 +305,8 @@ function _detectDefaultTrack2(projectDir, notes) {
     });
   }
 
+  plan.push({ id: 'logging-envelope', cmd: 'node', args: [path.join(__dirname, 'gsd-t-logging-envelope-check.cjs'), '--project', projectDir], timeoutMs: 30000 }); // M100 D3: structural trace+audit envelope gate, FAIL-CLOSED
+
   // secrets — gitleaks (PATH detection deferred to runtime)
   if (_hasOnPath('gitleaks')) {
     plan.push({

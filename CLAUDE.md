@@ -135,3 +135,7 @@ The global gate applies first (see `~/.claude/CLAUDE.md`). Additionally for this
 ## Current Status
 
 See `.gsd-t/progress.md`.
+
+## Logging Posture (M100)
+
+GSD-T **opts out of BOTH trace and audit logging** — it is a stateless CLI + methodology package, not a running application. Records: `.gsd-t/trace-optout.json` + `.gsd-t/audit-optout.json`. This is the sanctioned "not a running app" exception (see `.gsd-t/contracts/trace-logging-contract.md` §opt-out-record + `audit-logging-contract.md` §opt-out-record). A real application (requests/jobs/integrations/clients) must NOT opt out.

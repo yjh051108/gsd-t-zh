@@ -2,6 +2,24 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [4.20.10] - 2026-07-08
+
+### Added — M100: Universal Trace + Audit Logging (framework defaults)
+
+Trace + audit logging are now GSD-T framework defaults — every new project is born with a toggleable capture-everything trace stream (PII-barred; opt-out-able for stateless CLIs/libraries) and an immutable, admin-queryable audit stream (opt-out-able), enforced by a structural verify gate. Trace and audit are two DISTINCT streams that never collapse (the two machinery domains share no file, mechanizing the invariant by construction). Piloted end-to-end into greenfield UMI-Automation.
+
+- 2 primary contracts + 3 support contracts + 2 PseudoCode behavior maps.
+- `bin/gsd-t-logging-scaffolder.cjs` — storage scaffolder with a human-approval PAUSE (never silently picks a backend).
+- `bin/gsd-t-logging-envelope-check.cjs` — structural verify gate (per-record + per-project discovery incl. SQLite, PII bar, no-collapse, presence-vs-null, trace+audit opt-out).
+- `templates/logging/{trace,audit}-module.template.ts` + `bin/gsd-t-{trace,audit}-distill.cjs`; audit = real SQLite, append-only triggers + sentinel + self-heal, GSD-T-independent admin query.
+- `bin/gsd-t-migrate-logging.cjs` + `commands/gsd-t-migrate-logging.md` + 2 CLAUDE.md hard rules + a symmetric trace opt-out (`.gsd-t/trace-optout.json`); GSD-T self-opts-out of both.
+
+### Fixed — update banner corrupted machine JSON stdout
+
+The "Update available" banner wrote to stdout after a command's JSON envelope — breaking JSON.parse consumers of `graph body` / `graph --output json`. Moved to stderr.
+
+**Known limitation (documented):** audit immutability is trigger-based defense-in-depth, NOT cryptographic tamper-proofing against a hostile process with direct .db-file write access (a fundamental SQLite limit). Tamper-evidence (hash-chain) is backlog #48.
+
 ## [4.19.14] - 2026-07-07
 
 ### Changed — `/gsd-t-stories`: pagination, test-case coloring, in-image diagram titles

@@ -276,12 +276,14 @@ describe("command listing functions", () => {
   // gsd-t 49→45→46 (+estimate, v4.15.11). Utility count unchanged at 6.
   // v4.19.10 added gsd-t-stories (dev-handoff user-stories in Tekyz format):
   // total 52→53, gsdt 46→47.
-  it("total command count is 53", () => {
-    assert.equal(getCommandFiles().length, 53);
+  // M100-D5 added gsd-t-migrate-logging (brownfield trace+audit retrofit):
+  // total 53→54, gsdt 47→48.
+  it("total command count is 54", () => {
+    assert.equal(getCommandFiles().length, 54);
   });
 
-  it("gsd-t command count is 47", () => {
-    assert.equal(getGsdtCommands().length, 47);
+  it("gsd-t command count is 48", () => {
+    assert.equal(getGsdtCommands().length, 48);
   });
 
   it("utility command count is 6", () => {
