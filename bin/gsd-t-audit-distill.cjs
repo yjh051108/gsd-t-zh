@@ -72,7 +72,11 @@ function readOptOut(projectDir) {
 // decision point (approve/reject/edit a record with a before/after state).
 // This is a STRUCTURAL grep over the plan's own text — it extracts what the
 // plan says, it does not invent a domain-specific action.
-const DECISION_VERB_RE = /\b(approve[sd]?|reject[sd]?|edit(?:ed|s)?|revis(?:e|ed|es)|review(?:ed|s)?|impersonat(?:e|ed|es|ion)|refund(?:ed|s)?|delet(?:e|ed|es)|role[- ]?chang(?:e|ed|es)|export(?:ed|s)?|approval)\b/i;
+// Note: bare noun 'approval' is intentionally excluded — the approve[sd]?
+// branch already covers the decision verb, and keeping the action set
+// verb-consistent avoids emitting action:'approval' alongside 'approve'/
+// 'approved' for the same decision (code-review nit).
+const DECISION_VERB_RE = /\b(approve[sd]?|reject[sd]?|edit(?:ed|s)?|revis(?:e|ed|es)|review(?:ed|s)?|impersonat(?:e|ed|es|ion)|refund(?:ed|s)?|delet(?:e|ed|es)|role[- ]?chang(?:e|ed|es)|export(?:ed|s)?)\b/i;
 
 // Lines that look like a markdown heading or list item naming a step.
 const PLAN_LINE_RE = /^\s*(?:[-*+]\s+|#{1,6}\s+|\d+[.)]\s+)(.*\S)\s*$/;

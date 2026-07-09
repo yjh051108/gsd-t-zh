@@ -105,6 +105,31 @@ test('PII email nested in trace data FAILS', () => {
   assert.ok(r.failures.some((f) => f.rule === 'trace-pii-barred'));
 });
 
+// ── (e-quote/bracket) delimiter-adjacent email FAILS (Red Team FINDING 2) ───
+// EMAIL_RE's trailing lookahead previously failed to match an email immediately
+// before `"`, `>`, `]`, or `}` — letting these THROUGH the gate. Each must FAIL.
+
+test('PII email immediately before a closing quote (JSON body string) FAILS', () => {
+  const rec = validTrace({ data: { body: '{"buyer":{"email":"jane@buyer.com"}}' } });
+  const r = checkEnvelope(rec, { stream: 'trace' });
+  assert.equal(r.ok, false);
+  assert.ok(r.failures.some((f) => f.rule === 'trace-pii-barred'));
+});
+
+test('PII email immediately before a closing angle bracket (Name <email>) FAILS', () => {
+  const rec = validTrace({ data: { from: 'Jane Doe <jane@buyer.com>' } });
+  const r = checkEnvelope(rec, { stream: 'trace' });
+  assert.equal(r.ok, false);
+  assert.ok(r.failures.some((f) => f.rule === 'trace-pii-barred'));
+});
+
+test('PII emails immediately before closing bracket/quote (JSON array literal) FAILS', () => {
+  const rec = validTrace({ data: { recipients: '["a@buyer.com","b@buyer.com"]' } });
+  const r = checkEnvelope(rec, { stream: 'trace' });
+  assert.equal(r.ok, false);
+  assert.ok(r.failures.some((f) => f.rule === 'trace-pii-barred'));
+});
+
 // ── (f) NOVEL category/action PASSES (structural, never hardcoded) ─────
 
 test('novel trace category PASSES (structural, not hardcoded)', () => {

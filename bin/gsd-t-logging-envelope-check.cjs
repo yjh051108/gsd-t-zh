@@ -80,8 +80,11 @@ function _typeOk(field, value) {
 
 // Real-TLD-shaped email, matched as a whole-token substring (word-boundary-safe):
 // local@domain.tld (tld letters only, 2+ chars). Uses lookaround so it also matches
-// a bare full-string value (whole-string IS a substring of itself).
-const EMAIL_RE = /(?<![^\s(])[^\s@()]+@[^\s@()]+\.[a-zA-Z]{2,}(?![^\s).,;:!?])/;
+// a bare full-string value (whole-string IS a substring of itself). The trailing
+// lookahead allows a closing quote/bracket/angle-bracket/brace immediately after
+// the TLD (JSON string bodies, `Name <email>` headers, array literals) — without
+// these, an email immediately followed by `"`, `>`, `]`, or `}` was NOT matched.
+const EMAIL_RE = /(?<![^\s(])[^\s@()]+@[^\s@()]+\.[a-zA-Z]{2,}(?![^\s).,;:!?"'>\]}])/;
 // Phone: grouped digit run with separators/parens — NOT a bare long id, and NOT
 // an ISO-8601 date/timestamp shape (YYYY-MM-DD[THH:MM:SS...]) which otherwise
 // false-positives against generic digit-dash grouping.
@@ -350,6 +353,11 @@ function checkLoggingEnvelopes(opts) {
       if (!result.ok) failures.push(...result.failures);
     }
   }
+  // else: trace module is present but the store is absent or not a JSON array
+  // yet (traceRecords === null) — a fresh project that has scaffolded trace
+  // but not yet emitted a record. This is intentionally legal: there is
+  // nothing to validate yet, and the module's mere presence already satisfies
+  // trace-default-except-optout above.
 
   // (ii) Audit discovery.
   const auditModulePath = _firstExisting(projectDir, AUDIT_MODULE_CANDIDATES);

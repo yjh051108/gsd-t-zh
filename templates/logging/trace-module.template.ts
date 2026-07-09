@@ -52,7 +52,12 @@ export function isTraceEnabled(): boolean {
 // depth. Must NOT false-positive on legitimate long numeric ids, UUIDs, or an
 // internal id string that merely contains '@' without a valid email shape.
 
-const EMAIL_RE = /(?<![^\s(])[^\s@()]+@[^\s@()]+\.[a-zA-Z]{2,}(?![^\s).,;:!?])/;
+// The trailing lookahead allows a closing quote/bracket/angle-bracket/brace
+// immediately after the TLD (JSON string bodies, `Name <email>` headers,
+// array literals) — without these, an email immediately followed by `"`,
+// `>`, `]`, or `}` was NOT matched. Keep identical to the copy in
+// bin/gsd-t-logging-envelope-check.cjs.
+const EMAIL_RE = /(?<![^\s(])[^\s@()]+@[^\s@()]+\.[a-zA-Z]{2,}(?![^\s).,;:!?"'>\]}])/;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T[\d:.Z+-]*)?$/;
 const PHONE_RE = /(?<!\d)\+?\(?\d{1,4}\)?[\s.-]\d{2,4}[\s.-]\d{2,4}(?:[\s.-]\d{2,4})?(?!\d)/;
 const ADDRESS_RE =
@@ -90,11 +95,20 @@ function scanForPii(value: unknown, pathParts: string[], hits: string[], depth: 
   }
 }
 
-/** Throws when a PII-shaped value is found anywhere in `data` (incl. nested). */
-function assertNoPii(data: Record<string, unknown> | undefined): void {
-  if (data == null) return;
+/**
+ * Throws when a PII-shaped value is found anywhere in the given record's
+ * fields, EXCEPT the structural `ts` timestamp. Matches the gate's own scan
+ * scope (bin/gsd-t-logging-envelope-check.cjs checkEnvelope): every field —
+ * `detail`, `category`, `key`, `data` — is subject to the PII bar, not just
+ * `data`. The contract says "PII barred in ANY field"; scanning only `data`
+ * here would let PII through the emitter that the verify gate would reject.
+ */
+function assertNoPii(record: Record<string, unknown>): void {
   const hits: string[] = [];
-  scanForPii(data, ["data"], hits, 0);
+  for (const field of Object.keys(record)) {
+    if (field === "ts") continue;
+    scanForPii(record[field], [field], hits, 0);
+  }
   if (hits.length > 0) {
     throw new Error(`trace-pii-barred: PII-shaped value at: ${hits.join(", ")}`);
   }
@@ -153,7 +167,6 @@ export interface TraceOptions {
 export function emitTrace(category: string, detail: string, options: TraceOptions = {}): void {
   try {
     if (!isTraceEnabled()) return;
-    assertNoPii(options.data);
     const record: TraceRecord = {
       ts: new Date().toISOString(),
       category,
@@ -163,6 +176,9 @@ export function emitTrace(category: string, detail: string, options: TraceOption
       ...(options.status !== undefined ? { status: options.status } : {}),
       ...(options.data !== undefined ? { data: options.data } : {}),
     };
+    // Scan the FULL assembled record (every field except `ts`) — not just
+    // `options.data` — so runtime enforcement matches the gate + contract.
+    assertNoPii(record as unknown as Record<string, unknown>);
     sink().write(record);
   } catch (_err) {
     // Fire-and-forget: swallow every error, never throw into the caller.

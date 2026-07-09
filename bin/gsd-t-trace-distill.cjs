@@ -25,14 +25,20 @@ const fs = require('fs');
 //
 // A trace-worthy operation is a concrete REST/JSON/external-call integration
 // point named in the project's plan (per logging-schema-distillation-contract
-// §UMI pilot grounding: Grain / Airtable / Anthropic / Apify for UMI). This
-// distiller is GENERIC — it looks for named external-service integration
-// points in the plan text, grounding every emitted category in a matched
-// source line. It never invents a category the plan does not mention.
+// §UMI pilot grounding: Grain / Airtable / Anthropic / Apify for UMI).
 //
-// Each signature is matched against the plan text case-sensitively on the
-// canonical name (avoids over-matching common words); the category name is
-// the canonical service/integration name itself, as the ledger records it.
+// This is a STRUCTURAL extraction, not a closed list: a hardcoded allowlist
+// would silently yield ZERO categories for a plan naming services outside the
+// list (e.g. Plaid/Shopify/QuickBooks), violating the project doctrine against
+// hardcoding a finite list for an open category. So the primary path greps
+// the plan text for integration-point CUES — REST/API/webhook/fetch/axios/
+// HTTP-client mentions, `*.com`-shaped service hostnames, and
+// `process.env.*_API_KEY`-shaped env vars — and grounds the emitted category
+// in the nearest proper-noun token on the matched line (mirroring the audit
+// distiller's grounded-extraction approach: never invent, always cite a
+// source line). KNOWN_INTEGRATION_SIGNATURES is kept only as a recognizer
+// HINT (checked first, since a known name is unambiguous) — never as the
+// sole gate for what counts as trace-worthy.
 
 const KNOWN_INTEGRATION_SIGNATURES = [
   'Grain',
@@ -45,6 +51,48 @@ const KNOWN_INTEGRATION_SIGNATURES = [
   'SendGrid',
   'Softr',
 ];
+
+// Structural cues marking a plan line as naming a concrete external
+// integration point — never a business-domain word list, purely syntactic.
+// Each cue is captured so the service token can be extracted RELATIVE to the
+// cue's own position, not just "first capitalized word on the line" (which
+// over-matches sentence-leading words like "We"/"Our"/"The").
+const INTEGRATION_CUE_RE =
+  /\b(?:REST|API|webhook|fetch|axios|HTTP client|Messages API|Files API)\b|[A-Za-z0-9-]+\.com\b|process\.env\.[A-Z0-9_]*_API_KEY\b/;
+
+const STOPWORDS = new Set([
+  'API', 'REST', 'HTTP', 'HTTPS', 'JSON', 'URL', 'ID', 'MCP', 'CLI', 'SOP',
+  'We', 'Our', 'The', 'This', 'That', 'A', 'An', 'It', 'They',
+]);
+
+/**
+ * Best-effort proper-noun token identifying the service named on a line that
+ * already matched INTEGRATION_CUE_RE — purely structural: looks at the
+ * capitalized word immediately BEFORE the cue match first (e.g. "Plaid API",
+ * "Shopify webhook"), falling back to immediately after (e.g. "REST client
+ * syncs QuickBooks"), then to the nearest non-stopword capitalized token
+ * anywhere on the line. Never a sentence-leading word like "We"/"The".
+ */
+function _extractServiceToken(line, cueMatch) {
+  const before = line.slice(0, cueMatch.index);
+  const after = line.slice(cueMatch.index + cueMatch[0].length);
+
+  const beforeTokens = before.match(/\b[A-Z][a-zA-Z0-9]*\b/g) || [];
+  for (let i = beforeTokens.length - 1; i >= 0; i--) {
+    if (!STOPWORDS.has(beforeTokens[i])) return beforeTokens[i];
+  }
+
+  const afterTokens = after.match(/\b[A-Z][a-zA-Z0-9]*\b/g) || [];
+  for (const t of afterTokens) {
+    if (!STOPWORDS.has(t)) return t;
+  }
+
+  const allTokens = line.match(/\b[A-Z][a-zA-Z0-9]*\b/g) || [];
+  for (const t of allTokens) {
+    if (!STOPWORDS.has(t)) return t;
+  }
+  return null;
+}
 
 /**
  * Finds the first line in `lines` containing `needle` as a whole-word match,
@@ -83,6 +131,9 @@ function distillTraceCategories(planPath) {
   const lines = text.split(/\r?\n/);
 
   const categories = [];
+  const seen = new Set();
+
+  // Pass 1 — known-service recognizer hint (unambiguous, checked first).
   for (const signature of KNOWN_INTEGRATION_SIGNATURES) {
     const match = findFirstMatchingLine(lines, signature);
     if (match) {
@@ -90,7 +141,23 @@ function distillTraceCategories(planPath) {
         category: signature,
         source: `${planPath}:${match.lineNumber}: ${match.text}`,
       });
+      seen.add(signature);
     }
+  }
+
+  // Pass 2 — structural extraction over lines carrying an integration cue,
+  // for any named service NOT already covered by the known-list hint.
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const cueMatch = INTEGRATION_CUE_RE.exec(line);
+    if (!cueMatch) continue;
+    const token = _extractServiceToken(line, cueMatch);
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    categories.push({
+      category: token,
+      source: `${planPath}:${i + 1}: ${line.trim()}`,
+    });
   }
 
   return { categories };
