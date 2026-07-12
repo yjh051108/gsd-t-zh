@@ -2,6 +2,16 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [5.0.12] - 2026-07-12
+
+### Fixed — graph require-chain shipped incomplete → every project's graph silently dead
+
+`bin/gsd-t-graph-query-cli.cjs` `require()`s `gsd-t-graph-store-resolver.cjs` at load, but that file (added to source in M99, 2026-06-30) was never added to `PROJECT_BIN_TOOLS` — so `update-all` copied the query CLI and 6 of its 7 dependencies and silently omitted the 7th. In every registered project the CLI threw on load → the graph was unqueryable → all graph consumers (execute/wave/debug/quick/impact/plan/scan **and `/gsd-t-architect`**) silently fell back to grep. Found by the Binvoice architect run reporting its own reuse-check was disabled. Same class as the M96 / global-bin propagation gaps.
+
+- `bin/gsd-t.js`: added `gsd-t-graph-store-resolver.cjs` to `PROJECT_BIN_TOOLS`; exported `PROJECT_BIN_TOOLS`.
+- `test/graph-require-chain-propagation.test.js` (NEW): statically walks the transitive `require("./…")` chain from the graph entry points and FAILS if any reachable `bin/` file is missing from `PROJECT_BIN_TOOLS` — the mechanical guard that turns this whole drift class into a red test instead of a silent grep-fallback. Proven to fail when the resolver is removed.
+- `.gsd-t/contracts/graph-metrics-contract.md`: refreshed two `bin/gsd-t.js` line citations shifted by the fix.
+
 ## [5.0.11] - 2026-07-12
 
 ### Fixed — architect hook now ships + installs; de-flaked its test

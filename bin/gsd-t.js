@@ -2982,6 +2982,13 @@ const PROJECT_BIN_TOOLS = [
   // [[project_code_graph_universal_consumer]] [[feedback_graph_is_architectural_anchor]]
   "gsd-t-graph-query-cli.cjs", "gsd-t-graph-index.cjs", "gsd-t-graph-freshness.cjs",
   "gsd-t-graph-edge-extract.cjs", "gsd-t-graph-scip-upgrade.cjs", "gsd-t-scip-reader.cjs",
+  // M99 (added 2026-06-30, resolver added to the copy list 2026-07-12) — the query
+  // CLI `require`s gsd-t-graph-store-resolver.cjs at load time (line ~76). It was
+  // added to the source in M99 but NEVER added here, so update-all copied the CLI
+  // and 6 of its 7 deps and silently omitted this one → the CLI threw on require →
+  // graph dead → grep fallback (found by the Binvoice architect run 2026-07-12).
+  // Same class as [[project_global_bin_propagation_gap]] / [[project_m96_graph_runs_in_projects]].
+  "gsd-t-graph-store-resolver.cjs",
   // M96 — multi-location resolver for the store engine (better-sqlite3), so a
   // copied tool finds the engine from the GSD-T global package, not the project's
   // own (usually absent) node_modules. Fail-loud with remediation if all miss.
@@ -4912,6 +4919,7 @@ module.exports = {
   ensureDir,
   copyFile,
   copyBinToolsToProject,
+  PROJECT_BIN_TOOLS,
   hasPlaywright,
   hasSwagger,
   hasApi,
