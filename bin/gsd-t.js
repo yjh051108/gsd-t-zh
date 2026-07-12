@@ -485,6 +485,15 @@ const READ_INTERCEPT_HOOK_MARKER = "gsd-t-read-intercept";
 const READ_INTERCEPT_HOOK_COMMAND =
   'bash -c \'[ -f "$(npm root -g)/@tekyzinc/gsd-t/scripts/gsd-t-read-intercept.js" ] && node "$(npm root -g)/@tekyzinc/gsd-t/scripts/gsd-t-read-intercept.js" || true\'';
 
+// M101 — architect-oversight PreToolUse hook on Write|Edit. Same global-package
+// pattern as the intercept hooks: runs the script from the globally-installed
+// package, and the script fails-open (no-op) in non-GSD-T projects / prose writes,
+// so it is safe to register globally with a Write|Edit matcher. It reminds the model
+// to run the Architect's Oversight Six-Stage Pass before writing code (M101).
+const ARCHITECT_HOOK_MARKER = "gsd-t-architect-oversight-guard";
+const ARCHITECT_HOOK_COMMAND =
+  'bash -c \'[ -f "$(npm root -g)/@tekyzinc/gsd-t/scripts/gsd-t-architect-oversight-guard.js" ] && node "$(npm root -g)/@tekyzinc/gsd-t/scripts/gsd-t-architect-oversight-guard.js" || true\'';
+
 // Append entries to {projectDir}/.gitignore. Each entry added only if absent.
 // Idempotent. Returns true if any entries were added, false otherwise.
 function ensureGitignoreEntries(projectDir, entries) {
@@ -928,6 +937,60 @@ function configureReadInterceptHook(settingsPath) {
   return { installed: true, action };
 }
 
+// M101 — register the architect-oversight PreToolUse hook (matcher "Write|Edit").
+// Idempotent: find-by-marker, refresh stale command, else add. Mirrors the M98
+// read-intercept installer but on PreToolUse. The script fails-open so this is
+// safe globally (silent in non-GSD-T projects and on prose/doc writes).
+function configureArchitectHook(settingsPath) {
+  const targetPath = settingsPath || SETTINGS_JSON;
+  let settings = {};
+  if (fs.existsSync(targetPath)) {
+    try {
+      settings = JSON.parse(fs.readFileSync(targetPath, "utf8"));
+      if (!settings || typeof settings !== "object") settings = {};
+    } catch {
+      warn("settings.json has invalid JSON — cannot configure architect hook");
+      return { installed: false, action: "noop" };
+    }
+  }
+  if (!settings.hooks) settings.hooks = {};
+  if (!Array.isArray(settings.hooks.PreToolUse)) settings.hooks.PreToolUse = [];
+
+  const cmd = ARCHITECT_HOOK_COMMAND;
+  let action = "noop";
+  let found = false;
+  for (const entry of settings.hooks.PreToolUse) {
+    if (!entry || !Array.isArray(entry.hooks)) continue;
+    for (const h of entry.hooks) {
+      if (!h || typeof h.command !== "string") continue;
+      if (h.command === cmd || h.command.includes(ARCHITECT_HOOK_MARKER)) {
+        found = true;
+        if (h.command !== cmd) { h.command = cmd; action = "updated"; }
+        if (entry.matcher !== "Write|Edit") { entry.matcher = "Write|Edit"; action = action === "noop" ? "updated" : action; }
+      }
+    }
+  }
+  if (!found) {
+    settings.hooks.PreToolUse.push({
+      matcher: "Write|Edit",
+      hooks: [{ type: "command", command: cmd }],
+    });
+    action = "added";
+  }
+  if (action === "noop") return { installed: true, action: "noop" };
+  if (isSymlink(targetPath)) {
+    warn("Skipping settings.json write — target is a symlink");
+    return { installed: false, action: "noop" };
+  }
+  try {
+    fs.writeFileSync(targetPath, JSON.stringify(settings, null, 2));
+  } catch (e) {
+    warn(`Failed to write settings.json: ${e.message}`);
+    return { installed: false, action: "noop" };
+  }
+  return { installed: true, action };
+}
+
 // M98 — remove the GSD-T intercept PostToolUse hooks (grep + read) from settings.json.
 // Used during uninstall. Marker-based; leaves all other hooks intact. Idempotent.
 function removeInterceptHooks(settingsPath) {
@@ -941,17 +1004,28 @@ function removeInterceptHooks(settingsPath) {
     warn("settings.json has invalid JSON — cannot remove intercept hooks");
     return false;
   }
-  if (!settings.hooks || !Array.isArray(settings.hooks.PostToolUse)) return false;
+  if (!settings.hooks) return false;
 
-  const markers = [GRAPH_INTERCEPT_HOOK_MARKER, READ_INTERCEPT_HOOK_MARKER];
-  const before = settings.hooks.PostToolUse.length;
-  settings.hooks.PostToolUse = settings.hooks.PostToolUse.filter((entry) => {
-    if (!entry || !Array.isArray(entry.hooks)) return true;
-    return !entry.hooks.some(
-      (h) => h && typeof h.command === "string" && markers.some((m) => h.command.includes(m))
-    );
-  });
-  if (before - settings.hooks.PostToolUse.length === 0) return false;
+  const postMarkers = [GRAPH_INTERCEPT_HOOK_MARKER, READ_INTERCEPT_HOOK_MARKER];
+  const preMarkers = [ARCHITECT_HOOK_MARKER];
+  let removed = 0;
+
+  const stripByMarkers = (arr, markers) => {
+    if (!Array.isArray(arr)) return arr;
+    const before = arr.length;
+    const out = arr.filter((entry) => {
+      if (!entry || !Array.isArray(entry.hooks)) return true;
+      return !entry.hooks.some(
+        (h) => h && typeof h.command === "string" && markers.some((m) => h.command.includes(m))
+      );
+    });
+    removed += before - out.length;
+    return out;
+  };
+
+  settings.hooks.PostToolUse = stripByMarkers(settings.hooks.PostToolUse, postMarkers);
+  settings.hooks.PreToolUse = stripByMarkers(settings.hooks.PreToolUse, preMarkers);
+  if (removed === 0) return false;
 
   if (isSymlink(targetPath)) {
     warn("Skipping settings.json write — target is a symlink");
@@ -1913,6 +1987,13 @@ async function doInstall(opts = {}) {
     if (riHook.action === "added") success("Read-intercept hook added (structural code reads point at graph body slices)");
     else if (riHook.action === "updated") success("Read-intercept hook refreshed");
     else info("Read-intercept hook already configured");
+  }
+
+  const archHook = configureArchitectHook(SETTINGS_JSON);
+  if (archHook.installed) {
+    if (archHook.action === "added") success("Architect-oversight hook added (Six-Stage Pass reminder before writing code — M101)");
+    else if (archHook.action === "updated") success("Architect-oversight hook refreshed");
+    else info("Architect-oversight hook already configured");
   }
 
   heading("Graph Engine (CGC)");
@@ -4909,6 +4990,7 @@ module.exports = {
   // M97/M98: intercept hook installers
   configureGraphInterceptHook,
   configureReadInterceptHook,
+  configureArchitectHook,
   removeInterceptHooks,
   promptForApiKeyIfMissing,
   resolveApiKeyEnvVar,

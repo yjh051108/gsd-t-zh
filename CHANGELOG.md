@@ -2,6 +2,17 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [5.0.11] - 2026-07-12
+
+### Fixed — architect hook now ships + installs; de-flaked its test
+
+The M101/v5.0.10 architect-oversight hook existed only in `~/.claude/scripts/` — it was never copied into the repo, so `install`/`update-all` would not propagate it to other machines (the "propagate a tool without shipping it = silent no-op" class). This release ships it properly and hardens it.
+
+- `scripts/gsd-t-architect-oversight-guard.js`: the hook now lives in the repo (ships with the package). Added an unref'd 1500ms watchdog + a stdin `error` handler so the hook can NEVER hang and block a Write/Edit (fail-open guaranteed even if stdin never EOFs).
+- `bin/gsd-t.js`: `configureArchitectHook()` registers the PreToolUse `Write|Edit` hook via the global-package command pattern (same as the graph/read-intercept hooks); wired into `install`; removed on `uninstall`. Exported for tests.
+- `test/m101-architect-oversight-hook.test.js`: replaced the two spawn-per-assertion fail-open tests (which false-failed under full-suite CPU starvation, not a hook bug) with a source-guard assertion + installer idempotency/coexistence tests. Test resolves the repo hook copy.
+- `.gsd-t/contracts/graph-metrics-contract.md`: refreshed the `doMetrics` line citation (shifted by the installer addition).
+
 ## [5.0.10] - 2026-07-12
 
 ### Added — `/gsd-t-architect`: run the Architect's Oversight pass on demand
