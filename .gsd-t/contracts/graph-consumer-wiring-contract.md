@@ -183,6 +183,64 @@ The lint skips rows where `command-file` contains `_(` (placeholder rows) or is 
 | `/scan` announced-fallback | `commands/gsd-t-scan.md`, `templates/workflows/gsd-t-scan.workflow.js` | §`/scan` carve-out — announced, non-silent, logic-read continuation on graph-unavailable |
 | `/verify` + `/integrate` degradation | `commands/gsd-t-verify.md`, `templates/workflows/gsd-t-verify.workflow.js`, `commands/gsd-t-integrate.md`, `templates/workflows/gsd-t-integrate.workflow.js` | §`/verify` + `/integrate` carve-out — announced WARNING, non-blocking degradation on graph-unavailable |
 
+## §Broken-vs-Absent Split — `graph-absent` HALTS nothing, `graph-broken` HALTS everything
+
+**Source-of-truth:** `.gsd-t/pseudocode/PseudoCode-BrokenGraphHalts.md`.
+
+Previously a BROKEN graph (CLI crashes on a missing dependency, or the store is corrupt) and an
+ABSENT graph (never indexed) both collapsed to `reason:"graph-unavailable"`, and every consumer
+silently fell back to grep. That is silent degradation (banned). The failure is now SPLIT into two
+reason codes, classified at ONE producer seam + ONE delegation seam, routed through ONE shared helper.
+
+### The two reason codes (produced at the seams, never fabricated)
+
+| Reason | Meaning | Routing |
+|---|---|---|
+| `graph-absent` | No store file on disk — the repo was never indexed | **ABSENT** → auto-build once (`gsd-t graph index`), re-query, continue. A SECOND consecutive absent (build failed / still absent) is reclassified BROKEN. |
+| `graph-broken` | Store present-but-unreadable (corrupt), a CLI crash (missing `require` → exit≠0 + `MODULE_NOT_FOUND`), or any unknown reason | **BROKEN** → HALT (`blocked-needs-human`), surface "graph BROKEN — run `gsd-t graph status`". NEVER grep-fallback. |
+
+### The three seams
+
+1. **Producer edge** — `bin/gsd-t-graph-query-cli.cjs` `loadStore()` / `runFreshnessCheck()`:
+   `storePath === null` → `graph-absent`; store present but `loadSqliteStore`/`loadJsonlStore` returned
+   null, or a parse/corrupt/index-build throw → `graph-broken` (with `detail`). The main-entry `fail()`
+   propagates the granular reason instead of collapsing to `graph-unavailable`.
+2. **Delegation edge** — `bin/gsd-t.js` `_graphQueryCli()`: parses stdout FIRST (trusts the producer's
+   granular reason even on a non-zero exit that still emitted an envelope). A true crash (spawn error, or
+   non-zero exit with no envelope, or non-JSON stdout) → `graph-broken` carrying `result.stderr`. It no
+   longer fabricates `graph-unavailable`.
+3. **Shared classifier** — `bin/gsd-t-graph-availability.cjs` exports `classifyGraphFailure(reason)`
+   → `{state:"ABSENT"|"BROKEN", action}` and `isTransient(detail)`. It is the ONE place the absent-vs-broken
+   decision lives; every consumer routes `envelope.reason` through it (the sandboxed workflows via its
+   `classify` CLI arm over Bash, the non-sandboxed `gsd-t-file-disjointness.cjs` via `require`). Added to
+   `PROJECT_BIN_TOOLS` so it ships to every project.
+
+### Consumer routing
+
+- **Structural readers** (`quick`, `debug`, `phase`): on `ok:false`, classify. ABSENT → build once + re-query;
+  still absent → BROKEN. BROKEN → HALT the workflow (`blocked-needs-human`). No grep fallback.
+- **Disjointness** (`gsd-t-file-disjointness.cjs`, used by `execute`/`wave` via `gsd-t parallel --dry-run`):
+  ABSENT → auto-build once + re-check; BROKEN → HALT fan-out (`gsd-t-parallel.cjs` exits non-zero, refusing an
+  unprovable plan) unless the operator passes the announced `--disjointness-fallback=touches-only` escape hatch.
+- **EXEMPT carve-out consumers** (`scan`, `verify`, `integrate`): keep their ANNOUNCED grep/skip continuation on
+  ABSENT, but on BROKEN emit a LOUD warning that NAMES it BROKEN ("not merely un-indexed — fix it"), never silently
+  continuing as if it were absent.
+
+### [RULE] guard map (feeds the deterministic verify gate)
+
+- `[RULE] broken-graph-halts-never-greps` — a `graph-broken` reason NEVER takes a grep-fallback branch in any of
+  the 9 consumers (except the announced verify/integrate/scan carve-out, which must NAME it BROKEN loudly).
+- `[RULE] absent-graph-auto-builds-once` — a `graph-absent` reason triggers exactly one `gsd-t graph index` then
+  re-query; a second consecutive absent = BROKEN.
+- `[RULE] crash-classified-not-fabricated` — `_graphQueryCli` MUST inspect `result.status`/`result.stderr`; a
+  non-zero exit with no valid envelope maps to `graph-broken`, never `graph-unavailable`.
+- `[RULE] unknown-reason-fails-closed-to-broken` — any unrecognised `ok:false` reason (incl. legacy
+  `graph-unavailable`) classifies as BROKEN (HALT), never ABSENT (continue).
+- `[RULE] one-availability-classifier` — the absent-vs-broken decision lives in ONE helper
+  (`bin/gsd-t-graph-availability.cjs`); no consumer re-implements the string check.
+- `[RULE] false-broken-guarded` — transient failures (`SQLITE_BUSY` / lock / timeout) are retried ONCE before
+  classifying BROKEN, so a slow/locked query does not wrongly HALT all work.
+
 ## Consumed (frozen)
 
 - `graph-query-cli-contract.md` (D5) — the JSON envelope this contract's readers consume

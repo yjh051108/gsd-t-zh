@@ -4,18 +4,22 @@
  * M94-D5-T2 (part 2) — AC-5 keystone: fault-injection fail-loud
  *
  * [RULE] parser-fail-disables-loud-never-silent:
- *   A genuine parser/store-load failure returns {ok:false, reason:'graph-unavailable'}.
- *   NEVER a partial edge, NEVER a silently-wrong answer.
+ *   A genuine parser/store-load failure returns {ok:false} — never a partial edge,
+ *   never a silently-wrong answer, never a grep fallback.
+ *
+ * Broken-Graph-Halts (.gsd-t/pseudocode/PseudoCode-BrokenGraphHalts.md) SPLIT the single
+ * `graph-unavailable` reason into two: ABSENT (nothing on disk → never indexed) vs BROKEN
+ * (a store present-but-unreadable / corrupt / crash). This suite pins the split.
  *
  * Fault-injection scenarios:
- *   1. storePath is null (no index found)
- *   2. storePath points to a non-existent directory
- *   3. storePath exists but records.jsonl is missing
- *   4. storePath exists but records.jsonl is corrupt JSON
- *   5. storePath exists but records.jsonl is truncated (partial line)
- *   6. D4 freshness module absent — graph-unavailable (not a silent grep fallback)
+ *   1. storePath is null (no index found)               → graph-absent  (ABSENT)
+ *   2. storePath points to a non-existent directory     → graph-broken  (BROKEN)
+ *   3. storePath exists but records.jsonl is missing     → graph-broken  (BROKEN)
+ *   4. storePath exists but records.jsonl is corrupt JSON→ graph-broken  (BROKEN)
+ *   5. storePath exists but records.jsonl is truncated   → graph-broken  (BROKEN)
+ *   6. D4 freshness module absent (broken infra)         → graph-broken  (BROKEN)
  *
- * Each scenario MUST return {ok:false, reason:'graph-unavailable'} — never a partial
+ * Each scenario MUST return {ok:false} with the correct split reason — never a partial
  * result, never a silently-wrong edge, never a fallback to grep.
  */
 
@@ -42,32 +46,32 @@ function writeFaultStore(tmpDir, content) {
 
 // ─── Fault 1: null storePath ──────────────────────────────────────────────────
 
-test("fault-1: loadStore(null) → {ok:false, reason:'graph-unavailable'}", () => {
+test("fault-1: loadStore(null) → {ok:false, reason:'graph-absent'} (never indexed)", () => {
   const result = loadStore(null);
   assert.equal(result.ok, false, "must not return ok:true for null store");
-  assert.equal(result.reason, "graph-unavailable");
+  assert.equal(result.reason, "graph-absent");
   // Must NOT be a partial result or undefined
   assert.equal(typeof result.index, "undefined", "no partial index on failure");
 });
 
 // ─── Fault 2: non-existent directory ─────────────────────────────────────────
 
-test("fault-2: loadStore(non-existent-path) → {ok:false, reason:'graph-unavailable'}", () => {
+test("fault-2: loadStore(non-existent-path) → {ok:false, reason:'graph-broken'}", () => {
   const result = loadStore("/does/not/exist/at/all/graph-index");
   assert.equal(result.ok, false);
-  assert.equal(result.reason, "graph-unavailable");
+  assert.equal(result.reason, "graph-broken");
   assert.equal(typeof result.index, "undefined", "no partial index on failure");
 });
 
 // ─── Fault 3: directory exists but records.jsonl is missing ──────────────────
 
-test("fault-3: records.jsonl missing → {ok:false, reason:'graph-unavailable'}", () => {
+test("fault-3: records.jsonl missing → {ok:false, reason:'graph-broken'}", () => {
   const tmpDir = makeTmpDir();
   try {
     // Directory exists but no records.jsonl inside
     const result = loadStore(tmpDir);
     assert.equal(result.ok, false);
-    assert.equal(result.reason, "graph-unavailable");
+    assert.equal(result.reason, "graph-broken");
     assert.equal(typeof result.index, "undefined", "no partial index on failure");
   } finally {
     fs.rmSync(tmpDir, { recursive: true });
@@ -76,13 +80,13 @@ test("fault-3: records.jsonl missing → {ok:false, reason:'graph-unavailable'}"
 
 // ─── Fault 4: records.jsonl is corrupt (invalid JSON) ────────────────────────
 
-test("fault-4: corrupt records.jsonl (invalid JSON) → {ok:false, reason:'graph-unavailable'}", () => {
+test("fault-4: corrupt records.jsonl (invalid JSON) → {ok:false, reason:'graph-broken'}", () => {
   const tmpDir = makeTmpDir();
   try {
     writeFaultStore(tmpDir, "{ this is not valid JSON }\n{ also not valid }\n");
     const result = loadStore(tmpDir);
     assert.equal(result.ok, false, "corrupt JSON must not return ok:true");
-    assert.equal(result.reason, "graph-unavailable");
+    assert.equal(result.reason, "graph-broken");
     assert.equal(typeof result.index, "undefined", "no partial index on corrupt store");
   } finally {
     fs.rmSync(tmpDir, { recursive: true });
@@ -91,7 +95,7 @@ test("fault-4: corrupt records.jsonl (invalid JSON) → {ok:false, reason:'graph
 
 // ─── Fault 5: records.jsonl is truncated (partial last line) ─────────────────
 
-test("fault-5: truncated records.jsonl (partial last line) → {ok:false, reason:'graph-unavailable'}", () => {
+test("fault-5: truncated records.jsonl (partial last line) → {ok:false, reason:'graph-broken'}", () => {
   const tmpDir = makeTmpDir();
   try {
     // Valid first line, then a truncated second line
@@ -107,7 +111,7 @@ test("fault-5: truncated records.jsonl (partial last line) → {ok:false, reason
 
     const result = loadStore(tmpDir);
     assert.equal(result.ok, false, "truncated JSON must not return ok:true");
-    assert.equal(result.reason, "graph-unavailable");
+    assert.equal(result.reason, "graph-broken");
     assert.equal(typeof result.index, "undefined", "no partial index on truncated store");
   } finally {
     fs.rmSync(tmpDir, { recursive: true });
@@ -116,12 +120,12 @@ test("fault-5: truncated records.jsonl (partial last line) → {ok:false, reason
 
 // ─── Fault 6: D4 freshness module absent ─────────────────────────────────────
 
-test("fault-6: D4 module absent → runFreshnessCheck returns {ok:false, reason:'graph-unavailable'}", () => {
+test("fault-6: D4 module absent → runFreshnessCheck returns {ok:false, reason:'graph-broken'}", () => {
   // This is the key seam test: when D4 is not installed, the query CLI must fail loud,
   // NOT fall back to grep, NOT return a partial result, NOT silently succeed.
   //
-  // [RULE] parser-fail-disables-loud-never-silent: D4 absent = graph-unavailable.
-  // The absence of D4 IS a "graph infrastructure unavailable" condition.
+  // [RULE] parser-fail-disables-loud-never-silent: D4 absent = BROKEN infra (a missing
+  // require), NOT an un-indexed repo → graph-broken (HALT), never absent.
 
   const freshnessModule = loadFreshnessModule();
 
@@ -141,21 +145,21 @@ test("fault-6: D4 module absent → runFreshnessCheck returns {ok:false, reason:
   const result = runFreshnessCheck("/fake/store");
 
   assert.equal(result.ok, false, "D4 absent must return ok:false");
-  assert.equal(result.reason, "graph-unavailable",
-    "[RULE] parser-fail-disables-loud-never-silent: D4 absent → graph-unavailable, never a silent fallback");
+  assert.equal(result.reason, "graph-broken",
+    "[RULE] parser-fail-disables-loud-never-silent: D4 absent → graph-broken (BROKEN infra), never a silent fallback");
   assert.equal(typeof result.index, "undefined", "no partial index when D4 is absent");
 });
 
-// ─── Fault 7: graph-unavailable envelope shape is correct ────────────────────
+// ─── Fault 7: failure envelope shape is correct ──────────────────────────────
 
-test("fault-7: graph-unavailable envelope has exactly {ok:false, reason:'graph-unavailable'}", () => {
+test("fault-7: absent envelope has exactly {ok:false, reason:'graph-absent'} (no partial fields)", () => {
   // The contract defines the exact shape for the fail-loud case.
   // Any extra fields (like 'results', 'edges', 'tier') on a failure envelope
   // would risk a consumer treating it as a partial success — forbidden.
   const result = loadStore(null);
 
   assert.equal(result.ok, false);
-  assert.equal(result.reason, "graph-unavailable");
+  assert.equal(result.reason, "graph-absent");
 
   // No 'results', no 'edges', no 'tier' on a failure envelope (per contract)
   // The contract allows ok+reason to be the minimal shape.

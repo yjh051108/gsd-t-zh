@@ -213,18 +213,21 @@ test("T1.12: queryStatus callEdgeCount matches the fixture (3 call edges)", () =
   assert.equal(status.callEdgeCount, 3, "must report 3 call edges");
 });
 
-// ─── T1.13: loadStore returns graph-unavailable when store is absent ──────────
+// ─── T1.13/14: loadStore splits absent vs broken (Broken-Graph-Halts) ─────────
+// The reason code was SPLIT: null storePath (nothing on disk → never indexed) = ABSENT;
+// a store path present-but-unreadable (corrupt / non-loadable) = BROKEN. See
+// .gsd-t/pseudocode/PseudoCode-BrokenGraphHalts.md.
 
-test("T1.13: loadStore returns ok:false graph-unavailable when storePath is null", () => {
+test("T1.13: loadStore returns ok:false graph-absent when storePath is null (never indexed)", () => {
   const result = loadStore(null);
   assert.equal(result.ok, false);
-  assert.equal(result.reason, "graph-unavailable");
+  assert.equal(result.reason, "graph-absent");
 });
 
-test("T1.14: loadStore returns ok:false graph-unavailable when store path does not exist", () => {
+test("T1.14: loadStore returns ok:false graph-broken when store path is present-but-unreadable", () => {
   const result = loadStore("/does/not/exist/graph-index");
   assert.equal(result.ok, false);
-  assert.equal(result.reason, "graph-unavailable");
+  assert.equal(result.reason, "graph-broken");
 });
 
 // ─── T1.15: Freshness seam — the call path exists ───────────────────────────

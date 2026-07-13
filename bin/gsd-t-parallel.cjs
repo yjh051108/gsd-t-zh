@@ -145,6 +145,10 @@ function parseArgv(argv) {
     else if (a.startsWith("--domain=")) out.domain = a.slice("--domain=".length);
     else if (a === "--command") out.command = argv[++i] || null;
     else if (a.startsWith("--command=")) out.command = a.slice("--command=".length);
+    // Broken-Graph-Halts bootstrap escape hatch — degrade to literal-Touches (announced)
+    // when the graph is BROKEN, instead of HALTing. Off by default (HALT is the default).
+    else if (a === "--disjointness-fallback") out.disjointnessFallback = argv[++i] || null;
+    else if (a.startsWith("--disjointness-fallback=")) out.disjointnessFallback = a.slice("--disjointness-fallback=".length);
     else if (a === "--max-workers") out.maxWorkers = parseInt(argv[++i], 10);
     else if (a.startsWith("--max-workers=")) out.maxWorkers = parseInt(a.slice("--max-workers=".length), 10);
     else if (a === "--stagger") out.stagger = parseInt(argv[++i], 10);
@@ -236,7 +240,21 @@ function runParallel(opts) {
   }
 
   // ── D5 disjointness gate ──
-  const disj = proveDisjointness({ tasks: depReady, projectDir });
+  const disjointnessFallback = (opts && opts.disjointnessFallback) || null;
+  const disj = proveDisjointness({ tasks: depReady, projectDir, disjointnessFallback });
+  // Broken-Graph-Halts: a BROKEN graph (missing dep / corrupt / crash) makes the
+  // transitive-overlap check unprovable. HALT loudly — do NOT silently emit an empty
+  // parallel plan (that would be a silent grep-equivalent fallback).
+  // [RULE] broken-graph-halts-never-greps
+  if (disj.graphUnavailable) {
+    process.stderr.write(
+      `[gsd-t parallel] HALT: graph BROKEN — file-disjointness is unprovable, so a safe ` +
+      `parallel plan cannot be built. Fix the graph (gsd-t graph status), or re-run with ` +
+      `--disjointness-fallback=touches-only to degrade to literal-Touches (announced). ` +
+      `Refusing to fan out on an unprovable plan.\n`
+    );
+    process.exit(3);
+  }
   const disjointTaskIds = new Set();
   for (const group of disj.parallel || []) {
     for (const t of group) disjointTaskIds.add(t.id);

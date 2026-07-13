@@ -120,6 +120,27 @@ async function runCli(projectDir, subcmd, argv, localBin, label, parseJson = tru
   return r || { ok: false, exitCode: -1, envelope: null, via: "error" };
 }
 async function runPreflight(projectDir, label = "preflight", phaseNameOpt) { return runCli(projectDir, "preflight", ["--json"], "cli-preflight.cjs", label, true, phaseNameOpt); }
+// Broken-Graph-Halts: route a failing graph reason through the ONE shared classifier
+// via Bash (sandbox bans require). Returns "ABSENT" | "BROKEN" (fail-closed).
+// [RULE] one-availability-classifier [RULE] unknown-reason-fails-closed-to-broken
+async function classifyGraphFailure(projectDir, reason, detail, phaseNameOpt) {
+  const r = await runCli(
+    projectDir, "graph-availability",
+    ["classify", String(reason || ""), String(detail || "")],
+    "gsd-t-graph-availability.cjs", "graph-classify", true, phaseNameOpt
+  ).catch(() => null);
+  const env = r && r.envelope;
+  if (env && (env.state === "ABSENT" || env.state === "BROKEN")) return env.state;
+  return "BROKEN";
+}
+// [RULE] absent-graph-auto-builds-once — build the index once via the existing path.
+async function buildGraphIndex(projectDir, phaseNameOpt) {
+  const r = await runCli(
+    projectDir, "graph index", ["build", "--repo", projectDir],
+    "gsd-t-graph-index.cjs", "graph-index", false, phaseNameOpt
+  ).catch(() => null);
+  return !!(r && r.ok);
+}
 // M83: the deterministic plan-hardening gate. Returns the parsed envelope
 // ({ ok, exitCode, violations, ... }); ok:false means ≥1 untraceable AC.
 async function runTraceabilityGate(projectDir, milestone, label = "traceability-gate", phaseNameOpt) {
@@ -176,11 +197,11 @@ const PHASE_GRAPH_VERB_MAP = {
  * [RULE] phase-workflow-fail-loud-no-grep — on graph-unavailable, surface the loud
  * message and NEVER fall back to grep for the structural question.
  */
-async function queryStructuralSlice(projectDir, phaseName, phaseNameOpt) {
+async function queryStructuralSlice(projectDir, phaseName, phaseNameOpt, _rebuilt) {
   const verb = PHASE_GRAPH_VERB_MAP[phaseName];
   if (!verb) {
     // Phase has no mapped structural verb (milestone/discuss/design-decompose/doc-ripple) — no-op.
-    return { ok: true, verb: null, slice: null, graphUnavailable: false, loudMessage: null };
+    return { ok: true, verb: null, slice: null, graphUnavailable: false, graphBroken: false, loudMessage: null };
   }
   // The graph query uses gsd-t-graph-query-cli.cjs (local) or `gsd-t graph <verb>` (global).
   // argv: only the verb (no target) for phase-level queries that return a global set
@@ -190,20 +211,28 @@ async function queryStructuralSlice(projectDir, phaseName, phaseNameOpt) {
     `graph:${verb}`, true, phaseNameOpt
   );
   const env = r.envelope || {};
-  if (env.ok === false && env.reason === "graph-unavailable") {
-    // [RULE] phase-workflow-fail-loud-no-grep: surface LOUD, no grep fallback.
-    const loudMessage = `⚠ graph unavailable — structural ${verb} slice NOT injected (fix it: gsd-t graph status). NO grep fallback — structural question unanswered.`;
+  if (env.ok === false) {
+    // [RULE] one-availability-classifier — route the reason through the shared classifier.
+    const state = await classifyGraphFailure(projectDir, env.reason, env.detail, phaseNameOpt);
+    if (state === "ABSENT" && !_rebuilt) {
+      log(`M94 graph-slice: graph ABSENT — building index once, then re-querying ${verb}.`);
+      await buildGraphIndex(projectDir, phaseNameOpt);
+      return queryStructuralSlice(projectDir, phaseName, phaseNameOpt, true);
+    }
+    // BROKEN (or still-absent after one build) → HALT the phase. No grep fallback.
+    // [RULE] broken-graph-halts-never-greps [RULE] phase-workflow-fail-loud-no-grep
+    const loudMessage = `⚠ graph BROKEN (reason=${env.reason || "?"}) — structural ${verb} slice NOT injected. Phase HALTED — fix it: run gsd-t graph status. NO grep fallback.`;
     log(`M94 graph-slice: ${loudMessage}`);
-    return { ok: false, verb, slice: null, graphUnavailable: true, loudMessage };
+    return { ok: false, verb, slice: null, graphUnavailable: true, graphBroken: true, loudMessage };
   }
   if (env.ok === true) {
     log(`M94 graph-slice: ${phaseName} → ${verb} → ${(env.results || []).length} result(s) (tier: ${env.tier || "?"})`);
-    return { ok: true, verb, slice: env, graphUnavailable: false, loudMessage: null };
+    return { ok: true, verb, slice: env, graphUnavailable: false, graphBroken: false, loudMessage: null };
   }
-  // Unexpected envelope (graph returned ok:false for a non-unavailable reason).
-  const loudMessage = `⚠ graph ${verb} query returned unexpected envelope (ok=${env.ok}, reason=${env.reason || "?"}). Structural slice NOT injected.`;
+  // Unexpected envelope (no ok field at all) → fail-closed to BROKEN.
+  const loudMessage = `⚠ graph ${verb} query returned unexpected envelope (ok=${env.ok}, reason=${env.reason || "?"}). Treated as BROKEN — structural slice NOT injected.`;
   log(`M94 graph-slice: ${loudMessage}`);
-  return { ok: false, verb, slice: null, graphUnavailable: false, loudMessage };
+  return { ok: false, verb, slice: null, graphUnavailable: true, graphBroken: true, loudMessage };
 }
 
 // M82: run the deterministic selection oracle over a candidate-set spec. The spec
@@ -857,6 +886,10 @@ const briefLine = `**Brief (REQUIRED):** ${brief.briefPath || "(no brief — re-
 // the pre-computed structural answer and has no reason to grep for structure.
 // [RULE] phase-workflow-injects-structural-slice
 const _graphSliceResult = await queryStructuralSlice(projectDir, phaseName, "Phase");
+// [RULE] broken-graph-halts-never-greps — a BROKEN graph HALTS the phase (no grep fallback).
+if (_graphSliceResult.graphBroken) {
+  return { status: "blocked-needs-human", reason: "graph-broken", detail: _graphSliceResult.loudMessage };
+}
 const _graphSliceLine = _graphSliceResult.ok && _graphSliceResult.slice
   ? `\n**Structural Graph Slice (${_graphSliceResult.verb}):** ${JSON.stringify(_graphSliceResult.slice)}\nUse this pre-computed graph slice to answer structural questions — do NOT grep for ${_graphSliceResult.verb} answers.`
   : _graphSliceResult.loudMessage

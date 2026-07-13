@@ -85,6 +85,27 @@ async function generateBrief(projectDir, { kind = "execute", milestone, domain, 
   const r = await runCli(projectDir, "brief", argv, "gsd-t-context-brief.cjs", label, false, phaseName);
   return { ok: r.ok, briefPath: `${projectDir}/.gsd-t/briefs/${id}.json`, via: r.via };
 }
+// Broken-Graph-Halts: route a failing graph envelope's reason through the ONE shared
+// classifier via Bash (sandbox bans require). Returns "ABSENT" | "BROKEN" (fail-closed).
+// [RULE] one-availability-classifier [RULE] unknown-reason-fails-closed-to-broken
+async function classifyGraphFailure(projectDir, reason, detail, phaseName) {
+  const r = await runCli(
+    projectDir, "graph-availability",
+    ["classify", String(reason || ""), String(detail || "")],
+    "gsd-t-graph-availability.cjs", "graph-classify", true, phaseName
+  ).catch(() => null);
+  const env = r && r.envelope;
+  if (env && (env.state === "ABSENT" || env.state === "BROKEN")) return env.state;
+  return "BROKEN";
+}
+// [RULE] absent-graph-auto-builds-once — build the index once via the existing path.
+async function buildGraphIndex(projectDir, phaseName) {
+  const r = await runCli(
+    projectDir, "graph index", ["build", "--repo", projectDir],
+    "gsd-t-graph-index.cjs", "graph-index", false, phaseName
+  ).catch(() => null);
+  return !!(r && r.ok);
+}
 
 const projectDir = _args.projectDir || ".";
 const symptom = _args.symptom || null;
@@ -317,11 +338,11 @@ async function runResearchForClaim(projectDir, claimText, artifactPath, phaseNam
 // the structural slice — the fail-loud requirement is met by the logged message;
 // the agent is NOT given a grep fallback to find the call chain).
 // [RULE] debug-reader-and-writer-both
-async function queryGraphForDebug(projectDir, symptom, phaseName) {
+async function queryGraphForDebug(projectDir, symptom, phaseName, _rebuilt) {
   // Derive a plausible target hint from the symptom text (the file or function name)
   // to pass to blast-radius. This is heuristic — the agent reads the full slice.
   const targetHint = (symptom || "").slice(0, 80).replace(/['"]/g, "").trim();
-  if (!targetHint) return null;
+  if (!targetHint) return { line: null, halt: false };
 
   const blastResult = await runCli(
     projectDir,
@@ -333,15 +354,22 @@ async function queryGraphForDebug(projectDir, symptom, phaseName) {
     phaseName
   );
   const env = blastResult.envelope;
-  if (!env) return null;
-  if (!env.ok && env.reason === "graph-unavailable") {
-    log(`M94-D11 READER: graph unavailable — fix it (gsd-t graph status). Debug proceeds without structural slice.`);
-    return null; // Fail-loud logged; no grep fallback
+  if (!env) return { line: null, halt: false };
+  if (!env.ok) {
+    const state = await classifyGraphFailure(projectDir, env.reason, env.detail, phaseName);
+    if (state === "ABSENT" && !_rebuilt) {
+      log(`M94-D11 READER: graph ABSENT — building index once, then re-querying.`);
+      await buildGraphIndex(projectDir, phaseName);
+      return queryGraphForDebug(projectDir, symptom, phaseName, true);
+    }
+    const haltMessage = `graph BROKEN (reason=${env.reason || "?"}) — debug HALTED. Fix it: run gsd-t graph status. No grep fallback.`;
+    log(`M94-D11 READER: ${haltMessage}`);
+    return { line: null, halt: true, haltMessage };
   }
-  if (env.ok && Array.isArray(env.results)) {
-    return `## Graph structural slice (blast-radius for "${targetHint}"):\n${JSON.stringify(env.results.slice(0, 20), null, 2)}`;
+  if (Array.isArray(env.results)) {
+    return { line: `## Graph structural slice (blast-radius for "${targetHint}"):\n${JSON.stringify(env.results.slice(0, 20), null, 2)}`, halt: false };
   }
-  return null;
+  return { line: null, halt: false };
 }
 
 // M94-D11 §WRITER: Trigger a freshness pass over the touched set after the fix lands.
@@ -381,7 +409,12 @@ await persistWiringMode("Preflight");
 
 // M94-D11 §READER: query graph ONCE before cycles (the structural slice is the same
 // for all cycles — same symptom). Injected into each cycle's prompt.
-const _graphSliceLine = await queryGraphForDebug(projectDir, symptom, "Preflight") || "";
+// [RULE] broken-graph-halts-never-greps — a BROKEN graph HALTS debug (no grep fallback).
+const _graphRead = await queryGraphForDebug(projectDir, symptom, "Preflight");
+if (_graphRead && _graphRead.halt) {
+  return { status: "blocked-needs-human", reason: "graph-broken", detail: _graphRead.haltMessage };
+}
+const _graphSliceLine = (_graphRead && _graphRead.line) || "";
 
 let lastResult = null;
 // M90 §3 (fix-cycle: gate lifecycle) — track THIS run's per-signature cycle counts so the

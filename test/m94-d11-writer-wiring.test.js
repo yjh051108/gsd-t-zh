@@ -422,11 +422,14 @@ test("[RULE quick-writer-pattern] quick workflow has graph query + re-index + no
     text.includes("freshness") || text.includes("WRITER") ||
     text.includes("touched") || text.includes("re-indexes");
   assert.ok(hasWriter, "quick workflow must direct a re-index after edits (WRITER half) [RULE quick-writer-pattern]");
-  // Fail-loud
+  // Fail-loud / HALT (Broken-Graph-Halts: a BROKEN graph now HALTS, stronger than the
+  // old announced-skip; the workflow surfaces BROKEN + HALT instead of the collapsed
+  // "graph-unavailable" string).
   assert.ok(
     text.includes("graph-unavailable") || text.includes("graph unavailable") ||
-      text.includes("fail loud") || text.includes("FAIL LOUD"),
-    "quick workflow must fail loud on graph-unavailable"
+      text.includes("fail loud") || text.includes("FAIL LOUD") ||
+      text.includes("graph BROKEN") || text.includes("HALT"),
+    "quick workflow must fail loud / HALT on a broken graph"
   );
   // No structural grep fallback
   const fallback = detectStructuralGrepFallback(text);

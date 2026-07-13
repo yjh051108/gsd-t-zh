@@ -77,6 +77,20 @@ async function runCli(projectDir, subcmd, argv, localBin, label, parseJson = tru
   return r || { ok: false, exitCode: -1, envelope: null, via: "error" };
 }
 async function runPreflight(projectDir, label = "preflight", phaseName) { return runCli(projectDir, "preflight", ["--json"], "cli-preflight.cjs", label, true, phaseName); }
+// Broken-Graph-Halts (EXEMPT carve-out): verify's graph slice is additive/announced — it
+// does not hard-fail on an unavailable graph. But it MUST DISTINGUISH absent from broken and
+// name BROKEN loudly, never silently continue as if merely un-indexed.
+// [RULE] one-availability-classifier [RULE] broken-graph-halts-never-greps (carve-out: name BROKEN loudly)
+async function classifyGraphFailure(projectDir, reason, detail, phaseName) {
+  const r = await runCli(
+    projectDir, "graph-availability",
+    ["classify", String(reason || ""), String(detail || "")],
+    "gsd-t-graph-availability.cjs", "graph-classify", true, phaseName
+  ).catch(() => null);
+  const env = r && r.envelope;
+  if (env && (env.state === "ABSENT" || env.state === "BROKEN")) return env.state;
+  return "BROKEN";
+}
 async function runVerifyGate(projectDir, label = "verify-gate", phaseName) { return runCli(projectDir, "verify-gate", ["--json"], "gsd-t-verify-gate.cjs", label, true, phaseName); }
 // M92 D2 (keystone) — the deterministic shrink-metric. Computes the milestone diff's
 // net size from `git diff --numstat <range>` via the shared runCli helper (M71-clean:
@@ -295,8 +309,14 @@ let _graphVerifyWarning = null;
   if (dcEnv.ok === true) {
     _graphDeadCodeSlice = dcEnv;
     log(`M94 graph dead-code: ${(dcEnv.results || []).length} dead-code result(s) (tier: ${dcEnv.tier || "?"})`);
-  } else if (dcEnv.reason === "graph-unavailable") {
-    _graphVerifyWarning = "⚠ graph unavailable — structural gate skipped, fix it (gsd-t graph status)";
+  } else if (dcEnv.ok === false) {
+    // [RULE] one-availability-classifier — distinguish ABSENT (announced skip) from BROKEN (LOUD).
+    const _state = await classifyGraphFailure(projectDir, dcEnv.reason, dcEnv.detail, "Verify-Gate");
+    if (_state === "BROKEN") {
+      _graphVerifyWarning = `⚠ graph BROKEN (reason=${dcEnv.reason || "?"}) — structural gate skipped. This is NOT merely un-indexed; FIX it (gsd-t graph status).`;
+    } else {
+      _graphVerifyWarning = "⚠ graph ABSENT (never indexed) — structural gate skipped (announced carve-out; build with gsd-t graph index)";
+    }
     log(`M94 graph dead-code: ${_graphVerifyWarning}`);
   } else {
     _graphVerifyWarning = `⚠ graph dead-code query unexpected envelope (reason: ${dcEnv.reason || "?"}); structural gate skipped`;

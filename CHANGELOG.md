@@ -2,6 +2,20 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [5.0.13] - 2026-07-12
+
+### Fixed — a BROKEN graph now HALTS instead of silently falling back to grep
+
+Until now a broken code graph (CLI crash on a missing dependency, corrupt store) and an absent graph (never indexed) both collapsed to `reason:"graph-unavailable"`, and every consumer silently fell back to grep — the exact silent degradation that hid the 12-day resolver break. Now the two are distinguished and routed oppositely: **BROKEN → HALT and demand a fix; ABSENT → auto-build the index once, then continue.** Designed via a `/gsd-t-architect` Six-Stage Pass (reuse-first: no new halt system, envelope, or build path — all existing machinery reused).
+
+- `bin/gsd-t-graph-availability.cjs` (NEW): single `classifyGraphFailure(reason)` helper — `graph-broken`→HALT, `graph-absent`→auto-build, any unknown/legacy reason→**BROKEN (fail-closed)**. `isTransient()` guard retries once on `SQLITE_BUSY`/timeout so a slow/locked query never wrongly halts. Added to `PROJECT_BIN_TOOLS` so it ships. Has a `classify` CLI arm for the sandboxed workflows.
+- `bin/gsd-t-graph-query-cli.cjs`: producer edge emits the split reason codes (absent vs broken + `detail`).
+- `bin/gsd-t.js`: delegation edge (`_graphQueryCli`) now classifies a process crash (exit≠0 + `MODULE_NOT_FOUND`) as `graph-broken` instead of fabricating `graph-unavailable`.
+- `bin/gsd-t-file-disjointness.cjs` + `bin/gsd-t-parallel.cjs`: route through the classifier; ABSENT auto-builds once then re-checks; BROKEN halts (`gsd-t parallel` exits 3 with a loud message, no empty-plan fallback). Announced escape: `--disjointness-fallback=touches-only`.
+- 8 workflows route graph failures through the classifier (via the sandboxed `runCli` helper — no require added; m71 lint stays green). scan/verify/integrate keep their announced ABSENT carve-out but name BROKEN loudly.
+- `.gsd-t/contracts/graph-consumer-wiring-contract.md`: new §Broken-vs-Absent + 6 `[RULE]`s.
+- `test/broken-graph-halts.test.js` (NEW, 15 tests) + `.gsd-t/pseudocode/PseudoCode-BrokenGraphHalts.md`.
+
 ## [5.0.12] - 2026-07-12
 
 ### Fixed — graph require-chain shipped incomplete → every project's graph silently dead

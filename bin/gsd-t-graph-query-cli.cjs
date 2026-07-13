@@ -474,7 +474,8 @@ function loadSqliteStore(dbPath) {
 }
 
 function loadStore(storePath) {
-  if (!storePath) return { ok: false, reason: "graph-unavailable" };
+  // ABSENT: no store file anywhere on disk (never indexed). [RULE] one-availability-classifier
+  if (!storePath) return { ok: false, reason: "graph-absent" };
 
   // SQLite is the PICKED store (K1) — read it first; fall back to JSONL baseline.
   // Sibling-db fallback uses resolver (not a raw path.join). [RULE] one-resolver-only
@@ -484,7 +485,8 @@ function loadStore(storePath) {
   })();
   const loaded = (storePath.endsWith(".db") ? loadSqliteStore(storePath) : loadJsonlStore(storePath))
     || loadJsonlStore(storePath) || (_siblingDb && fs.existsSync(_siblingDb) ? loadSqliteStore(_siblingDb) : null);
-  if (!loaded) return { ok: false, reason: "graph-unavailable" };
+  // BROKEN: a store file exists but could not be read/parsed (corrupt). NOT absent.
+  if (!loaded) return { ok: false, reason: "graph-broken", detail: "store present but unreadable" };
 
   try {
     // Load skipped files (best-effort — never fails the store load)
@@ -492,7 +494,8 @@ function loadStore(storePath) {
     const index = buildIndex(loaded.records, skippedFiles);
     return { ok: true, index };
   } catch (_e) {
-    return { ok: false, reason: "graph-unavailable" };
+    // Store loaded but buildIndex threw on corrupt records → BROKEN, name the cause.
+    return { ok: false, reason: "graph-broken", detail: _e && _e.code ? _e.code : "buildIndex-failed" };
   }
 }
 
@@ -527,8 +530,9 @@ function loadFreshnessModule() {
 function runFreshnessCheck(storePath) {
   const freshnessModule = loadFreshnessModule();
   if (!freshnessModule) {
-    // D4 not yet built — fail-loud per [RULE] parser-fail-disables-loud-never-silent
-    return { ok: false, reason: "graph-unavailable" };
+    // D4 not yet built / unloadable — this is BROKEN infra (a missing require), not an
+    // un-indexed repo. Fail-loud per [RULE] parser-fail-disables-loud-never-silent.
+    return { ok: false, reason: "graph-broken", detail: "freshness module unavailable" };
   }
 
   try {
@@ -545,7 +549,8 @@ function runFreshnessCheck(storePath) {
     // (Without this, a fake/non-existent storePath yields projectRoot="/" and
     //  compute_touched_files walks the entire filesystem → OOM. [RULE]
     //  parser-fail-disables-loud-never-silent: absent store = graph-unavailable.)
-    if (!db) return { ok: false, reason: "graph-unavailable" };
+    // No real store at this root → ABSENT (never indexed), not broken.
+    if (!db) return { ok: false, reason: "graph-absent" };
     const touched = freshnessModule.compute_touched_files(db, projectRoot);
     // parse_and_put (from D3) lets freshness re-index stale files; pass it when
     // available so an edited file is refreshed before the answer.
@@ -565,7 +570,8 @@ function runFreshnessCheck(storePath) {
       reindexedFiles: Array.isArray(t.edits) ? t.edits.slice(0, 20) : [],
     };
   } catch (_e) {
-    return { ok: false, reason: "graph-unavailable" };
+    // Parse/corrupt/other freshness error → BROKEN, carry the cause code.
+    return { ok: false, reason: "graph-broken", detail: _e && _e.code ? _e.code : "freshness-failed" };
   }
 }
 
@@ -1344,13 +1350,16 @@ if (require.main === module) {
     };
   } catch { /* fail-open */ }
   if (!freshnessResult.ok) {
-    fail({ ok: false, reason: "graph-unavailable" });
+    // Propagate the granular reason (graph-absent / graph-broken) so the consumer's
+    // classifier can route ABSENT→auto-build vs BROKEN→HALT. Never collapse to a
+    // single "graph-unavailable" here. [RULE] one-availability-classifier
+    fail({ ok: false, reason: freshnessResult.reason || "graph-broken", detail: freshnessResult.detail });
   }
 
   // ── Step 2: Load store (fail-loud if missing or corrupt) ──
   const storeResult = loadStore(storePath);
   if (!storeResult.ok) {
-    fail({ ok: false, reason: "graph-unavailable" });
+    fail({ ok: false, reason: storeResult.reason || "graph-broken", detail: storeResult.detail });
   }
 
   const index = storeResult.index;

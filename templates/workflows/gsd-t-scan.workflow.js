@@ -312,6 +312,24 @@ async function runCliBuild() {
   return r || { ok: false, reason: "build-failed" };
 }
 
+// Broken-Graph-Halts (EXEMPT carve-out): scan continues in announced grep-mode when the
+// graph is unavailable, but it MUST DISTINGUISH absent from broken. On ABSENT it builds
+// once (below); on BROKEN it must name BROKEN loudly, not treat it as merely un-indexed.
+// Routes the reason through the ONE shared classifier via Bash.
+// [RULE] one-availability-classifier [RULE] unknown-reason-fails-closed-to-broken
+async function classifyGraphFailure(reason, detail) {
+  const r = await agent(
+    [
+      `Classify a GSD-T graph-availability failure for the project at \`${projectDir}\`. Steps:`,
+      `1. If \`${projectDir}/bin/gsd-t-graph-availability.cjs\` exists, run: \`node ${projectDir}/bin/gsd-t-graph-availability.cjs classify '${String(reason || "").replace(/'/g, "'\\''")}' '${String(detail || "").replace(/'/g, "'\\''")}'\` (via="local"). Otherwise run: \`gsd-t graph-availability classify '${String(reason || "")}' '${String(detail || "")}'\` (via="global"). cwd \`${projectDir}\`.`,
+      `2. The command prints ONE JSON envelope with a "state" field ("ABSENT" or "BROKEN"). Copy "state" up to the top level of your reply.`,
+      `Do NOT do any other work.`,
+    ].join("\n"),
+    { label: "graph:classify", phase: "Graph-Wiring", model: "haiku", schema: { type: "object", required: ["state"], additionalProperties: true, properties: { state: { type: "string" } } } }
+  ).catch(() => null);
+  return (r && (r.state === "ABSENT" || r.state === "BROKEN")) ? r.state : "BROKEN";
+}
+
 // M99 D2: persist a kind:'wiring' ledger line for this workflow.
 // M81 sandbox: all I/O through agent() Bash; no require/fs in the sandbox.
 // Uses the `gsd-t graph wiring-log` CLI shim (avoids embedding require() in strings).
@@ -413,20 +431,32 @@ if (graphMode === "disabled") {
   // every project lacking a pre-built index (hilo-figma-atos 2026-06-30).
   // [RULE] scan-builds-index-when-absent
   if (!statusResult || !statusResult.ok) {
-    log(`graph-wiring: index not queryable (${(statusResult && statusResult.reason) || "graph-unavailable"}) — building it now (gsd-t graph index)...`);
-    const buildResult = await runCliBuild();
-    if (buildResult && buildResult.ok) {
-      log(`graph-wiring: index build OK — re-probing status.`);
-      statusResult = await runCli("status", null, "status");
+    // [RULE] one-availability-classifier — distinguish ABSENT (build once) from BROKEN (name it).
+    const _reason = (statusResult && statusResult.reason) || "graph-broken";
+    const _state = await classifyGraphFailure(_reason, statusResult && statusResult.detail);
+    if (_state === "ABSENT") {
+      // [RULE] absent-graph-auto-builds-once / [RULE] scan-builds-index-when-absent
+      log(`graph-wiring: index ABSENT (${_reason}) — building it now (gsd-t graph index)...`);
+      const buildResult = await runCliBuild();
+      if (buildResult && buildResult.ok) {
+        log(`graph-wiring: index build OK — re-probing status.`);
+        statusResult = await runCli("status", null, "status");
+      } else {
+        log(`graph-wiring: index build FAILED [${(buildResult && buildResult.reason) || "build-failed"}] — graph now BROKEN (build infra failing).`);
+      }
     } else {
-      log(`graph-wiring: index build FAILED [${(buildResult && buildResult.reason) || "build-failed"}] — falling back to grep-mode.`);
+      // BROKEN — do NOT waste a build; name it loudly (announced carve-out continues grep-mode).
+      log(`graph-wiring: graph BROKEN (${_reason}) — NOT merely un-indexed; a build won't fix it. Fix it: gsd-t graph status.`);
     }
   }
   if (!statusResult || !statusResult.ok) {
-    // Graph still unavailable after a build attempt — announce fallback, continue
-    // with intact grep-mode scan. [RULE] parser-fail-disables-loud-never-silent
+    // Graph still unavailable — classify for an honest ABSENT-vs-BROKEN message, then
+    // announce fallback and continue with intact grep-mode scan (exempt carve-out).
+    // [RULE] parser-fail-disables-loud-never-silent [RULE] broken-graph-halts-never-greps (carve-out: name BROKEN loudly)
     graphWiringMode = "fallback-announced";
-    log(`⚠ GRAPH-FALLBACK (ANNOUNCED): graph unavailable after build attempt [reason=${(statusResult && statusResult.reason) || "graph-unavailable"}, via=${(statusResult && statusResult.via) || "?"}] — scan continues in full grep-mode (today's architecture, intact). Structural findings from LLM reconstruction only.`);
+    const _finReason = (statusResult && statusResult.reason) || "graph-broken";
+    const _finState = await classifyGraphFailure(_finReason, statusResult && statusResult.detail);
+    log(`⚠ GRAPH-FALLBACK (ANNOUNCED): graph ${_finState} [reason=${_finReason}, via=${(statusResult && statusResult.via) || "?"}] — scan continues in full grep-mode (today's architecture, intact). Structural findings from LLM reconstruction only.${_finState === "BROKEN" ? " NOTE: graph is BROKEN, not merely absent — fix it (gsd-t graph status)." : ""}`);
     await persistWiringMode("fallback-announced"); // M99 D2 [RULE] wiring-mode-three-states
   } else {
     // Step 2: query the structural slice (dead-code + dangling + clusters).

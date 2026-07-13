@@ -2993,6 +2993,12 @@ const PROJECT_BIN_TOOLS = [
   // copied tool finds the engine from the GSD-T global package, not the project's
   // own (usually absent) node_modules. Fail-loud with remediation if all miss.
   "gsd-t-require-store.cjs",
+  // Broken-Graph-Halts — the ONE shared availability classifier (graph-absent vs
+  // graph-broken → ABSENT/auto-build vs BROKEN/HALT). The sandboxed workflows invoke
+  // it via Bash (`node bin/gsd-t-graph-availability.cjs classify <reason>`), so it MUST
+  // ship to every project or the consumers can't classify. Same propagation class as
+  // gsd-t-graph-store-resolver.cjs above. [[project_global_bin_propagation_gap]]
+  "gsd-t-graph-availability.cjs",
 ];
 
 // Files that older versions of this installer copied into project bin/ but
@@ -3910,6 +3916,35 @@ function doChangelog() {
  *
  * [RULE] graph-status-live — NEVER hits the dead M20–M21 "No graph index found" path.
  */
+// Broken-graph seam (delegation edge): classify a spawnSync result into a graph
+// envelope. STOPS discarding result.status/result.stderr. A crash (missing require →
+// exit≠0, empty stdout, MODULE_NOT_FOUND on stderr) means the CLI itself is BROKEN —
+// surface it so the consumer HALTs, never fabricate a collapsed "graph-unavailable"
+// that hides the crash. Extracted (pure) so it is unit-testable with a simulated result.
+// [RULE] crash-classified-not-fabricated
+function _classifyGraphSpawnResult(result) {
+  const stdout = (result.stdout || "").trim();
+  // Trust a valid JSON envelope on stdout — the producer already classified the reason
+  // (graph-absent / graph-broken / a real answer). Parse FIRST so a non-zero exit that
+  // still emitted an envelope (fail() exits 1) keeps the producer's granular reason.
+  if (stdout) {
+    try {
+      return JSON.parse(stdout);
+    } catch {
+      // stdout present but not JSON → the CLI printed garbage → BROKEN.
+      return { ok: false, reason: "graph-broken", detail: stdout };
+    }
+  }
+  // No valid envelope on stdout. If the process crashed (spawn error, or non-zero
+  // exit with empty stdout), the CLI is BROKEN.
+  if (result.error) {
+    return { ok: false, reason: "graph-broken", detail: result.error.message };
+  }
+  // exit != 0 with no envelope, OR exit 0 with empty stdout (shouldn't happen) →
+  // treat as BROKEN defensively.
+  return { ok: false, reason: "graph-broken", detail: result.stderr || `exit ${result.status}, no output` };
+}
+
 function _graphQueryCli(verbAndArgs) {
   const { spawnSync } = require("child_process");
   const cliPath = require("path").join(__dirname, "gsd-t-graph-query-cli.cjs");
@@ -3918,18 +3953,7 @@ function _graphQueryCli(verbAndArgs) {
     cwd: process.cwd(),
     timeout: 30000,
   });
-  if (result.error) {
-    return { ok: false, reason: "graph-unavailable", detail: result.error.message };
-  }
-  const stdout = (result.stdout || "").trim();
-  if (!stdout) {
-    return { ok: false, reason: "graph-unavailable", detail: result.stderr || "no output" };
-  }
-  try {
-    return JSON.parse(stdout);
-  } catch {
-    return { ok: false, reason: "graph-unavailable", detail: stdout };
-  }
+  return _classifyGraphSpawnResult(result);
 }
 
 /**
@@ -4920,6 +4944,7 @@ module.exports = {
   copyFile,
   copyBinToolsToProject,
   PROJECT_BIN_TOOLS,
+  _classifyGraphSpawnResult,
   hasPlaywright,
   hasSwagger,
   hasApi,

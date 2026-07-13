@@ -47,6 +47,9 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { execSync } = require("node:child_process");
+// Broken-Graph-Halts: the ONE shared availability classifier (absent→auto-build,
+// broken→HALT). Never re-implement the string check here. [RULE] one-availability-classifier
+const { classifyGraphFailure, isTransient } = require("./gsd-t-graph-availability.cjs");
 
 // ─── Event writer (append-only JSONL) ────────────────────────────────────
 
@@ -220,33 +223,57 @@ function queryBlastRadius(projectDir, filePath) {
   }
 
   let raw;
+  let execErr = null;
   try {
     raw = execSync(`node "${queryCliPath}" blast-radius "${filePath}"`, {
       cwd: projectDir,
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
       timeout: 10000,
     });
-  } catch {
-    // CLI present but query failed (graph index broken / parse error).
-    return { blastRadius: [], graphAvailable: false, cliPresent: true };
+  } catch (e) {
+    // The CLI's fail() exits 1 while STILL emitting a granular envelope on stdout —
+    // execSync throws on the non-zero exit, but e.stdout carries the envelope. A true
+    // crash (missing require) leaves stdout empty and stderr populated → BROKEN.
+    execErr = e;
+    raw = (e && e.stdout) ? e.stdout : "";
   }
-  try {
-    const envelope = JSON.parse((raw || "").trim());
-    if (!envelope.ok && envelope.reason === "graph-unavailable") {
-      // CLI present but graph index not built yet.
-      return { blastRadius: [], graphAvailable: false, cliPresent: true };
+  const trimmed = (raw || "").trim();
+  // Parse the envelope FIRST (trust the producer's granular reason) — even on a
+  // non-zero exit, a valid envelope means the producer classified it (absent/broken).
+  if (trimmed) {
+    try {
+      const envelope = JSON.parse(trimmed);
+      if (!envelope.ok) {
+        // Route the producer's reason through the ONE classifier.
+        // [RULE] one-availability-classifier [RULE] crash-classified-not-fabricated
+        const c = classifyGraphFailure(envelope.reason);
+        return {
+          blastRadius: [], graphAvailable: false, cliPresent: true,
+          state: c.state, reason: envelope.reason,
+          transient: isTransient(envelope.detail),
+        };
+      }
+      if (Array.isArray(envelope.results)) {
+        const files = envelope.results.map((r) =>
+          typeof r === "string" ? r : (r && (r.file || r.path || ""))
+        ).filter(Boolean);
+        return { blastRadius: files, graphAvailable: true, cliPresent: true, state: "OK" };
+      }
+      // ok:true but no results array — unexpected shape → BROKEN (fail-closed).
+      return { blastRadius: [], graphAvailable: false, cliPresent: true, state: "BROKEN", reason: "graph-broken" };
+    } catch {
+      // stdout present but not JSON → CLI printed garbage → BROKEN.
+      return { blastRadius: [], graphAvailable: false, cliPresent: true, state: "BROKEN", reason: "graph-broken" };
     }
-    if (envelope.ok && Array.isArray(envelope.results)) {
-      const files = envelope.results.map((r) =>
-        typeof r === "string" ? r : (r && (r.file || r.path || ""))
-      ).filter(Boolean);
-      return { blastRadius: files, graphAvailable: true, cliPresent: true };
-    }
-    return { blastRadius: [], graphAvailable: false, cliPresent: true };
-  } catch {
-    return { blastRadius: [], graphAvailable: false, cliPresent: true };
   }
+  // No envelope on stdout at all. A crash (empty stdout + throw) → BROKEN, unless the
+  // failure looks transient (lock/timeout), in which case the caller retries once.
+  const detail = execErr && (execErr.stderr || execErr.message);
+  return {
+    blastRadius: [], graphAvailable: false, cliPresent: true,
+    state: "BROKEN", reason: "graph-broken", transient: isTransient(detail),
+  };
 }
 
 /**
@@ -266,6 +293,33 @@ function queryBlastRadius(projectDir, filePath) {
  * [RULE] execute-disjointness-graph-aware-dependency-overlap
  * [RULE] execute-disjointness-output-flips-on-graph-edge
  */
+// [RULE] absent-graph-auto-builds-once — build the index ONCE via the existing
+// `gsd-t graph index` path when the graph is ABSENT (never indexed). Returns true on
+// a successful build. Never throws.
+function autoBuildGraphIndex(projectDir) {
+  try {
+    execSync(`node "${path.join(projectDir, "bin", "gsd-t-graph-index.cjs")}" build --repo "${projectDir}"`, {
+      cwd: projectDir,
+      encoding: "utf8",
+      stdio: ["ignore", "ignore", "pipe"],
+      timeout: 300000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// [RULE] false-broken-guarded — retry ONCE on a transient failure (DB lock / timeout)
+// so a slow/locked query does not wrongly HALT fan-out.
+function queryBlastRadiusRetrying(projectDir, filePath) {
+  let r = queryBlastRadius(projectDir, filePath);
+  if (!r.graphAvailable && r.cliPresent && r.transient) {
+    r = queryBlastRadius(projectDir, filePath);
+  }
+  return r;
+}
+
 function graphAwareDisjointCheck(projectDir, touchesA, touchesB) {
   // Fast path: literal Touches overlap — already know they're non-disjoint.
   if (haveOverlap(touchesA, touchesB)) {
@@ -276,14 +330,16 @@ function graphAwareDisjointCheck(projectDir, touchesA, touchesB) {
   let graphAvailableConfirmed = false;
 
   for (const fileA of touchesA.slice(0, 5)) {
-    const { blastRadius, graphAvailable, cliPresent } = queryBlastRadius(projectDir, fileA);
+    const { blastRadius, graphAvailable, cliPresent, state } = queryBlastRadiusRetrying(projectDir, fileA);
     if (!cliPresent) {
       // No local graph CLI in this project — skip graph check entirely.
       return { verdict: "no-cli" };
     }
     if (!graphAvailable) {
-      // CLI present but index missing/broken → FAIL LOUD.
-      return { verdict: "graph-unavailable", reason: "GRAPH_UNAVAILABLE" };
+      // CLI present but graph absent (never indexed) or broken (corrupt/crash).
+      // Carry the classified state up so the caller can auto-build ABSENT vs HALT BROKEN.
+      // [RULE] one-availability-classifier
+      return { verdict: "graph-unavailable", reason: "GRAPH_UNAVAILABLE", state: state || "BROKEN" };
     }
     graphAvailableConfirmed = true;
     const setBtouch = new Set(touchesB);
@@ -299,7 +355,7 @@ function graphAwareDisjointCheck(projectDir, touchesA, touchesB) {
   }
 
   for (const fileB of touchesB.slice(0, 5)) {
-    const { blastRadius, graphAvailable, cliPresent } = queryBlastRadius(projectDir, fileB);
+    const { blastRadius, graphAvailable, cliPresent, state } = queryBlastRadiusRetrying(projectDir, fileB);
     if (!cliPresent) {
       if (!graphAvailableConfirmed) {
         return { verdict: "no-cli" };
@@ -308,8 +364,8 @@ function graphAwareDisjointCheck(projectDir, touchesA, touchesB) {
     }
     if (!graphAvailable) {
       if (!graphAvailableConfirmed) {
-        // CLI present but index missing/broken → FAIL LOUD.
-        return { verdict: "graph-unavailable", reason: "GRAPH_UNAVAILABLE" };
+        // CLI present but graph absent/broken → carry classified state up.
+        return { verdict: "graph-unavailable", reason: "GRAPH_UNAVAILABLE", state: state || "BROKEN" };
       }
       continue; // Transient error on B after A confirmed available — skip
     }
@@ -356,10 +412,26 @@ function groupByOverlapGraphAware(items, projectDir, fallbackToTouchesOnly) {
   const union = (i, j) => { const a = find(i), b = find(j); if (a !== b) parent[a] = b; };
 
   let graphUnavailable = false;
+  let graphBuilt = false; // [RULE] absent-graph-auto-builds-once — build at most once
 
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const result = graphAwareDisjointCheck(projectDir, items[i].touches, items[j].touches);
+      let result = graphAwareDisjointCheck(projectDir, items[i].touches, items[j].touches);
+      // ABSENT (never indexed) → auto-build ONCE, then re-check this pair. A second
+      // consecutive absent (build failed or still absent) = BROKEN infra.
+      // [RULE] absent-graph-auto-builds-once
+      if (result.verdict === "graph-unavailable" && result.state === "ABSENT" && !graphBuilt) {
+        graphBuilt = true;
+        process.stderr.write(`[gsd-t disjointness] graph ABSENT — building index once (gsd-t graph index)...\n`);
+        const ok = autoBuildGraphIndex(projectDir);
+        if (ok) {
+          result = graphAwareDisjointCheck(projectDir, items[i].touches, items[j].touches);
+        }
+        // If still absent after the build, treat as BROKEN (build infra failing).
+        if (result.verdict === "graph-unavailable" && result.state === "ABSENT") {
+          result = { verdict: "graph-unavailable", reason: "GRAPH_UNAVAILABLE", state: "BROKEN" };
+        }
+      }
       if (result.verdict === "no-cli") {
         // No local graph CLI in this project → skip graph check for all pairs.
         // Fall through to Touches-only for this pair (NOT FAIL LOUD — this is "no graph").
@@ -368,14 +440,17 @@ function groupByOverlapGraphAware(items, projectDir, fallbackToTouchesOnly) {
         }
       } else if (result.verdict === "graph-unavailable") {
         graphUnavailable = true;
+        // BROKEN graph → HALT (never grep-guess). The bootstrap escape hatch is the
+        // ONLY sanctioned continue, and it is loudly announced.
+        // [RULE] broken-graph-halts-never-greps
         if (fallbackToTouchesOnly) {
           // Bootstrap escape hatch: ANNOUNCED WARNING, degrade to literal-Touches.
           // NEVER silent. NEVER applied to graph-says-non-disjoint verdicts.
           process.stderr.write(
-            `[gsd-t disjointness] WARNING: graph unavailable — falling back to ` +
+            `[gsd-t disjointness] WARNING: graph BROKEN — falling back to ` +
             `literal-Touches-only check (--disjointness-fallback=touches-only). ` +
             `Transitive dependency overlaps will NOT be detected. ` +
-            `Fix the graph index (gsd-t graph build) before the next parallel execute.\n`
+            `Fix the graph (gsd-t graph status) before the next parallel execute.\n`
           );
           if (haveOverlap(items[i].touches, items[j].touches)) {
             union(i, j);

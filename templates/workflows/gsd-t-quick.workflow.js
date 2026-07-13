@@ -71,6 +71,28 @@ async function runCli(projectDir, subcmd, argv, localBin, label, parseJson = tru
 async function runPreflight(projectDir, label = "preflight", phaseName) {
   return runCli(projectDir, "preflight", ["--json"], "cli-preflight.cjs", label, true, phaseName);
 }
+// Broken-Graph-Halts: route a failing graph envelope's reason through the ONE shared
+// classifier (sandbox bans require → call it via Bash). Returns "ABSENT" | "BROKEN".
+// [RULE] one-availability-classifier [RULE] unknown-reason-fails-closed-to-broken
+async function classifyGraphFailure(projectDir, reason, detail, phaseName) {
+  const r = await runCli(
+    projectDir, "graph-availability",
+    ["classify", String(reason || ""), String(detail || "")],
+    "gsd-t-graph-availability.cjs", "graph-classify", true, phaseName
+  ).catch(() => null);
+  const env = r && r.envelope;
+  if (env && (env.state === "ABSENT" || env.state === "BROKEN")) return env.state;
+  return "BROKEN"; // fail-closed if the classifier itself is unreachable
+}
+// [RULE] absent-graph-auto-builds-once — build the index once via the existing
+// `gsd-t graph index` path (local bin: gsd-t-graph-index.cjs build --repo <dir>).
+async function buildGraphIndex(projectDir, phaseName) {
+  const r = await runCli(
+    projectDir, "graph index", ["build", "--repo", projectDir],
+    "gsd-t-graph-index.cjs", "graph-index", false, phaseName
+  ).catch(() => null);
+  return !!(r && r.ok);
+}
 async function runVerifyGate(projectDir, label = "verify-gate", phaseName) {
   return runCli(projectDir, "verify-gate", ["--json"], "gsd-t-verify-gate.cjs", label, true, phaseName);
 }
@@ -184,15 +206,16 @@ const RESEARCH_RESULT_SCHEMA = {
 };
 
 // M94-D11 §READER: Query blast-radius / who-imports for structural impact before editing.
-// Returns a short text snippet injected into the Execute phase agent prompt.
-// On graph-unavailable: logs the fail-loud message and returns null (no grep fallback).
-// [RULE] quick-writer-pattern
-async function queryGraphForQuick(projectDir, task, phaseName) {
+// Returns { line, halt, haltMessage }:
+//   BROKEN graph → { halt:true, haltMessage } (HALT the workflow — never grep-fallback)
+//   ABSENT graph → auto-build once, re-query; still absent → BROKEN → halt
+// [RULE] quick-writer-pattern [RULE] broken-graph-halts-never-greps
+async function queryGraphForQuick(projectDir, task, phaseName, _rebuilt) {
   // Extract a plausible target hint from the task description (first word-token that
   // looks like a file or function name). Heuristic — the agent uses the full slice.
   const words = (task || "").split(/\s+/).filter(Boolean);
   const targetHint = words.find((w) => w.includes("/") || w.includes(".") || w.includes("#")) || words[0] || "";
-  if (!targetHint || targetHint.length < 2) return null;
+  if (!targetHint || targetHint.length < 2) return { line: null, halt: false };
 
   const r = await runCli(
     projectDir,
@@ -205,15 +228,23 @@ async function queryGraphForQuick(projectDir, task, phaseName) {
   ).catch(() => ({ ok: false, exitCode: -1, envelope: null }));
 
   const env = r && r.envelope;
-  if (!env) return null;
-  if (!env.ok && env.reason === "graph-unavailable") {
-    log(`M94-D11 READER: graph unavailable — fix it (gsd-t graph status). Quick proceeds without structural slice.`);
-    return null; // Fail-loud logged; no grep fallback [RULE consumer-structural-grep-removed]
+  if (!env) return { line: null, halt: false };
+  if (!env.ok) {
+    const state = await classifyGraphFailure(projectDir, env.reason, env.detail, phaseName);
+    if (state === "ABSENT" && !_rebuilt) {
+      log(`M94-D11 READER: graph ABSENT — building index once, then re-querying.`);
+      await buildGraphIndex(projectDir, phaseName);
+      return queryGraphForQuick(projectDir, task, phaseName, true);
+    }
+    // BROKEN (or still-absent after one build) → HALT. NO grep fallback.
+    const haltMessage = `graph BROKEN (reason=${env.reason || "?"}) — quick HALTED. Fix it: run gsd-t graph status. No grep fallback.`;
+    log(`M94-D11 READER: ${haltMessage}`);
+    return { line: null, halt: true, haltMessage };
   }
-  if (env.ok && Array.isArray(env.results)) {
-    return `## Graph structural slice (blast-radius for "${targetHint}"):\n${JSON.stringify(env.results.slice(0, 20), null, 2)}`;
+  if (Array.isArray(env.results)) {
+    return { line: `## Graph structural slice (blast-radius for "${targetHint}"):\n${JSON.stringify(env.results.slice(0, 20), null, 2)}`, halt: false };
   }
-  return null;
+  return { line: null, halt: false };
 }
 
 // M94-D11 §WRITER: Trigger a freshness pass over the touched set after edits.
@@ -249,8 +280,12 @@ const brief = await generateBrief(projectDir, { kind: "execute", id: "quick-brie
 await persistWiringMode("Preflight");
 
 // M94-D11 §READER: query graph for structural impact before the Execute agent reasons
-// [RULE] quick-writer-pattern
-const _graphSliceLine = await queryGraphForQuick(projectDir, task, "Preflight") || "";
+// [RULE] quick-writer-pattern [RULE] broken-graph-halts-never-greps
+const _graphRead = await queryGraphForQuick(projectDir, task, "Preflight");
+if (_graphRead && _graphRead.halt) {
+  return { status: "blocked-needs-human", reason: "graph-broken", detail: _graphRead.haltMessage };
+}
+const _graphSliceLine = (_graphRead && _graphRead.line) || "";
 
 phase("Execute");
 const result = await agent(
