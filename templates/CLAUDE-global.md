@@ -484,7 +484,9 @@ See memory pointer: `feedback_auto_research_external_gaps`.
 
 **The HALT (the teeth):** a deliverable whose simply-stated lead cannot be written cleanly is NOT done — stop, surface it, re-think the muddled part. Do not ship the verbose version with an apology; the verbose version is evidence the design has a gap.
 
-**§Enforcement (three layers):** (1) this doctrine = the definition; (2) the **Architect's Oversight Write/Edit trigger** carries a Simply-Stated line; (3) the **plan/milestone Six-Stage Pass + `/gsd-t-architect` gain a Simply-Stated gate** — the pass does not complete until its finding/plan has a clean simply-stated lead, and the validation protocols flag a deliverable that lacks one. The simply-stated lead is a REQUIRED ARTIFACT (like the pseudocode file), not advice.
+**§Applies to conversational narration too, not just formal deliverables.** The doctrine governs REPLIES and mid-work talk-to-the-user, not only architectures/plans/findings. Two extra rules there: **NO PREAMBLE** (no throat-clearing, no "let me…", no narrating-the-explanation like "it matters that I say why…" — give the point, not a description of the point), and **load-bearing point FIRST** (never buried after justification clauses). No clever phrase that obscures where a plain one is clearer.
+
+**§Enforcement (four layers):** (1) this doctrine = the definition; (2) the **Architect's Oversight Write/Edit trigger** carries a Simply-Stated line; (3) the **plan/milestone Six-Stage Pass + `/gsd-t-architect` gain a Simply-Stated gate** — the pass does not complete until its finding/plan has a clean simply-stated lead, and the validation protocols flag a deliverable that lacks one (a REQUIRED ARTIFACT like the pseudocode file, not advice); (4) the **every-turn Reader Contract** (injected by the UserPromptSubmit hook `scripts/gsd-t-auto-route.js`) carries the Simply-Stated rule + a before/after example, so it governs conversational output each reply — the channel that reaches mid-work narration, which layers 2-3 do not.
 
 ### Phase Flow
 - Upon completing a phase, automatically proceed to the next phase

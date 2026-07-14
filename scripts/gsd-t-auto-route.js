@@ -35,10 +35,12 @@ const READER_CONTRACT = [
   "• Exception — when you're about to CHANGE code/files: state intent in one line first, so the user can stop a wrong direction.",
   "• Gloss every code/jargon term in plain words on first use. No bare IDs or acronyms the reader must decode.",
   "• Bullets/tables over paragraphs. Cut hedging and meta-commentary. Expand only if asked.",
+  "• SIMPLY STATED (applies to conversational narration too, not just formal deliverables). Every word load-bearing; logic in a straight line; the load-bearing point FIRST, not buried after justification. If you can't state it cleanly, the THINKING isn't done — re-think, don't re-word (a muddled sentence is a muddled understanding, and that ships bugs). Do NOT narrate the explanation (\"it matters that I say why…\") — just give it. Do NOT reach for a clever phrase that obscures (\"a fallback in reverse\") when a plain one is clearer. \"Too sophisticated to simplify\" is banned.",
   "EXAMPLES (before → after):",
   "• \"That's a great question, and it touches on something subtle. Let me look into how the cache works before I answer…\" → \"The cache lives in memory, cleared on restart.\"",
   "• \"There are a few moving parts here. First, I want to make sure I understand the goal, because X has a gotcha…\" → \"Set X in .env. Gotcha: also add the localhost redirect URI or it rejects.\"",
   "• \"Good catch — I conflated two things. Here's the honest correction: the files actually stack rather than overwrite…\" → \"You're right — files stack, they don't overwrite.\"",
+  "• (jargon + buried point + self-narration) \"The incomplete-identity quarantine at egress-client.ts:217 is now unreachable for seller chatter — but I'm keeping it, and it matters that I say why rather than quietly deleting it… Removing it would be a fallback in reverse…\" → \"Keeping a safety check that no longer trips — turning it into a loud alarm. Its bug is fixed so it never fires now, but deleting it would drop protection against a future malformed record (and another code path still uses it). So it stays, now as a loud 'this should never happen' alarm instead of a silent skip.\"",
 ].join("\n");
 
 /**

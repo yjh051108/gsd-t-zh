@@ -2,6 +2,15 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [5.1.12] - 2026-07-13
+
+### Changed — Simply Stated now governs conversational narration (4th enforcement layer)
+
+The v5.1.10 doctrine only gated formal deliverables (architectures/plans/findings) + code writes — it was blind to mid-work talk-to-the-user, which is exactly where a jargon-dense, buried-point, self-narrating reply slipped through even in a fresh session. Extended the doctrine to REPLIES: the every-turn Reader Contract (injected by `scripts/gsd-t-auto-route.js`) now carries the Simply-Stated rule + a real before/after example, with two conversational-specific rules — NO PREAMBLE and load-bearing-point-FIRST. This is the channel that reaches conversational output each turn (layers 2-3 do not).
+
+- `scripts/gsd-t-auto-route.js`: Simply-Stated line + the egress-guard before/after added to `READER_CONTRACT`.
+- `templates/CLAUDE-global.md` (+ `~/.claude/CLAUDE.md`): doctrine gains "§Applies to conversational narration too" + a 4th enforcement layer; Reader Contract prose mirrors the rule + example.
+
 ## [5.1.11] - 2026-07-13
 
 ### Fixed — paused M102 work leaked into the v5.1.10 package; removed
