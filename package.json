@@ -1,25 +1,33 @@
 {
-  "name": "@tekyzinc/gsd-t",
-  "version": "5.1.13",
-  "description": "GSD-T: Contract-Driven Development for Claude Code — 54 slash commands with headless-by-default workflow spawning, unattended supervisor relay with event stream, graph-powered code analysis, real-time agent dashboard, task telemetry, doc-ripple enforcement, backlog management, impact analysis, test sync, milestone archival, and PRD generation",
-  "author": "Tekyz, Inc.",
+  "name": "gsd-t-zh",
+  "version": "5.1.13-zh",
+  "description": "GSD-T 中文适配版: 54 个中文 slash 命令 + 第三方模型兼容 (Stepfun 代理) — 基于 Tekyz-Inc/get-stuff-done-teams v5.1.13",
+  "author": "yjh051108",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Tekyz-Inc/get-stuff-done-teams.git"
+    "url": "git+https://github.com/yjh051108/gsd-t-zh.git"
   },
-  "homepage": "https://github.com/Tekyz-Inc/get-stuff-done-teams#readme",
+  "homepage": "https://github.com/yjh051108/gsd-t-zh#readme",
+  "bugs": {
+    "url": "https://github.com/yjh051108/gsd-t-zh/issues"
+  },
   "keywords": [
     "claude-code",
     "gsd",
+    "chinese",
+    "zh-CN",
     "ai-development",
     "agent-teams",
     "contract-driven-development",
-    "slash-commands"
+    "slash-commands",
+    "stepfun",
+    "third-party-model"
   ],
   "main": "bin/gsd-t.js",
   "bin": {
-    "gsd-t": "bin/gsd-t.js"
+    "gsd-t": "bin/gsd-t.js",
+    "gsd-t-zh": "bin/gsd-t.js"
   },
   "scripts": {
     "pretest": "node -e \"const fs=require('fs');for(const f of ['.gsd-t/graph.db','.gsd-t/graph.db-wal','.gsd-t/graph.db-shm']){try{if(fs.existsSync(f))fs.renameSync(f,f+'.testbak')}catch{}}\"",
