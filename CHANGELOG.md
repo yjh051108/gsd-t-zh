@@ -2,6 +2,15 @@
 
 All notable changes to GSD-T are documented here. Updated with each release.
 
+## [5.1.13] - 2026-07-15
+
+### Changed — explicit "No Preambles" rule with banned openers
+
+Simply Stated already said "no preamble," but framing phrases like "One thing I owe you honestly:" kept appearing. Added an explicit NO PREAMBLES rule that names the banned opener phrases ("One thing I owe you honestly:", "To be honest", "Here's the thing", "Full transparency:", "The key insight is", etc.) so they're caught by name — delete the opener, lead with the point.
+
+- `scripts/gsd-t-auto-route.js`: NO PREAMBLES rule + banned-opener list in `READER_CONTRACT`.
+- `templates/CLAUDE-global.md` (+ `~/.claude/CLAUDE.md`): banned openers added to the doctrine's §conversational block.
+
 ## [5.1.12] - 2026-07-13
 
 ### Changed — Simply Stated now governs conversational narration (4th enforcement layer)
