@@ -23,7 +23,10 @@ test("workflow-path resolves a known workflow to an existing absolute path", () 
   assert.equal(r.status, 0, "exit 0 for a known workflow");
   const p = r.stdout.trim();
   assert.ok(path.isAbsolute(p), "path is absolute");
-  assert.ok(p.endsWith("templates/workflows/gsd-t-scan.workflow.js"), "points at the scan workflow");
+  assert.ok(
+    p.endsWith(path.normalize("templates/workflows/gsd-t-scan.workflow.js")),
+    "points at the scan workflow"
+  );
   assert.ok(fs.existsSync(p), "resolved path exists on disk");
 });
 

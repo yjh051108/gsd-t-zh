@@ -130,7 +130,8 @@ function loadStackRules(projectDir, stacks) {
   if (!fs.existsSync(stacksDir)) return '';
   const universal = [];
   for (const fname of fs.readdirSync(stacksDir).sort()) {
-    if (fname.startsWith('_') && fname.endsWith('.md')) {
+    // Load base .md only; .zh-CN.md are locale-specific install variants
+    if (fname.startsWith('_') && fname.endsWith('.md') && !fname.endsWith('.zh-CN.md')) {
       universal.push(readFileIfExists(path.join(stacksDir, fname)).trim());
     }
   }

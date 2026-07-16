@@ -1827,16 +1827,8 @@ function getLocale() {
 
 function getCommandFiles() {
   // All .md files in our commands/ directory (gsd-t-* plus utilities like branch, checkin, Claude-md)
-  // Locale-aware: returns only the files relevant to the current locale, matching installCommands().
-  const locale = getLocale();
-  return fs
-    .readdirSync(PKG_COMMANDS)
-    .filter((f) => {
-      if (!f.endsWith(".md")) return false;
-      if (locale !== "zh-CN" && f.endsWith(".zh-CN.md")) return false;
-      if (locale === "zh-CN" && !f.endsWith(".zh-CN.md")) return false;
-      return true;
-    });
+  // This is the canonical source-of-truth list — locale-agnostic.
+  return fs.readdirSync(PKG_COMMANDS).filter((f) => f.endsWith(".md"));
 }
 
 function getGsdtCommands() {
@@ -1856,6 +1848,24 @@ function getInstalledCommands() {
   } catch {
     return [];
   }
+}
+
+/**
+ * Returns the command files for the current locale — used by installCommands().
+ * In zh-CN locale, returns .zh-CN.md files from templates/commands/ as a fallback
+ * when commands/ has no localized versions.
+ */
+function getLocalizedCommandFiles() {
+  const locale = getLocale();
+  const base = getCommandFiles();
+  if (locale !== "zh-CN") return base;
+  // zh-CN: prefer .zh-CN.md templates from templates/commands/ if they exist,
+  // otherwise fall back to the English .md files from commands/
+  const localized = fs
+    .readdirSync(PKG_COMMANDS)
+    .filter((f) => f.endsWith(".zh-CN.md"));
+  if (localized.length > 0) return localized;
+  return base;
 }
 
 // ─── Heartbeat ──────────────────────────────────────────────────────────────
@@ -3341,9 +3351,10 @@ function installSharedTemplates() {
 
 function installCommands(isUpdate) {
   heading("Slash Commands");
-  const commandFiles = getCommandFiles();
-  const gsdtCommands = getGsdtCommands();
-  const utilityCommands = getUtilityCommands();
+  // Use localized files for install (zh-CN → .zh-CN.md from templates/commands/)
+  const commandFiles = getLocalizedCommandFiles();
+  const gsdtCommands = commandFiles.filter((f) => f.startsWith("gsd-t-"));
+  const utilityCommands = commandFiles.filter((f) => !f.startsWith("gsd-t-"));
   let installed = 0, skipped = 0;
 
   for (const file of commandFiles) {

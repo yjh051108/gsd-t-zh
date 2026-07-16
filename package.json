@@ -1,6 +1,6 @@
 {
   "name": "gsd-t-zh",
-  "version": "5.1.13-zh",
+  "version": "5.1.13",
   "description": "GSD-T 中文适配版: 54 个中文 slash 命令 + 第三方模型兼容 (Stepfun 代理) — 基于 Tekyz-Inc/get-stuff-done-teams v5.1.13",
   "author": "yjh051108",
   "license": "MIT",

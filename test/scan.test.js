@@ -293,7 +293,7 @@ describe('collectScanData', () => {
 
   it('parses real project data — GSD-T root', () => {
     const result = collectScanData(path.join(__dirname, '..'));
-    assert.equal(result.projectName, '@tekyzinc/gsd-t');
+    assert.equal(result.projectName, 'gsd-t-zh');
     assert.ok(result.filesScanned > 0, 'filesScanned should be > 0');
     assert.ok(result.totalLoc > 0, 'totalLoc should be > 0');
     assert.ok(result.domains.length > 0, 'should have domain entries');

@@ -125,9 +125,12 @@ describe("template file structure", () => {
 
     it(`${file}: includes mandatory framing text`, () => {
       const content = fs.readFileSync(filePath, "utf8");
+      const hasFraming =
+        content.includes("These rules are MANDATORY. Violations fail the task.") ||
+        (content.includes("这些规则是") && content.includes("强制") && (content.includes("违规") || content.includes("违反")));
       assert.ok(
-        content.includes("These rules are MANDATORY. Violations fail the task."),
-        `Expected ${file} to contain mandatory framing text`
+        hasFraming,
+        `Expected ${file} to contain mandatory framing text (English or Chinese)`
       );
     });
 

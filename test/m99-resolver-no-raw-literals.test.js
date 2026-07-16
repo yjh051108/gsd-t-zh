@@ -44,7 +44,11 @@ test("deriveProjectRoot: .db branch is 3-up from graphDB/graph.db (depth-correct
   assert.ok(storePath.endsWith(path.join("graphDB", "graph.db")), `storePath should end with graphDB/graph.db: ${storePath}`);
   // Round-trip: deriveProjectRoot(storePath) === fakeRoot
   const recovered = r.deriveProjectRoot(storePath);
-  assert.strictEqual(recovered, fakeRoot, `3-up round-trip failed: got ${recovered}, expected ${fakeRoot}`);
+  assert.strictEqual(
+    path.resolve(recovered),
+    path.resolve(fakeRoot),
+    `3-up round-trip failed: got ${recovered}, expected ${fakeRoot}`
+  );
 });
 
 test("deriveProjectRoot: JSONL branch is 2-up from graph-index/ (depth preserved)", () => {
@@ -54,7 +58,11 @@ test("deriveProjectRoot: JSONL branch is 2-up from graph-index/ (depth preserved
   const jsonlDir = path.join(fakeRoot, ".gsd-t", "graph-index");
   // deriveProjectRoot of a JSONL dir (not a .db) must be 2-up
   const recovered = r.deriveProjectRoot(jsonlDir);
-  assert.strictEqual(recovered, fakeRoot, `2-up JSONL round-trip failed: got ${recovered}, expected ${fakeRoot}`);
+  assert.strictEqual(
+    path.resolve(recovered),
+    path.resolve(fakeRoot),
+    `2-up JSONL round-trip failed: got ${recovered}, expected ${fakeRoot}`
+  );
 });
 
 // ─── T5: No raw literals in bin/ outside resolver + spike allow-list ──────────

@@ -174,6 +174,23 @@ M86 增加每个项目的 **层级花费开关**。三个命名配置：
 
 ---
 
+## 日志系统（Trace + Audit，M100 — 强制默认）
+
+每个 GSD-T 项目默认自带 **两条日志流**（`gsd-t-init` 时脚手架，`gsd-t-verify` 时强制检查）：
+
+| 日志流 | 定义 | 默认规则 | 豁免方式 |
+|--------|------|----------|----------|
+| **Trace** (trace) | 瞬态、PII 过滤、可开关的**调试信号流** | 所有项目默认 (default) 开启 — 不可静默跳过 | 无状态 CLI/库可在 `.gsd-t/trace-optout.json` 记录豁免原因 |
+| **Audit** (audit) | 持久、仅追加、管理员可查询的**问责记录** | 所有项目默认 (default) 开启 — 不可静默跳过 | 在项目 `CLAUDE.md` 中声明豁免，或写 `.gsd-t/audit-optout.json` |
+
+- **存储后端** — 自动检测技术栈，展示真实选项，**人工审批后才选择**（Level 3 全自动的唯一 sanctioned pause）
+- **Trace 与 Audit 永不合并** — 两条流的 envelope 结构不同，合并即违反契约
+- **迁移** — 已有项目运行 `gsd-t migrate-logging` 增量添加，不修改现有文件
+
+Opt-out 机制：trace 写 `.gsd-t/trace-optout.json`，audit 写 `.gsd-t/audit-optout.json` 或在项目 CLAUDE.md 声明。相关契约：`trace-logging-contract.md`、`audit-logging-contract.md`
+
+---
+
 ## 安全
 
 - **Wave 模式** 使用 `bypassPermissions` 生成阶段代理 — 代理无需每次操作的用户批准。敏感项目使用 Level 1 或 Level 2 自主权以审查每个阶段。

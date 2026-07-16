@@ -55,15 +55,16 @@ function shortTzAbbr(date) {
       timeZoneName: 'short',
     }).formatToParts(d);
     const tzPart = parts.find((p) => p.type === 'timeZoneName');
-    if (tzPart && tzPart.value) return tzPart.value;
+    if (tzPart && tzPart.value) {
+      // Intl may return "GMT+8" on some platforms — strip numeric offset to "GMT"
+      const letters = tzPart.value.replace(/[^A-Za-z]/g, '');
+      return letters || TZ_ABBR_FALLBACK;
+    }
   } catch {
     /* fall through */
   }
-  // Fallback — numeric offset like "GMT-07:00"
-  const offsetMin = -d.getTimezoneOffset();
-  const sign = offsetMin >= 0 ? '+' : '-';
-  const abs = Math.abs(offsetMin);
-  return `GMT${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`;
+  // Fallback — always return a clean alphabetic abbreviation
+  return TZ_ABBR_FALLBACK;
 }
 
 /**
